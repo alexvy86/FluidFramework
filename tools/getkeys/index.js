@@ -10,7 +10,7 @@ import path from "node:path";
 
 import { loadRC, saveRC } from "@fluidframework/tool-utils";
 
-import { escapeString } from "./utils.js";
+import { quoteStringAndEscape } from "./utils.js";
 
 // Converts the given 'entries' [key, value][] array into export statements for bash
 // and zsh, appending the result to the given 'shellRc' file.
@@ -19,7 +19,7 @@ async function exportToShellRc(shellRc, entries) {
 	console.log(`Writing '${rcPath}'.`);
 
 	const stmts = `\n# Fluid dev/test secrets\n${entries
-		.map(([key, value]) => `export ${key}=${escapeString(value, ['"', '`'])}`)
+		.map(([key, value]) => `export ${key}=${quoteStringAndEscape(value, "\\", ['`'])}`)
 		.join("\n")}\n`;
 
 	return appendFile(rcPath, stmts, "utf8");
@@ -67,7 +67,7 @@ async function saveEnv(env) {
 
 				// On Windows, invoke 'setx' to update the user's persistent environment variables.
 				return Promise.all(
-					entries.map(async ([key, value]) => execAsync(`setx ${key} ${escapeString(value, ['"'])}`)),
+					entries.map(async ([key, value]) => execAsync(`setx ${key} ${quoteStringAndEscape(value)}`)),
 				);
 			}
 		}
