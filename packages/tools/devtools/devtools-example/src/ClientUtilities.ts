@@ -41,6 +41,10 @@ export interface ContainerInfo {
 function initializeTinyliciousClient(logger?: ITelemetryBaseLogger): TinyliciousClient {
 	console.log(`Initializing Tinylicious client...`);
 	return new TinyliciousClient({
+		connection: {
+			port: 443,
+			domain: "https://alexvy86-super-doodle-j677467qg2pwvp-7070.preview.app.github.dev",
+		},
 		logger,
 	});
 }

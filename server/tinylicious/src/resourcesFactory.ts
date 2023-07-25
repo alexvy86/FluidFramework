@@ -38,7 +38,9 @@ export class TinyliciousResourcesFactory implements IResourcesFactory<Tinyliciou
 		const port = utils.normalizePort(process.env.PORT ?? defaultTinyliciousPort);
 		const collectionNames = config.get("mongo:collectionNames");
 
-		const tenantManager = new TenantManager(`http://localhost:${port}`);
+		const tenantManager = new TenantManager(
+			`https://alexvy86-super-doodle-j677467qg2pwvp-7070.preview.app.github.dev`,
+		);
 		const dbFactory = await getDbFactory(config);
 
 		const taskMessageSender = new TaskMessageSender();
@@ -80,7 +82,9 @@ export class TinyliciousResourcesFactory implements IResourcesFactory<Tinyliciou
 			config.get("foreman:permissions"),
 			generateToken,
 			async (tenantId: string) => {
-				const url = `http://localhost:${port}/repos/${encodeURIComponent(tenantId)}`;
+				const url = `https://alexvy86-super-doodle-j677467qg2pwvp-7070.preview.app.github.dev/repos/${encodeURIComponent(
+					tenantId,
+				)}`;
 				return new Historian(url, false, false);
 			},
 			winston,
