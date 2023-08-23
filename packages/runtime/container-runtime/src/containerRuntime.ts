@@ -106,7 +106,7 @@ import {
 import { v4 as uuid } from "uuid";
 import { ContainerFluidHandleContext } from "./containerHandleContext";
 import { FluidDataStoreRegistry } from "./dataStoreRegistry";
-import { ReportOpPerfTelemetry, IPerfSignalReport } from "./connectionTelemetry";
+import { OpPerfTelemetry, IPerfSignalReport } from "./connectionTelemetry";
 import {
 	IPendingBatchMessage,
 	IPendingLocalState,
@@ -1680,7 +1680,8 @@ export class ContainerRuntime
 			groupedBatchingEnabled: this.groupedBatchingEnabled,
 		});
 
-		ReportOpPerfTelemetry(this.clientId, this.deltaManager, this.logger);
+		const opperf = new OpPerfTelemetry(this.clientId, this.deltaManager, this.logger);
+		opperf.on("opRoundtripTime", (telemetry) => this.emit(telemetry));
 		BindBatchTracker(this, this.logger);
 
 		this.entryPoint = new LazyPromise(async () => {

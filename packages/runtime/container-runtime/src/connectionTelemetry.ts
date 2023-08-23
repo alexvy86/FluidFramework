@@ -326,6 +326,10 @@ export class OpPerfTelemetry extends TypedEventEmitter<IOpPerfTelemetryPropertie
 			// performance impacts all workloads relying on service.
 			const category = duration > latencyThreshold ? "error" : "performance";
 
+			this.emit("opRoundtripTime", {
+				...latencyData.opPerfData,
+			});
+
 			this.sampledLogger.sendPerformanceEvent({
 				eventName: "OpRoundtripTime",
 				sequenceNumber,
@@ -361,12 +365,4 @@ export interface IPerfSignalReport {
 	 * Expected Signal Sequence to be received.
 	 */
 	trackingSignalSequenceNumber: number | undefined;
-}
-
-export function ReportOpPerfTelemetry(
-	clientId: string | undefined,
-	deltaManager: IDeltaManager<ISequencedDocumentMessage, IDocumentMessage>,
-	logger: ITelemetryLoggerExt,
-) {
-	new OpPerfTelemetry(clientId, deltaManager, logger);
 }

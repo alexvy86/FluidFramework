@@ -34,9 +34,29 @@ export interface IDataStoreWithBindToContext_Deprecated extends IDataStore {
 	fluidDataStoreChannel?: { bindToContext?(): void };
 }
 
+export interface IOpPerfTelemetryProperties {
+	/**
+	 * Measure time between (1) and (2) - Measure time outbound op is sitting in queue due to active batch
+	 */
+	durationOutboundBatching: number; // was durationOutboundQueue in previous versions
+	/**
+	 * Measure time between (2) and (3) - Track how long it took for op to be acked by service
+	 */
+	durationNetwork: number; // was durationInboundQueue
+	/**
+	 * Measure time between (3) and (4) - Time between DM's inbound "push" event until DM's "op" event
+	 */
+	durationInboundToProcessing: number;
+	/**
+	 * Length of the DeltaManager's inbound queue at the time of the DM's inbound "push" event (3)
+	 */
+	lengthInboundQueue: number;
+}
+
 export interface IContainerRuntimeEvents extends IContainerRuntimeBaseEvents {
 	(event: "dirty" | "disconnected" | "dispose" | "saved" | "attached", listener: () => void);
 	(event: "connected", listener: (clientId: string) => void);
+	(event: "opRoundtripTime", listener: (telemetry: IOpPerfTelemetryProperties) => void);
 }
 
 export type IContainerRuntimeBaseWithCombinedEvents = IContainerRuntimeBase &

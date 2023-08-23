@@ -61,6 +61,10 @@ export interface IContainerRuntimeEvents extends IContainerRuntimeBaseEvents {
     (event: "dirty" | "disconnected" | "dispose" | "saved" | "attached", listener: () => void): any;
     // (undocumented)
     (event: "connected", listener: (clientId: string) => void): any;
+    // Warning: (ae-forgotten-export) The symbol "IOpPerfTelemetryProperties" needs to be exported by the entry point index.d.ts
+    //
+    // (undocumented)
+    (event: "opRoundtripTime", listener: (telemetry: IOpPerfTelemetryProperties) => void): any;
 }
 
 // @public @deprecated (undocumented)
