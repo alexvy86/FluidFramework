@@ -145,6 +145,8 @@ async function orchestratorProcess(
 	const estRunningTimeMin = Math.floor(
 		(2 * profile.totalSendCount) / (profile.opRatePerMin * profile.numClients),
 	);
+	console.log(`Orchestrator profile: ${JSON.stringify(profile)}`);
+	console.log(`Orchestrator args: ${JSON.stringify(args)}`);
 	console.log(`Connecting to ${args.testId !== undefined ? "existing" : "new"}`);
 	console.log(`Selected test profile: ${args.profileName}`);
 	console.log(`Estimated run time: ${estRunningTimeMin} minutes\n`);
