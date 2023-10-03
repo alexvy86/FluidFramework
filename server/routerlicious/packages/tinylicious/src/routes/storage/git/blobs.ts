@@ -20,11 +20,13 @@ export async function createBlob(
 ): Promise<ICreateBlobResponse> {
 	const buffer = Buffer.from(body.content, body.encoding);
 
+	const start = performance.now();
 	const sha = await git.writeBlob({
 		fs,
 		dir: utils.getGitDir(store, tenantId),
 		blob: buffer,
 	});
+	console.log("WRITEBLOB_PERF:", performance.now() - start, "ms")
 
 	return {
 		sha,
@@ -69,7 +71,7 @@ export function create(store: nconf.Provider): Router {
 			request.body,
 		);
 
-		utils.handleResponse(blobP, response, false, 201);
+		utils.handleResponse(blobP, response, false, 201, undefined, request);
 	});
 
 	/**

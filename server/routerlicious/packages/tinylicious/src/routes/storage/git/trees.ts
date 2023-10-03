@@ -27,11 +27,13 @@ export async function createTree(
 		return entry;
 	});
 
+	const start = performance.now();
 	const sha = await git.writeTree({
 		fs,
 		dir: utils.getGitDir(store, tenantId),
 		tree: entries,
 	});
+	console.log("WRITETREE_PERF:", performance.now() - start, "ms")
 
 	return getTree(store, tenantId, authorization, sha, false, true);
 }
@@ -106,7 +108,7 @@ export function create(store: nconf.Provider): Router {
 			request.body,
 		);
 
-		utils.handleResponse(treeP, response, false, 201);
+		utils.handleResponse(treeP, response, false, 201, undefined, request);
 	});
 
 	router.get("/repos/:ignored?/:tenantId/git/trees/:sha", (request, response) => {
