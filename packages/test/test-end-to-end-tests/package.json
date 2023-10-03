@@ -29,7 +29,7 @@
 		"format:prettier": "prettier --write . --cache --ignore-path ../../../.prettierignore",
 		"lint": "fluid-build . --task lint",
 		"lint:fix": "fluid-build . --task eslint:fix --task format",
-		"start:tinylicious:test": "logger__colorize=false logger__morganFormat=tiny node --trace-gc ../../../server/tinylicious/dist/index.js > /tmp/testRuns/$(echo $TIMESTAMP)_tinylicious.log 2>&1",
+		"start:tinylicious:test": "logger__colorize=false logger__morganFormat=tiny node --trace-gc ../../../server/tinylicious/dist/index.js > ./testRuns/$(echo $TIMESTAMP)_tinylicious.log 2>&1",
 		"test": "npm run test:realsvc",
 		"test:benchmark:report": "mocha --config src/test/benchmark/.mocharc.time.cjs -- --driver=local --e2eConfigFile=src/test/benchmark/e2eDocsConfig.json",
 		"test:benchmark:report:frs": "mocha --config src/test/benchmark/.mocharc.time.cjs -- --driver=r11s --r11sEndpointName=frs --e2eConfigFile=src/test/benchmark/e2eDocsConfig.json",
