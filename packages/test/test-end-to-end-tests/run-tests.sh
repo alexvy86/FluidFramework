@@ -6,6 +6,7 @@ while [ $STATUS -eq 0 ]
 do
 	# Clean up log files so we don't keep increasing the used space. Ignore if it fails (if there are no files).
 	rm ./testRuns/* > /dev/null
+	rm -rf /var/tmp/tinylicious/ > /dev/null
 
 	COUNTER=$((COUNTER+1))
 	export TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
