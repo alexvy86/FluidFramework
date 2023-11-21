@@ -26,7 +26,7 @@ export async function createBlob(
 		dir: utils.getGitDir(store, tenantId),
 		blob: buffer,
 	});
-	console.log("WRITEBLOB_PERF:", performance.now() - start, "ms")
+	console.log("WRITEBLOB_PERF:", performance.now() - start, "ms");
 
 	return {
 		sha,

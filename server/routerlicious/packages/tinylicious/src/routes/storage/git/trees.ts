@@ -33,7 +33,7 @@ export async function createTree(
 		dir: utils.getGitDir(store, tenantId),
 		tree: entries,
 	});
-	console.log("WRITETREE_PERF:", performance.now() - start, "ms")
+	console.log("WRITETREE_PERF:", performance.now() - start, "ms");
 
 	return getTree(store, tenantId, authorization, sha, false, true);
 }
