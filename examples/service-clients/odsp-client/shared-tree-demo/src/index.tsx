@@ -5,6 +5,7 @@
 
 import React from "react";
 import ReactDOM from "react-dom";
+import { initializeDevtools } from "@fluid-experimental/devtools";
 import { ITree } from "@fluid-experimental/tree2";
 import { IFluidContainer } from "@fluidframework/fluid-static";
 import { loadFluidData, containerSchema, createFluidData } from "./fluid";
@@ -14,6 +15,9 @@ import "./output.css";
 import { ReactApp } from "./reactApp";
 
 async function start(): Promise<void> {
+	// Initialize Devtools
+	const devtools = initializeDevtools({});
+
 	const app = document.createElement("div");
 	app.id = "app";
 	document.body.append(app);
@@ -36,6 +40,11 @@ async function start(): Promise<void> {
 
 	const cellSize = { x: 32, y: 32 };
 	const canvasSize = { x: 10, y: 10 }; // characters across and down
+
+	devtools.registerContainerDevtools({
+		container,
+		containerKey: "My container",
+	});
 
 	// Render the app - note we attach new containers after render so
 	// the app renders instantly on create new flow. The app will be
