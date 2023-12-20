@@ -8,6 +8,7 @@ import { ICreateTreeParams, ITree, ITreeEntry } from "@fluidframework/gitresourc
 import { Router } from "express";
 import * as git from "isomorphic-git";
 import nconf from "nconf";
+import * as winston from "winston";
 import * as utils from "../utils";
 
 export async function createTree(
@@ -33,7 +34,7 @@ export async function createTree(
 		dir: utils.getGitDir(store, tenantId),
 		tree: entries,
 	});
-	console.log("WRITETREE_PERF:", performance.now() - start, "ms");
+	winston.debug(`WRITETREE_PERF:${performance.now() - start}ms - SHA: ${sha}`);
 
 	return getTree(store, tenantId, authorization, sha, false, true);
 }

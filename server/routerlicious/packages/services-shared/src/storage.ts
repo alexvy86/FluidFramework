@@ -183,6 +183,7 @@ export class DocumentStorage implements IDocumentStorage {
 				0 /* sequenceNumber */,
 				true /* initial */,
 			);
+			winston.debug(`writeSummaryTree completed. Handle: ${handle}`);
 
 			let initialSummaryUploadSuccessMessage = `Tree reference: ${JSON.stringify(handle)}`;
 
@@ -199,7 +200,11 @@ export class DocumentStorage implements IDocumentStorage {
 				};
 
 				const commit = await gitManager.createCommit(commitParams);
+				winston.debug(
+					`gitManager.createCommit completed. Commit: ${JSON.stringify(commit)}`,
+				);
 				await gitManager.createRef(documentId, commit.sha);
+				winston.debug(`gitManager.createRef completed. Commit: ${JSON.stringify(commit)}`);
 				initialSummaryUploadSuccessMessage += ` - Commit sha: ${JSON.stringify(
 					commit.sha,
 				)}`;

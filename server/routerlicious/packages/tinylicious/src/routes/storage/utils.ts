@@ -6,6 +6,7 @@
 import * as path from "path";
 import { Response, Request } from "express";
 import nconf from "nconf";
+import * as winston from "winston";
 
 /**
  * Helper function to handle a promise that should be returned to the user
@@ -21,13 +22,10 @@ export function handleResponse<T>(
 	const start = performance.now();
 	resultP
 		.then((value) => {
-			console.log(
-				"HANDLERESPONSE_PERF:",
-				performance.now() - start,
-				"ms",
-				"request:",
-				request?.method,
-				request?.url,
+			winston.debug(
+				`HANDLERESPONSE_PERF:${
+					performance.now() - start
+				}ms request:${request?.method} ${request?.url}`,
 			);
 			return value;
 		})
@@ -41,12 +39,12 @@ export function handleResponse<T>(
 				response.status(status).json(result);
 			},
 			(error) => {
-				console.log("UNEXPECTED ERROR HANDLING HTTP REQUEST:", error);
+				winston.debug(`UNEXPECTED ERROR HANDLING HTTP REQUEST: ${error}`);
 				response.status(400).json(error);
 			},
 		)
 		.catch((reason) => {
-			console.log("UNEXPECTED ERROR HANDLING HTTP REQUEST:", reason);
+			winston.debug(`UNEXPECTED ERROR HANDLING HTTP REQUEST: ${reason}`);
 		});
 }
 
