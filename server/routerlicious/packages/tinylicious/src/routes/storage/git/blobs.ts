@@ -10,6 +10,7 @@ import { Uint8ArrayToString } from "@fluidframework/common-utils";
 import { Router } from "express";
 import * as git from "isomorphic-git";
 import nconf from "nconf";
+import * as winston from "winston";
 import * as utils from "../utils";
 
 export async function createBlob(
@@ -26,7 +27,7 @@ export async function createBlob(
 		dir: utils.getGitDir(store, tenantId),
 		blob: buffer,
 	});
-	console.log("WRITEBLOB_PERF:", performance.now() - start, "ms");
+	winston.debug(`WRITEBLOB_PERF: ${performance.now() - start}ms`);
 
 	return {
 		sha,
