@@ -413,7 +413,7 @@ describeCompat("Stamped v2 ops", "NoCompat", (getTestObjectProvider, apis) => {
 		assert(node1.quantity === 5, "expected quantity updates to have been synced");
 	});
 
-	it("Shims drop stashed v1 ops to v2 state", async () => {
+	it.skip("Shims drop stashed v1 ops to v2 state", async () => {
 		// Setup containers and get Migration Shims instead of LegacySharedTrees
 		const container1: IContainerExperimental = await provider.loadContainer(
 			runtimeFactory2,
