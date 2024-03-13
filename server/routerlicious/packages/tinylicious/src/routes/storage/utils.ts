@@ -27,7 +27,12 @@ export function handleResponse<T>(
 			response.status(status).json(result);
 		},
 		(error) => {
-			winston.error(error);
+			try {
+				winston.error(`${error}\n${error.stack}`);
+			} catch {
+				console.error(`Error logging error with winston`, error);
+			}
+
 			response.status(400).json(error);
 		},
 	);
