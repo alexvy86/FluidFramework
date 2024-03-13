@@ -6,6 +6,7 @@
 import * as path from "path";
 import { Response } from "express";
 import nconf from "nconf";
+import * as winston from "winston";
 
 /**
  * Helper function to handle a promise that should be returned to the user
@@ -26,6 +27,7 @@ export function handleResponse<T>(
 			response.status(status).json(result);
 		},
 		(error) => {
+			winston.error(error);
 			response.status(400).json(error);
 		},
 	);
