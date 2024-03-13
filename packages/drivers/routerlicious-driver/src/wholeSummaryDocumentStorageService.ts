@@ -70,6 +70,7 @@ export class WholeSummaryDocumentStorageService implements IDocumentStorageServi
 		});
 	}
 
+	// @note getVersions in wholeSummaryDSS
 	// eslint-disable-next-line @rushstack/no-new-null
 	public async getVersions(versionId: string | null, count: number): Promise<IVersion[]> {
 		if (versionId !== this.id && versionId !== null) {

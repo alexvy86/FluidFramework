@@ -77,6 +77,7 @@ export class ShreddedSummaryDocumentStorageService implements IDocumentStorageSe
 		});
 	}
 
+	// @note getVersions in shreddedSummaryDSS
 	public async getVersions(versionId: string | null, count: number): Promise<IVersion[]> {
 		const id = versionId ? versionId : this.id;
 		const commits = await PerformanceEvent.timedExecAsync(
@@ -88,7 +89,16 @@ export class ShreddedSummaryDocumentStorageService implements IDocumentStorageSe
 			},
 			async () => {
 				const manager = await this.getStorageManager();
-				return (await manager.getCommits(id, count)).content;
+				const result = (await manager.getCommits(id, count)).content;
+				if (result.length === 0) {
+					this.logger.sendErrorEvent({
+						eventName: "getVersions_result",
+						versionId: versionId ?? "",
+						calculatedVersionId: id,
+						count,
+					});
+				}
+				return result;
 			},
 		);
 		return commits.map((commit) => ({

@@ -122,7 +122,11 @@ export class SerializedStateManager {
 				// Not sure if this should be here actually
 			} else if (snapshot !== undefined && version?.id === undefined) {
 				this.mc.logger.sendErrorEvent({
-					eventName: "getSnapshotFetchedTreeWithoutVersionId",
+					eventName: "getSnapshotFetchedTreeWithoutVersionId_core",
+					specifiedVersion,
+					versionId: version?.id,
+					versionTreeId: version?.treeId,
+					versionDate: version?.date,
 					hasVersion: version !== undefined, // if hasVersion is true, this means that the contract with the service was broken.
 				});
 			}
@@ -154,7 +158,11 @@ export class SerializedStateManager {
 			this.mc.logger.sendErrorEvent({ eventName: "getSnapshotTreeFailed", id: version.id });
 		} else if (snapshot !== undefined && version?.id === undefined) {
 			this.mc.logger.sendErrorEvent({
-				eventName: "getSnapshotFetchedTreeWithoutVersionId",
+				eventName: "getSnapshotFetchedTreeWithoutVersionId_tree", // @note Event with error
+				specifiedVersion,
+				versionId: version?.id,
+				versionTreeId: version?.treeId,
+				versionDate: version?.date,
 				hasVersion: version !== undefined, // if hasVersion is true, this means that the contract with the service was broken.
 			});
 		}
