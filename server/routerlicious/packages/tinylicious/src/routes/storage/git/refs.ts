@@ -8,6 +8,7 @@ import { ICreateRefParams, IPatchRefParams, IRef } from "@fluidframework/gitreso
 import { Router } from "express";
 import * as git from "isomorphic-git";
 import nconf from "nconf";
+import * as winston from "winston";
 import * as utils from "../utils";
 
 function refToIRef(ref: string, sha: string): IRef {
@@ -58,6 +59,9 @@ export async function createRef(
 	authorization: string,
 	params: ICreateRefParams,
 ): Promise<IRef> {
+	if (!params.sha) {
+		winston.error(`Writing empty sha to ref ${params.ref}\n${new Error().stack}`);
+	}
 	await git.writeRef({
 		fs,
 		dir: utils.getGitDir(store, tenantId),
@@ -82,6 +86,9 @@ export async function updateRef(
 	const rebasedRef = `refs/${ref}`;
 
 	// There is no updateRef in iso-git so we instead delete/write
+	if (!params.sha) {
+		winston.error(`Writing empty sha to ref ${rebasedRef}\n${new Error().stack}`);
+	}
 	await git.writeRef({
 		fs,
 		dir,
