@@ -8,7 +8,6 @@ import { ICommitDetails } from "@fluidframework/gitresources";
 import { Router } from "express";
 import * as git from "isomorphic-git";
 import nconf from "nconf";
-import * as winston from "winston";
 import { queryParamToNumber, queryParamToString } from "../../../utils";
 import * as utils from "../utils";
 
@@ -68,10 +67,7 @@ export function create(store: nconf.Provider): Router {
 			queryParamToNumber(request.query.count),
 		);
 
-		utils.handleResponse(commitsP, response, false, 200, (value: ICommitDetails[]) => {
-			winston.info(`RETURN: ${JSON.stringify(value)}`);
-			return value;
-		});
+		utils.handleResponse(commitsP, response, false);
 	});
 
 	return router;
