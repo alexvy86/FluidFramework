@@ -3,24 +3,26 @@
  * Licensed under the MIT License.
  */
 
-import { ITelemetryLoggerExt } from "@fluidframework/telemetry-utils";
 import {
 	IDocumentStorageService,
 	IDocumentStorageServicePolicies,
 	LoaderCachingPolicy,
-} from "@fluidframework/driver-definitions";
-import { ISnapshotTree, IVersion } from "@fluidframework/protocol-definitions";
+	ISnapshotTree,
+	IVersion,
+} from "@fluidframework/driver-definitions/internal";
 import {
 	DocumentStorageServiceProxy,
 	PrefetchDocumentStorageService,
-} from "@fluidframework/driver-utils";
-import { IRouterliciousDriverPolicies } from "./policies";
-import { ICache } from "./cache";
-import { WholeSummaryDocumentStorageService } from "./wholeSummaryDocumentStorageService";
-import { ShreddedSummaryDocumentStorageService } from "./shreddedSummaryDocumentStorageService";
-import { GitManager } from "./gitManager";
-import { ISnapshotTreeVersion } from "./definitions";
-import { INormalizedWholeSummary } from "./contracts";
+} from "@fluidframework/driver-utils/internal";
+import { ITelemetryLoggerExt } from "@fluidframework/telemetry-utils/internal";
+
+import { ICache } from "./cache.js";
+import { INormalizedWholeSnapshot } from "./contracts.js";
+import { ISnapshotTreeVersion } from "./definitions.js";
+import { GitManager } from "./gitManager.js";
+import { IRouterliciousDriverPolicies } from "./policies.js";
+import { ShreddedSummaryDocumentStorageService } from "./shreddedSummaryDocumentStorageService.js";
+import { WholeSummaryDocumentStorageService } from "./wholeSummaryDocumentStorageService.js";
 
 export class DocumentStorageService extends DocumentStorageServiceProxy {
 	private _logTailSha: string | undefined = undefined;
@@ -36,7 +38,7 @@ export class DocumentStorageService extends DocumentStorageServiceProxy {
 		policies: IDocumentStorageServicePolicies,
 		driverPolicies?: IRouterliciousDriverPolicies,
 		blobCache?: ICache<ArrayBufferLike>,
-		snapshotTreeCache?: ICache<INormalizedWholeSummary>,
+		snapshotTreeCache?: ICache<INormalizedWholeSnapshot>,
 		shreddedSummaryTreeCache?: ICache<ISnapshotTreeVersion>,
 		noCacheGitManager?: GitManager,
 		getStorageManager?: (disableCache?: boolean) => Promise<GitManager>,
@@ -80,7 +82,7 @@ export class DocumentStorageService extends DocumentStorageServiceProxy {
 		policies: IDocumentStorageServicePolicies,
 		driverPolicies?: IRouterliciousDriverPolicies,
 		blobCache?: ICache<ArrayBufferLike>,
-		snapshotTreeCache?: ICache<INormalizedWholeSummary>,
+		snapshotTreeCache?: ICache<INormalizedWholeSnapshot>,
 		shreddedSummaryTreeCache?: ICache<ISnapshotTreeVersion>,
 		public noCacheGitManager?: GitManager,
 		getStorageManager?: (disableCache?: boolean) => Promise<GitManager>,

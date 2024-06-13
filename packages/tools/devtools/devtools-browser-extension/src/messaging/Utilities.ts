@@ -3,9 +3,12 @@
  * Licensed under the MIT License.
  */
 
-import { ISourcedDevtoolsMessage, MessageLoggingOptions } from "@fluid-experimental/devtools-core";
+import {
+	type ISourcedDevtoolsMessage,
+	type MessageLoggingOptions,
+} from "@fluidframework/devtools-core/internal";
 
-import { TypedPortConnection } from "./TypedPortConnection";
+import { type TypedPortConnection } from "./TypedPortConnection.js";
 
 function formatMessageForLogging(text: string, loggingOptions?: MessageLoggingOptions): string {
 	const loggingPreamble =

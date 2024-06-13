@@ -1,18 +1,94 @@
+# Server Breaking Changes
+
 > **Note:** These breaking changes are only relevant to the server packages and images released from `./routerlicious`.
+
+## Contents
+
+-   [4.0.0 Breaking Changes](#400-breaking-changes)
+
+    -   [An invalid JWT token will now return a 401 error instead of a 500](#an-invalid-jwt-token-will-now-return-a-401-error-instead-of-a-500)
+
+-   [1.0.0 Breaking Changes](#100-breaking-changes)
+
+    -   [getLatestKeyVersion function added to ISecretManager](#getlatestkeyversion-function-added-to-isecretmanager)
+    -   [The ISecretManager.decrypt/encryptSecret functions support encryptionKeyVersion parameter](#the-isecretmanagerdecryptencryptsecret-functions-support-encryptionkeyversion-parameter)
+    -   [`auth.ts` Refactor function validateTokenRevocationClaims to validateTokenScopeClaims](#authts-refactor-function-validatetokenrevocationclaims-to-validatetokenscopeclaims)
+    -   [`IDocumentDeleteService` added to alfred `runnerFactory` and `resource`](#idocumentdeleteservice-added-to-alfred-runnerfactory-and-resource)
+    -   [`DocumentStorage` class take one additional `IStorageNameAllocator` parameter](#documentstorage-class-take-one-additional-istoragenameallocator-parameter)
+    -   [The foreman lambda was removed](#the-foreman-lambda-was-removed)
+
+-   [0.1038 Breaking Changes](#01038-breaking-changes)
+
+-   [0.1037 Breaking Changes](#01037-breaking-changes)
+
+-   [0.1032 Breaking Changes](#01032-breaking-changes)
+
+    -   [@fluidframework/server-services-client@0.1032](#fluidframeworkserver-services-client01032)
+    -   [@fluidframework/gitresources@0.1032](#fluidframeworkgitresources01032)
+
+-   [0.1023 Breaking Changes](#01023-breaking-changes)
+
+    -   [@fluidframework/server-services-shared@0.1023](#fluidframeworkserver-services-shared01023)
+
+-   [0.1022 Breaking Changes](#01022-breaking-changes)
+
+    -   [@fluidframework/server-services-client@0.1022](#fluidframeworkserver-services-client01022)
+    -   [@fluidframework/server-services-utils@0.1022](#fluidframeworkserver-services-utils01022)
+
+-   [0.1020 Breaking Changes](#01020-breaking-changes)
+
+    -   [@fluidframework/server-services-client@0.1020](#fluidframeworkserver-services-client01020)
+
+-   [0.1019 and earlier Breaking Changes](#01019-and-earlier-breaking-changes)
+
+## 4.0.0 Breaking Changes
+
+### An invalid JWT token will now return a 401 error instead of a 500
+
+When we auth request JWT token, previous we would fail directly for the invalid/malformtted JWT token and don't do any handling and return 500. Now it is returning a 401 with Invalid token information
 
 ## 1.0.0 Breaking Changes
 
--   [auth.ts Refactor function validateTokenRevocationClaims to validateTokenScopeClaims]
+### getLatestKeyVersion function added to ISecretManager
 
-#### `auth.ts` Refactor function validateTokenRevocationClaims to validateTokenScopeClaims
+ISecretManager has a new function `getLatestKeyVersion`. By default, just return `undefined` in this function, it will be backward compatible with existing logic. However, you can add custom logic yourself.
+
+```ts
+export class SecretManager implements core.ISecretManager {
+	public getLatestKeyVersion(): core.EncryptionKeyVersion {
+		return undefined;
+	}
+        ......
+}
+```
+
+### The ISecretManager.decrypt/encryptSecret functions support encryptionKeyVersion parameter
+
+`decryptSecret()` and `encryptSecret()`functions in ISecretManager have a new optional parameter `encryptionKeyVersion`.
+
+```ts
+export class SecretManager implements core.ISecretManager {
+        ......
+        public decryptSecret(
+		encryptedSecret: string,
+		encryptionKeyVersion?: core.EncryptionKeyVersion,
+	): string {
+		return encryptedSecret;
+	}
+
+	public encryptSecret(secret: string, encryptionKeyVersion?: core.EncryptionKeyVersion): string {
+		return secret;
+	}
+}
+```
+
+### `auth.ts` Refactor function validateTokenRevocationClaims to validateTokenScopeClaims
 
 Before: `validateTokenRevocationClaims()`
 Now: `validateTokenScopeClaims(expectedScopes: string)`
 Valid expectedScopes are either DocDeleteScopeType or TokenRevokeScopeType
 
--   [IDocumentDeleteService class take one additional IDocumentDeleteService parameter]
-
-#### `IDocumentDeleteService` added to alfred `runnerFactory` and `resource`
+### `IDocumentDeleteService` added to alfred `runnerFactory` and `resource`
 
 ```ts
 export class AlfredResources implements core.IResources {
@@ -29,13 +105,9 @@ export class AlfredResources implements core.IResources {
 
 ```
 
--   [DocumentStorage class take one additional IStorageNameAllocator parameter](#DocumentStorage-class-take-one-additional-IStorageNameAllocator-parameter)
-
-#### `DocumentStorage` class take one additional `IStorageNameAllocator` parameter
+### `DocumentStorage` class take one additional `IStorageNameAllocator` parameter
 
 One more `IStorageNameAllocator` parameter need for DocumentStorage class to assign a storage name while initial upload
-
--   [The foreman lambda was removed](#the-foreman-lambda-was-removed)
 
 ### The foreman lambda was removed
 

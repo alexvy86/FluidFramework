@@ -2,13 +2,14 @@
  * Copyright (c) Microsoft Corporation and contributors. All rights reserved.
  * Licensed under the MIT License.
  */
+
 import { AsyncLocalStorage } from "async_hooks";
 import * as services from "@fluidframework/server-services";
 import * as core from "@fluidframework/server-services-core";
 import * as utils from "@fluidframework/server-services-utils";
 import { Provider } from "nconf";
-import * as Redis from "ioredis";
 import winston from "winston";
+import { RedisClientConnectionManager } from "@fluidframework/server-services-utils";
 import * as historianServices from "./services";
 import { normalizePort, Constants } from "./utils";
 import { HistorianRunner } from "./runner";
@@ -24,17 +25,17 @@ export class HistorianResources implements core.IResources {
 		public readonly storageNameRetriever: core.IStorageNameRetriever,
 		public readonly restTenantThrottlers: Map<string, core.IThrottler>,
 		public readonly restClusterThrottlers: Map<string, core.IThrottler>,
+		public readonly documentManager: core.IDocumentManager,
 		public readonly cache?: historianServices.RedisCache,
 		public readonly asyncLocalStorage?: AsyncLocalStorage<string>,
-		public tokenRevocationManager?: core.ITokenRevocationManager,
+		public revokedTokenChecker?: core.IRevokedTokenChecker,
+		public readonly denyList?: historianServices.IDenyList,
 	) {
-		this.webServerFactory = new services.BasicWebServerFactory();
+		const httpServerConfig: services.IHttpServerConfig = config.get("system:httpServer");
+		this.webServerFactory = new services.BasicWebServerFactory(httpServerConfig);
 	}
 
 	public async dispose(): Promise<void> {
-		if (this.tokenRevocationManager) {
-			await this.tokenRevocationManager.close();
-		}
 		return;
 	}
 }
@@ -45,42 +46,38 @@ export class HistorianResourcesFactory implements core.IResourcesFactory<Histori
 		customizations: IHistorianResourcesCustomizations,
 	): Promise<HistorianResources> {
 		const redisConfig = config.get("redis");
-		const redisOptions: Redis.RedisOptions = {
-			host: redisConfig.host,
-			port: redisConfig.port,
-			password: redisConfig.pass,
-			connectTimeout: redisConfig.connectTimeout,
-			enableReadyCheck: true,
-			maxRetriesPerRequest: redisConfig.maxRetriesPerRequest,
-			enableOfflineQueue: redisConfig.enableOfflineQueue,
-		};
-		if (redisConfig.enableAutoPipelining) {
-			/**
-			 * When enabled, all commands issued during an event loop iteration are automatically wrapped in a
-			 * pipeline and sent to the server at the same time. This can improve performance by 30-50%.
-			 * More info: https://github.com/luin/ioredis#autopipelining
-			 */
-			redisOptions.enableAutoPipelining = true;
-			redisOptions.autoPipeliningIgnoredCommands = ["ping"];
-		}
-		if (redisConfig.tls) {
-			redisOptions.tls = {
-				servername: redisConfig.host,
-			};
-		}
+		const redisClientConnectionManager = customizations?.redisClientConnectionManager
+			? customizations.redisClientConnectionManager
+			: new RedisClientConnectionManager(
+					undefined,
+					redisConfig,
+					redisConfig.enableClustering,
+					redisConfig.slotsRefreshTimeout,
+			  );
 
 		const redisParams = {
 			expireAfterSeconds: redisConfig.keyExpireAfterSeconds as number | undefined,
 		};
 
-		const redisClient = new Redis.default(redisOptions);
+		// const retryDelays = {
+		// 	retryDelayOnFailover: 100,
+		// 	retryDelayOnClusterDown: 100,
+		// 	retryDelayOnTryAgain: 100,
+		// 	retryDelayOnMoved: redisConfig.retryDelayOnMoved ?? 100,
+		// 	maxRedirections: redisConfig.maxRedirections ?? 16,
+		// };
+
 		const disableGitCache = config.get("restGitService:disableGitCache") as boolean | undefined;
 		const gitCache = disableGitCache
 			? undefined
-			: new historianServices.RedisCache(redisClient, redisParams);
-		const tenantCache = new historianServices.RedisTenantCache(redisClient, redisParams);
+			: new historianServices.RedisCache(redisClientConnectionManager, redisParams);
+		const tenantCache = new historianServices.RedisTenantCache(
+			redisClientConnectionManager,
+			redisParams,
+		);
 		// Create services
 		const riddlerEndpoint = config.get("riddler");
+		const alfredEndpoint = config.get("alfred");
 		const asyncLocalStorage = config.get("asyncLocalStorageInstance")?.[0];
 		const riddler = new historianServices.RiddlerService(
 			riddlerEndpoint,
@@ -90,30 +87,16 @@ export class HistorianResourcesFactory implements core.IResourcesFactory<Histori
 
 		// Redis connection for throttling.
 		const redisConfigForThrottling = config.get("redisForThrottling");
-		const redisOptionsForThrottling: Redis.RedisOptions = {
-			host: redisConfigForThrottling.host,
-			port: redisConfigForThrottling.port,
-			password: redisConfigForThrottling.pass,
-			connectTimeout: redisConfigForThrottling.connectTimeout,
-			enableReadyCheck: true,
-			maxRetriesPerRequest: redisConfigForThrottling.maxRetriesPerRequest,
-			enableOfflineQueue: redisConfigForThrottling.enableOfflineQueue,
-		};
-		if (redisConfigForThrottling.enableAutoPipelining) {
-			/**
-			 * When enabled, all commands issued during an event loop iteration are automatically wrapped in a
-			 * pipeline and sent to the server at the same time. This can improve performance by 30-50%.
-			 * More info: https://github.com/luin/ioredis#autopipelining
-			 */
-			redisOptionsForThrottling.enableAutoPipelining = true;
-			redisOptionsForThrottling.autoPipeliningIgnoredCommands = ["ping"];
-		}
-		if (redisConfigForThrottling.tls) {
-			redisOptionsForThrottling.tls = {
-				servername: redisConfigForThrottling.host,
-			};
-		}
-		const redisClientForThrottling = new Redis.default(redisOptionsForThrottling);
+		const redisClientConnectionManagerForThrottling =
+			customizations?.redisClientConnectionManagerForThrottling
+				? customizations.redisClientConnectionManagerForThrottling
+				: new RedisClientConnectionManager(
+						undefined,
+						redisConfigForThrottling,
+						redisConfig.enableClustering,
+						redisConfig.slotsRefreshTimeout,
+				  );
+
 		const redisParamsForThrottling = {
 			expireAfterSeconds: redisConfigForThrottling.keyExpireAfterSeconds as
 				| number
@@ -122,7 +105,7 @@ export class HistorianResourcesFactory implements core.IResourcesFactory<Histori
 
 		const redisThrottleAndUsageStorageManager =
 			new services.RedisThrottleAndUsageStorageManager(
-				redisClientForThrottling,
+				redisClientConnectionManagerForThrottling,
 				redisParamsForThrottling,
 			);
 
@@ -207,7 +190,26 @@ export class HistorianResourcesFactory implements core.IResourcesFactory<Histori
 			? customizations?.storageNameRetriever ?? new services.StorageNameRetriever()
 			: undefined;
 
+		const tenantManager: core.ITenantManager = new services.TenantManager(
+			riddlerEndpoint,
+			undefined /* internalHistorianUrl */,
+		);
+		const documentManager: core.IDocumentManager = new services.DocumentManager(
+			alfredEndpoint,
+			tenantManager,
+			gitCache,
+		);
+
 		const port = normalizePort(process.env.PORT || "3000");
+
+		// Token revocation
+		const revokedTokenChecker: core.IRevokedTokenChecker | undefined =
+			customizations?.revokedTokenChecker ?? new utils.DummyRevokedTokenChecker();
+
+		const denyListConfig = config.get("documentDenyList");
+		const denyList: historianServices.IDenyList = new historianServices.DenyList(
+			denyListConfig,
+		);
 
 		return new HistorianResources(
 			config,
@@ -216,8 +218,11 @@ export class HistorianResourcesFactory implements core.IResourcesFactory<Histori
 			storageNameRetriever,
 			restTenantThrottlers,
 			restClusterThrottlers,
+			documentManager,
 			gitCache,
 			asyncLocalStorage,
+			revokedTokenChecker,
+			denyList,
 		);
 	}
 }
@@ -232,9 +237,11 @@ export class HistorianRunnerFactory implements core.IRunnerFactory<HistorianReso
 			resources.storageNameRetriever,
 			resources.restTenantThrottlers,
 			resources.restClusterThrottlers,
+			resources.documentManager,
 			resources.cache,
 			resources.asyncLocalStorage,
-			resources.tokenRevocationManager,
+			resources.revokedTokenChecker,
+			resources.denyList,
 		);
 	}
 }

@@ -3,18 +3,24 @@
  * Licensed under the MIT License.
  */
 
-import { TelemetryEventPropertyType } from "@fluidframework/common-definitions";
-import {
-	SummaryTree,
-	ISummaryTree,
-	ISequencedDocumentMessage,
+import type { TelemetryBaseEventPropertyType } from "@fluidframework/core-interfaces";
+import type { ISummaryTree } from "@fluidframework/driver-definitions";
+import type {
 	ISnapshotTree,
 	ITree,
-} from "@fluidframework/protocol-definitions";
-import { IGarbageCollectionData, IGarbageCollectionDetailsBase } from "./garbageCollection";
+	SummaryTree,
+	ISequencedDocumentMessage,
+} from "@fluidframework/driver-definitions/internal";
+import type { TelemetryEventPropertyTypeExt } from "@fluidframework/telemetry-utils/internal";
+
+import type {
+	IGarbageCollectionData,
+	IGarbageCollectionDetailsBase,
+} from "./garbageCollectionDefinitions.js";
 
 /**
  * Contains the aggregation data from a Tree/Subtree.
+ * @alpha
  */
 export interface ISummaryStats {
 	treeNodeCount: number;
@@ -30,6 +36,7 @@ export interface ISummaryStats {
  * each of its DDS.
  * Any component that implements IChannelContext, IFluidDataStoreChannel or extends SharedObject
  * will be taking part of the summarization process.
+ * @alpha
  */
 export interface ISummaryTreeWithStats {
 	/**
@@ -45,6 +52,7 @@ export interface ISummaryTreeWithStats {
 
 /**
  * Represents a summary at a current sequence number.
+ * @alpha
  */
 export interface ISummarizeResult {
 	stats: ISummaryStats;
@@ -56,7 +64,8 @@ export interface ISummarizeResult {
  * the data store summaries are wrapped around an array of labels identified by pathPartsForChildren.
  *
  * @example
- * ```
+ *
+ * ```typescript
  * id:""
  * pathPartsForChildren: ["path1"]
  * stats: ...
@@ -64,6 +73,7 @@ export interface ISummarizeResult {
  *   ...
  *     "path1":
  * ```
+ * @alpha
  */
 export interface ISummarizeInternalResult extends ISummarizeResult {
 	id: string;
@@ -76,6 +86,7 @@ export interface ISummarizeInternalResult extends ISummarizeResult {
 /**
  * @experimental - Can be deleted/changed at any time
  * Contains the necessary information to allow DDSes to do incremental summaries
+ * @alpha
  */
 export interface IExperimentalIncrementalSummaryContext {
 	/**
@@ -100,6 +111,9 @@ export interface IExperimentalIncrementalSummaryContext {
 	summaryPath: string;
 }
 
+/**
+ * @alpha
+ */
 export type SummarizeInternalFn = (
 	fullTree: boolean,
 	trackState: boolean,
@@ -107,24 +121,20 @@ export type SummarizeInternalFn = (
 	incrementalSummaryContext?: IExperimentalIncrementalSummaryContext,
 ) => Promise<ISummarizeInternalResult>;
 
+/**
+ * @alpha
+ */
 export interface ISummarizerNodeConfig {
 	/**
 	 * True to reuse previous handle when unchanged since last acked summary.
 	 * Defaults to true.
 	 */
 	readonly canReuseHandle?: boolean;
-	/**
-	 * True to always stop execution on error during summarize, or false to
-	 * attempt creating a summary that is a pointer ot the last acked summary
-	 * plus outstanding ops in case of internal summarize failure.
-	 * Defaults to false.
-	 *
-	 * BUG BUG: Default to true while we investigate problem
-	 * with differential summaries
-	 */
-	readonly throwOnFailure?: true;
 }
 
+/**
+ * @alpha
+ */
 export interface ISummarizerNodeConfigWithGC extends ISummarizerNodeConfig {
 	/**
 	 * True if GC is disabled. If so, don't track GC related state for a summary.
@@ -133,11 +143,17 @@ export interface ISummarizerNodeConfigWithGC extends ISummarizerNodeConfig {
 	readonly gcDisabled?: boolean;
 }
 
+/**
+ * @alpha
+ */
 export enum CreateSummarizerNodeSource {
 	FromSummary,
 	FromAttach,
 	Local,
 }
+/**
+ * @alpha
+ */
 export type CreateChildSummarizerNodeParam =
 	| {
 			type: CreateSummarizerNodeSource.FromSummary;
@@ -151,6 +167,9 @@ export type CreateChildSummarizerNodeParam =
 			type: CreateSummarizerNodeSource.Local;
 	  };
 
+/**
+ * @alpha
+ */
 export interface ISummarizerNode {
 	/**
 	 * Latest successfully acked summary reference sequence number
@@ -163,9 +182,6 @@ export interface ISummarizerNode {
 	invalidate(sequenceNumber: number): void;
 	/**
 	 * Calls the internal summarize function and handles internal state tracking.
-	 * If unchanged and fullTree is false, it will reuse previous summary subtree.
-	 * If an error is encountered and throwOnFailure is false, it will try to make
-	 * a summary with a pointer to the previous summary + a blob of outstanding ops.
 	 * @param fullTree - true to skip optimizations and always generate the full tree
 	 * @param trackState - indicates whether the summarizer node should track the state of the summary or not
 	 * @param telemetryContext - summary data passed through the layers for telemetry purposes
@@ -214,7 +230,9 @@ export interface ISummarizerNode {
 
 	getChild(id: string): ISummarizerNode | undefined;
 
-	/** True if a summary is currently in progress */
+	/**
+	 * True if a summary is currently in progress
+	 */
 	isSummaryInProgress?(): boolean;
 }
 
@@ -239,6 +257,7 @@ export interface ISummarizerNode {
  * `isReferenced`: This tells whether this node is referenced in the document or not.
  *
  * `updateUsedRoutes`: Used to notify this node of routes that are currently in use in it.
+ * @alpha
  */
 export interface ISummarizerNodeWithGC extends ISummarizerNode {
 	createChild(
@@ -263,7 +282,7 @@ export interface ISummarizerNodeWithGC extends ISummarizerNode {
 		config?: ISummarizerNodeConfigWithGC,
 		getGCDataFn?: (fullGC?: boolean) => Promise<IGarbageCollectionData>,
 		/**
-		 * @deprecated - The functionality to update child's base GC details is incorporated in the summarizer node.
+		 * @deprecated The functionality to update child's base GC details is incorporated in the summarizer node.
 		 */
 		getBaseGCDetailsFn?: () => Promise<IGarbageCollectionDetailsBase>,
 	): ISummarizerNodeWithGC;
@@ -297,20 +316,24 @@ export interface ISummarizerNodeWithGC extends ISummarizerNode {
 	updateUsedRoutes(usedRoutes: string[]): void;
 }
 
+/**
+ * @internal
+ */
 export const channelsTreeName = ".channels";
 
 /**
  * Contains telemetry data relevant to summarization workflows.
- * This object is expected to be modified directly by various summarize methods.
+ * This object, in contrast to ITelemetryContext, is expected to be modified directly by various summarize methods.
+ * @internal
  */
-export interface ITelemetryContext {
+export interface ITelemetryContextExt {
 	/**
 	 * Sets value for telemetry data being tracked.
 	 * @param prefix - unique prefix to tag this data with (ex: "fluid:map:")
 	 * @param property - property name of the telemetry data being tracked (ex: "DirectoryCount")
 	 * @param value - value to attribute to this summary telemetry data
 	 */
-	set(prefix: string, property: string, value: TelemetryEventPropertyType): void;
+	set(prefix: string, property: string, value: TelemetryEventPropertyTypeExt): void;
 
 	/**
 	 * Sets multiple values for telemetry data being tracked.
@@ -321,24 +344,43 @@ export interface ITelemetryContext {
 	setMultiple(
 		prefix: string,
 		property: string,
-		values: Record<string, TelemetryEventPropertyType>,
+		values: Record<string, TelemetryEventPropertyTypeExt>,
 	): void;
-
-	/**
-	 * Get the telemetry data being tracked
-	 * @param prefix - unique prefix for this data (ex: "fluid:map:")
-	 * @param property - property name of the telemetry data being tracked (ex: "DirectoryCount")
-	 * @returns undefined if item not found
-	 */
-	get(prefix: string, property: string): TelemetryEventPropertyType;
-
-	/**
-	 * Returns a serialized version of all the telemetry data.
-	 * Should be used when logging in telemetry events.
-	 */
-	serialize(): string;
 }
 
+/**
+ * Contains telemetry data relevant to summarization workflows.
+ * This object is expected to be modified directly by various summarize methods.
+ * @alpha
+ */
+export interface ITelemetryContext {
+	/**
+	 * Sets value for telemetry data being tracked.
+	 * @param prefix - unique prefix to tag this data with (ex: "fluid:map:")
+	 * @param property - property name of the telemetry data being tracked (ex: "DirectoryCount")
+	 * @param value - value to attribute to this summary telemetry data
+	 */
+	set(prefix: string, property: string, value: TelemetryBaseEventPropertyType): void;
+
+	/**
+	 * Sets multiple values for telemetry data being tracked.
+	 * @param prefix - unique prefix to tag this data with (ex: "fluid:summarize:")
+	 * @param property - property name of the telemetry data being tracked (ex: "Options")
+	 * @param values - A set of values to attribute to this summary telemetry data.
+	 */
+	setMultiple(
+		prefix: string,
+		property: string,
+		values: Record<string, TelemetryBaseEventPropertyType>,
+	): void;
+}
+
+/**
+ * @internal
+ */
 export const blobCountPropertyName = "BlobCount";
 
+/**
+ * @internal
+ */
 export const totalBlobSizePropertyName = "TotalBlobSize";

@@ -3,16 +3,16 @@
  * Licensed under the MIT License.
  */
 
-export {
+export type {
 	SharedObjectType,
 	VisualizeSharedObject,
 	VisualizeChildData,
 	SharedObjectVisualizers,
 	DataVisualizerEvents,
-	DataVisualizerGraph,
-	visualizeChildData,
-	VisualizerNode,
-} from "./DataVisualization";
+} from "./DataVisualization.js";
+export { DataVisualizerGraph, visualizeChildData, VisualizerNode } from "./DataVisualization.js";
+export type { Edit, EditData, EditSharedObject, SharedObjectEdit } from "./DataEditing.js";
+export { defaultEditors } from "./DefaultEditors.js";
 export {
 	defaultVisualizers,
 	visualizeSharedCell,
@@ -23,9 +23,8 @@ export {
 	visualizeSharedString,
 	visualizeSharedTree,
 	visualizeUnknownSharedObject,
-} from "./DefaultVisualizers";
-export {
-	createHandleNode,
+} from "./DefaultVisualizers.js";
+export type {
 	FluidHandleNode,
 	FluidObjectNode,
 	FluidObjectNodeBase,
@@ -39,8 +38,8 @@ export {
 	ValueNodeBase,
 	VisualNodeBase,
 	VisualNode,
-	VisualNodeKind,
 	VisualTreeNode,
 	VisualValueNode,
 	UnknownObjectNode,
-} from "./VisualTree";
+} from "./VisualTree.js";
+export { createHandleNode, VisualNodeKind } from "./VisualTree.js";

@@ -4,19 +4,18 @@
  */
 
 import { strict as assert } from "assert";
-import { makeRandom } from "@fluid-internal/stochastic-test-utils";
-import { Client } from "@fluidframework/merge-tree";
-import {
-	Interval,
-	IStartpointInRangeIndex,
-	createStartpointInRangeIndex,
-	intervalHelpers,
-} from "../intervalCollection";
+
+import { makeRandom } from "@fluid-private/stochastic-test-utils";
+import { Client } from "@fluidframework/merge-tree/internal";
+
+import { IStartpointInRangeIndex, StartpointInRangeIndex } from "../intervalIndex/index.js";
+import { Interval, intervalHelpers } from "../intervals/index.js";
+
 import {
 	assertPlainNumberIntervals,
 	createTestInterval,
 	generateRandomIntervals,
-} from "./intervalIndexUtils";
+} from "./intervalIndexTestUtils.js";
 
 class TestStartpointInRangeIndex implements IStartpointInRangeIndex<Interval> {
 	private readonly intervals: Interval[];
@@ -56,7 +55,7 @@ describe("findIntervalsWithStartpointInRange", () => {
 	let results;
 
 	beforeEach(() => {
-		startpointInRangeIndex = createStartpointInRangeIndex(helpers, undefined as any as Client);
+		startpointInRangeIndex = new StartpointInRangeIndex(undefined as any as Client, helpers);
 	});
 
 	describe("finds no intervals", () => {

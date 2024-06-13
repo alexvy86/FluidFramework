@@ -5,14 +5,14 @@
 
 import {
 	ICodeDetailsLoader,
-	IFluidModule,
-	IProvideRuntimeFactory,
 	IFluidCodeDetails,
 	IFluidCodeDetailsComparer,
+	IFluidModule,
 	IFluidModuleWithDetails,
-} from "@fluidframework/container-definitions";
+	IProvideRuntimeFactory,
+} from "@fluidframework/container-definitions/internal";
 import { IRequest } from "@fluidframework/core-interfaces";
-import { IResolvedUrl, IUrlResolver } from "@fluidframework/driver-definitions";
+import { IResolvedUrl, IUrlResolver } from "@fluidframework/driver-definitions/internal";
 
 /**
  * URL Resolver for the replay tool.
@@ -22,7 +22,8 @@ export class ReplayUrlResolver implements IUrlResolver {
 
 	public async resolve(request: IRequest): Promise<IResolvedUrl> {
 		if (!this.cache.has(request.url)) {
-			return Promise.reject(new Error(`ContainerUrlResolver can't resolve ${request}`));
+			// eslint-disable-next-line @typescript-eslint/no-base-to-string
+			throw new Error(`ContainerUrlResolver can't resolve ${request}`);
 		}
 		return this.cache.get(request.url);
 	}

@@ -3,13 +3,13 @@
  * Licensed under the MIT License.
  */
 
-import { IResolvedUrl } from "@fluidframework/driver-definitions";
+import { ISummaryTree } from "@fluidframework/driver-definitions";
+import { IResolvedUrl } from "@fluidframework/driver-definitions/internal";
 import {
 	getDocAttributesFromProtocolSummary,
 	getQuorumValuesFromProtocolSummary,
 	isCombinedAppAndProtocolSummary,
-} from "@fluidframework/driver-utils";
-import { ISummaryTree } from "@fluidframework/protocol-definitions";
+} from "@fluidframework/driver-utils/internal";
 import { LocalDeltaConnectionServer } from "@fluidframework/server-local-server";
 import { defaultHash } from "@fluidframework/server-services-client";
 
@@ -37,13 +37,12 @@ export async function createDocument(
 		id,
 		appSummary,
 		sequenceNumber,
-		// "term" was an experimental feature that is being removed.  The only safe value to use is 1.
-		1, // term
 		defaultHash,
 		resolvedUrl.endpoints.ordererUrl ?? "",
 		resolvedUrl.endpoints.storageUrl ?? "",
 		resolvedUrl.endpoints.deltaStorageUrl ?? "",
 		quorumValues,
 		false /* enableDiscovery */,
+		false /* isEphemeralContainer */,
 	);
 }

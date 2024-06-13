@@ -2,16 +2,23 @@
  * Copyright (c) Microsoft Corporation and contributors. All rights reserved.
  * Licensed under the MIT License.
  */
-import { InterdependencyRange, DEFAULT_INTERDEPENDENCY_RANGE } from "@fluid-tools/version-tools";
+
+import * as path from "path";
+import {
+	DEFAULT_INTERDEPENDENCY_RANGE,
+	InterdependencyRange,
+} from "@fluid-tools/version-tools";
 import { getPackagesSync } from "@manypkg/get-packages";
 import { readFileSync, readJsonSync } from "fs-extra";
-import * as path from "path";
 import YAML from "yaml";
 
 import { IFluidBuildConfig, IFluidRepoPackage } from "./fluidRepo";
 import { Logger, defaultLogger } from "./logging";
-import { Package, PackageJson } from "./npmPackage";
+import { Package } from "./npmPackage";
 import { execWithErrorAsync, existsSync, rimrafWithErrorAsync } from "./utils";
+
+import registerDebug from "debug";
+const traceInit = registerDebug("fluid-build:init");
 
 export type PackageManager = "npm" | "pnpm" | "yarn";
 
@@ -39,9 +46,24 @@ export class MonoRepo {
 	public readonly packages: Package[] = [];
 	public readonly version: string;
 	public readonly workspaceGlobs: string[];
-	private _packageJson: PackageJson;
+	public readonly pkg: Package;
 
-	static load(group: string, repoPackage: IFluidRepoPackage, log: Logger) {
+	public get name(): string {
+		return this.kind;
+	}
+
+	/**
+	 * The directory of the root of the release group.
+	 */
+	public get directory(): string {
+		return this.repoPath;
+	}
+
+	public get releaseGroup(): "build-tools" | "client" | "server" | "gitrest" | "historian" {
+		return this.kind as "build-tools" | "client" | "server" | "gitrest" | "historian";
+	}
+
+	static load(group: string, repoPackage: IFluidRepoPackage) {
 		const { directory, ignoredDirs, defaultInterdependencyRange } = repoPackage;
 		let packageManager: PackageManager;
 		let packageDirs: string[];
@@ -73,7 +95,7 @@ export class MonoRepo {
 			packageDirs = packages.filter((pkg) => pkg.relativeDir !== ".").map((pkg) => pkg.dir);
 
 			if (defaultInterdependencyRange === undefined) {
-				log?.warning(
+				traceInit(
 					`No defaultinterdependencyRange specified for ${group} release group. Defaulting to "${DEFAULT_INTERDEPENDENCY_RANGE}".`,
 				);
 			}
@@ -88,7 +110,6 @@ export class MonoRepo {
 			packageManager,
 			packageDirs,
 			ignoredDirs,
-			log,
 		);
 	}
 
@@ -111,9 +132,7 @@ export class MonoRepo {
 	) {
 		this.version = "";
 		this.workspaceGlobs = [];
-		const pnpmWorkspace = path.join(repoPath, "pnpm-workspace.yaml");
-		const lernaPath = path.join(repoPath, "lerna.json");
-		const yarnLockPath = path.join(repoPath, "yarn.lock");
+
 		const packagePath = path.join(repoPath, "package.json");
 		let versionFromLerna = false;
 
@@ -121,55 +140,53 @@ export class MonoRepo {
 			throw new Error(`ERROR: package.json not found in ${repoPath}`);
 		}
 
-		this._packageJson = readJsonSync(packagePath);
+		this.pkg = Package.load(packagePath, kind, this);
 
-		const validatePackageManager = existsSync(pnpmWorkspace)
-			? "pnpm"
-			: existsSync(yarnLockPath)
-			? "yarn"
-			: "npm";
-
-		if (this.packageManager !== validatePackageManager) {
+		if (this.packageManager !== this.pkg.packageManager) {
 			throw new Error(
-				`Package manager mismatch between ${packageManager} and ${validatePackageManager}`,
+				`Package manager mismatch between ${packageManager} and ${this.pkg.packageManager}`,
 			);
 		}
 
+		for (const pkgDir of packageDirs) {
+			traceInit(`${kind}: Loading packages from ${pkgDir}`);
+			this.packages.push(Package.load(path.join(pkgDir, "package.json"), kind, this));
+		}
+
+		if (packageManager === "pnpm") {
+			const pnpmWorkspace = path.join(repoPath, "pnpm-workspace.yaml");
+			const workspaceString = readFileSync(pnpmWorkspace, "utf-8");
+			this.workspaceGlobs = YAML.parse(workspaceString).packages;
+		}
+
+		// only needed for bump tools
+		const lernaPath = path.join(repoPath, "lerna.json");
 		if (existsSync(lernaPath)) {
 			const lerna = readJsonSync(lernaPath);
-			if (packageManager === "pnpm") {
-				const workspaceString = readFileSync(pnpmWorkspace, "utf-8");
-				this.workspaceGlobs = YAML.parse(workspaceString).packages;
-			} else if (lerna.packages !== undefined) {
+			if (packageManager !== "pnpm" && lerna.packages !== undefined) {
 				this.workspaceGlobs = lerna.packages;
 			}
 
 			if (lerna.version !== undefined) {
-				logger.verbose(`${kind}: Loading version (${lerna.version}) from ${lernaPath}`);
+				traceInit(`${kind}: Loading version (${lerna.version}) from ${lernaPath}`);
 				this.version = lerna.version;
 				versionFromLerna = true;
 			}
-		} else {
+		} else if (packageManager !== "pnpm") {
 			// Load globs from package.json directly
-			if (this._packageJson.workspaces instanceof Array) {
-				this.workspaceGlobs = this._packageJson.workspaces;
+			if (this.pkg.packageJson.workspaces instanceof Array) {
+				this.workspaceGlobs = this.pkg.packageJson.workspaces;
 			} else {
-				this.workspaceGlobs = (this._packageJson.workspaces as any).packages;
+				this.workspaceGlobs = (this.pkg.packageJson.workspaces as any).packages;
 			}
 		}
 
 		if (!versionFromLerna) {
-			this.version = this._packageJson.version;
-			logger.verbose(
-				`${kind}: Loading version (${this._packageJson.version}) from ${packagePath}`,
+			this.version = this.pkg.packageJson.version;
+			traceInit(
+				`${kind}: Loading version (${this.pkg.packageJson.version}) from ${packagePath}`,
 			);
 		}
-
-		logger.verbose(`${kind}: Loading packages from ${packageManager}`);
-		for (const pkgDir of packageDirs) {
-			this.packages.push(new Package(path.join(pkgDir, "package.json"), kind, this));
-		}
-		return;
 	}
 
 	public static isSame(a: MonoRepo | undefined, b: MonoRepo | undefined) {
@@ -180,12 +197,12 @@ export class MonoRepo {
 		return this.packageManager === "pnpm"
 			? "pnpm i"
 			: this.packageManager === "yarn"
-			? "npm run install-strict"
-			: "npm i --no-package-lock --no-shrinkwrap";
+				? "npm run install-strict"
+				: "npm i --no-package-lock --no-shrinkwrap";
 	}
 
 	public get fluidBuildConfig(): IFluidBuildConfig | undefined {
-		return this._packageJson.fluidBuild;
+		return this.pkg.packageJson.fluidBuild;
 	}
 
 	public getNodeModulePath() {
@@ -193,7 +210,7 @@ export class MonoRepo {
 	}
 
 	public async install() {
-		this.logger.info(`${this.kind}: Installing - ${this.installCommand}`);
+		this.logger.log(`Release group ${this.kind}: Installing - ${this.installCommand}`);
 		return execWithErrorAsync(this.installCommand, { cwd: this.repoPath }, this.repoPath);
 	}
 	public async uninstall() {

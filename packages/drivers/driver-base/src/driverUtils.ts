@@ -3,14 +3,15 @@
  * Licensed under the MIT License.
  */
 
-import { performance } from "@fluidframework/common-utils";
-import { ISequencedDocumentMessage } from "@fluidframework/protocol-definitions";
-import { ITelemetryLoggerExt } from "@fluidframework/telemetry-utils";
+import { performance } from "@fluid-internal/client-utils";
+import { ISequencedDocumentMessage } from "@fluidframework/driver-definitions/internal";
+import { ITelemetryLoggerExt } from "@fluidframework/telemetry-utils/internal";
 
 /**
  * Extract and return the w3c data.
  * @param url - request url for which w3c data needs to be reported.
  * @param initiatorType - type of the network call
+ * @internal
  */
 export function getW3CData(url: string, initiatorType: string) {
 	// From: https://developer.mozilla.org/en-US/docs/Web/API/PerformanceResourceTiming
@@ -92,9 +93,10 @@ export function getW3CData(url: string, initiatorType: string) {
 	};
 }
 
-/*
+/**
  * An implementation of Promise.race that gives you the winner of the promise race.
  * If one of the promises is rejected before any other is resolved, this method will return the error/reason from that rejection.
+ * @internal
  */
 export async function promiseRaceWithWinner<T>(
 	promises: Promise<T>[],
@@ -106,28 +108,36 @@ export async function promiseRaceWithWinner<T>(
 	});
 }
 
+/**
+ * @internal
+ */
 export function validateMessages(
 	reason: string,
 	messages: ISequencedDocumentMessage[],
 	from: number,
 	logger: ITelemetryLoggerExt,
+	strict: boolean = true,
 ) {
 	if (messages.length !== 0) {
 		const start = messages[0].sequenceNumber;
 		const length = messages.length;
 		const last = messages[length - 1].sequenceNumber;
-		if (start !== from) {
-			logger.sendErrorEvent({
-				eventName: "OpsFetchViolation",
-				reason,
-				from,
-				start,
-				last,
-				length,
-			});
-			messages.length = 0;
-		}
 		if (last + 1 !== from + length) {
+			// If not strict, then return the first consecutive sub-block. If strict or start
+			// seq number is not what we expected, then return no ops.
+			if (strict || from !== start) {
+				messages.length = 0;
+			} else {
+				let validOpsCount = 1;
+				while (
+					validOpsCount < messages.length &&
+					messages[validOpsCount].sequenceNumber ===
+						messages[validOpsCount - 1].sequenceNumber + 1
+				) {
+					validOpsCount++;
+				}
+				messages.length = validOpsCount;
+			}
 			logger.sendErrorEvent({
 				eventName: "OpsFetchViolation",
 				reason,
@@ -135,9 +145,15 @@ export function validateMessages(
 				start,
 				last,
 				length,
+				details: JSON.stringify({
+					validLength: messages.length,
+					lastValidOpSeqNumber:
+						messages.length > 0
+							? messages[messages.length - 1].sequenceNumber
+							: undefined,
+					strict,
+				}),
 			});
-			// we can do better here by finding consecutive sub-block and return it
-			messages.length = 0;
 		}
 	}
 }

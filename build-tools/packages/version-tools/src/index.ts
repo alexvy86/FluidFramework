@@ -23,6 +23,7 @@ export {
 	WorkspaceRanges,
 } from "./bumpTypes";
 export {
+	DEFAULT_PRERELEASE_IDENTIFIER,
 	changePreReleaseIdentifier,
 	getVersionRange,
 	fromInternalScheme,
@@ -39,4 +40,5 @@ export {
 	VersionScheme,
 } from "./schemes";
 export { bumpRange, detectBumpType, isPrereleaseVersion, getPreviousVersions } from "./semver";
+export { getIsLatest, getSimpleVersion } from "./versions";
 export { fromVirtualPatchScheme, toVirtualPatchScheme } from "./virtualPatchScheme";

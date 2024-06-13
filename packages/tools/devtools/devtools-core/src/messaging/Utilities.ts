@@ -3,8 +3,8 @@
  * Licensed under the MIT License.
  */
 
-import { devtoolsMessageSource } from "./Constants";
-import { IDevtoolsMessage, ISourcedDevtoolsMessage } from "./Messages";
+import { devtoolsMessageSource } from "./Constants.js";
+import { type IDevtoolsMessage, type ISourcedDevtoolsMessage } from "./Messages.js";
 
 /**
  * Posts the provided message to the window (globalThis).
@@ -41,6 +41,7 @@ export function postMessagesToWindow<TMessage extends IDevtoolsMessage>(
  *
  * @internal
  */
+// eslint-disable-next-line @typescript-eslint/consistent-indexed-object-style
 export interface InboundHandlers {
 	/**
 	 * Mapping from {@link IDevtoolsMessage."type"}s to a handler callback for that message type.

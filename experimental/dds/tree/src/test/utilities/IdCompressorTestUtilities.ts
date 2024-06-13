@@ -5,44 +5,46 @@
 
 /* eslint-disable no-bitwise */
 
-import { expect, assert } from 'chai';
 import {
+	BaseFuzzTestState,
 	Generator,
+	SaveInfo,
 	createWeightedGenerator,
 	interleave,
 	makeRandom,
 	performFuzzActions as performFuzzActionsBase,
 	repeat,
-	SaveInfo,
 	take,
-	BaseFuzzTestState,
-} from '@fluid-internal/stochastic-test-utils';
-import { ITelemetryLoggerExt } from '@fluidframework/telemetry-utils';
-import { assertNotUndefined, ClosedMap, fail, getOrCreate } from '../../Common';
-import { IdCompressor, isLocalId } from '../../id-compressor/IdCompressor';
+} from '@fluid-private/stochastic-test-utils';
+import { ITelemetryBaseLogger } from '@fluidframework/core-interfaces';
+import { assert, expect } from 'chai';
+
+import { ClosedMap, assertNotUndefined, fail, getOrCreate } from '../../Common.js';
 import {
+	AttributionId,
+	FinalCompressedId,
+	OpSpaceCompressedId,
+	SessionId,
+	SessionSpaceCompressedId,
+	StableId,
+} from '../../Identifiers.js';
+import { assertIsStableId, assertIsUuidString } from '../../UuidUtilities.js';
+import { IdCompressor, isLocalId } from '../../id-compressor/IdCompressor.js';
+import { getIds } from '../../id-compressor/IdRange.js';
+import {
+	NumericUuid,
 	createSessionId,
 	ensureSessionUuid,
-	NumericUuid,
 	numericUuidFromStableId,
 	stableIdFromNumericUuid,
-} from '../../id-compressor/NumericUuid';
-import {
-	FinalCompressedId,
-	SessionId,
-	StableId,
-	SessionSpaceCompressedId,
-	AttributionId,
-	OpSpaceCompressedId,
-} from '../../Identifiers';
-import { getIds } from '../../id-compressor/IdRange';
+} from '../../id-compressor/NumericUuid.js';
 import type {
 	IdCreationRange,
-	SerializedIdCompressorWithOngoingSession,
 	SerializedIdCompressorWithNoSession,
-} from '../../id-compressor';
-import { assertIsStableId, assertIsUuidString } from '../../UuidUtilities';
-import { expectDefined } from './TestCommon';
+	SerializedIdCompressorWithOngoingSession,
+} from '../../id-compressor/index.js';
+
+import { expectDefined } from './TestCommon.js';
 
 /** Identifies a compressor in a network */
 export enum Client {
@@ -79,7 +81,7 @@ export function createCompressor(
 	client: Client,
 	clusterCapacity = 5,
 	attributionId?: AttributionId,
-	logger?: ITelemetryLoggerExt
+	logger?: ITelemetryBaseLogger
 ): IdCompressor {
 	const compressor = new IdCompressor(sessionIds.get(client), 1024, attributionId, logger);
 	compressor.clusterCapacity = clusterCapacity;
@@ -436,7 +438,7 @@ export class IdCompressorTestNetwork {
 		): Iterable<
 			[
 				current: [compressor: IdCompressor, idData: TestIdData],
-				next?: [compressor: IdCompressor, idData: TestIdData]
+				next?: [compressor: IdCompressor, idData: TestIdData],
 			]
 		> {
 			let current = getNextLogWithEntryAt(0, columnIndex);

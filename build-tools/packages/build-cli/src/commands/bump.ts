@@ -2,8 +2,9 @@
  * Copyright (c) Microsoft Corporation and contributors. All rights reserved.
  * Licensed under the MIT License.
  */
+
+import { strict as assert } from "node:assert";
 import { Flags } from "@oclif/core";
-import { strict as assert } from "assert";
 import chalk from "chalk";
 import inquirer from "inquirer";
 import * as semver from "semver";
@@ -14,7 +15,6 @@ import {
 	InterdependencyRange,
 	RangeOperators,
 	ReleaseVersion,
-	VersionBumpType,
 	VersionChangeType,
 	VersionScheme,
 	WorkspaceRanges,
@@ -23,26 +23,27 @@ import {
 	isInterdependencyRange,
 } from "@fluid-tools/version-tools";
 
-import { findPackageOrReleaseGroup, packageOrReleaseGroupArg } from "../args";
-import { BaseCommand } from "../base";
-import { bumpTypeFlag, checkFlags, skipCheckFlag, versionSchemeFlag } from "../flags";
+import { findPackageOrReleaseGroup, packageOrReleaseGroupArg } from "../args.js";
+import { bumpTypeFlag, checkFlags, skipCheckFlag, versionSchemeFlag } from "../flags.js";
 import {
+	BaseCommand,
 	generateBumpVersionBranchName,
 	generateBumpVersionCommitMessage,
 	setVersion,
-} from "../lib";
+} from "../library/index.js";
 
 export default class BumpCommand extends BaseCommand<typeof BumpCommand> {
-	static summary =
+	static readonly summary =
 		"Bumps the version of a release group or package to the next minor, major, or patch version, or to a specific version, with control over the interdependency version ranges.";
 
-	static description = `The bump command is used to bump the version of a release groups or individual packages within the repo. Typically this is done as part of the release process (see the release command), but it is sometimes useful to bump without doing a release, for example when moving a package from one release group to another.`;
+	static readonly description =
+		`The bump command is used to bump the version of a release groups or individual packages within the repo. Typically this is done as part of the release process (see the release command), but it is sometimes useful to bump without doing a release, for example when moving a package from one release group to another.`;
 
-	static args = {
-		package_or_release_group: packageOrReleaseGroupArg,
-	};
+	static readonly args = {
+		package_or_release_group: packageOrReleaseGroupArg(),
+	} as const;
 
-	static flags = {
+	static readonly flags = {
 		bumpType: bumpTypeFlag({
 			char: "t",
 			description:
@@ -81,7 +82,7 @@ export default class BumpCommand extends BaseCommand<typeof BumpCommand> {
 		...BaseCommand.flags,
 	};
 
-	static examples = [
+	static readonly examples = [
 		{
 			description: "Bump @fluidframework/build-common to the next minor version.",
 			command: "<%= config.bin %> <%= command.id %> @fluidframework/build-common -t minor",
@@ -116,8 +117,7 @@ export default class BumpCommand extends BaseCommand<typeof BumpCommand> {
 	private readonly finalMessages: string[] = [];
 
 	public async run(): Promise<void> {
-		const args = this.args;
-		const flags = this.flags;
+		const { args, flags } = this;
 
 		if (args.package_or_release_group === undefined) {
 			this.error("No dependency provided.");
@@ -133,7 +133,7 @@ export default class BumpCommand extends BaseCommand<typeof BumpCommand> {
 			: undefined;
 
 		const context = await this.getContext();
-		const bumpType: VersionBumpType | undefined = flags.bumpType;
+		const { bumpType } = flags;
 		const workspaceProtocol =
 			typeof interdependencyRange === "string"
 				? interdependencyRange?.startsWith("workspace:")
@@ -141,14 +141,13 @@ export default class BumpCommand extends BaseCommand<typeof BumpCommand> {
 		const shouldInstall: boolean = flags.install && !flags.skipChecks;
 		const shouldCommit: boolean = flags.commit && !flags.skipChecks;
 
-		const rgOrPackageName = args.package_or_release_group;
-		if (rgOrPackageName === undefined) {
+		if (args.package_or_release_group === undefined) {
 			this.error("No dependency provided.");
 		}
 
-		const rgOrPackage = findPackageOrReleaseGroup(rgOrPackageName, context);
+		const rgOrPackage = findPackageOrReleaseGroup(args.package_or_release_group, context);
 		if (rgOrPackage === undefined) {
-			this.error(`Package not found: ${rgOrPackageName}`);
+			this.error(`Package not found: ${args.package_or_release_group}`);
 		}
 
 		if (bumpType === undefined && flags.exact === undefined) {
@@ -167,7 +166,7 @@ export default class BumpCommand extends BaseCommand<typeof BumpCommand> {
 
 		if (rgOrPackage instanceof MonoRepo) {
 			const releaseRepo = rgOrPackage;
-			assert(releaseRepo !== undefined, `Release repo not found for ${rgOrPackageName}`);
+			assert(releaseRepo !== undefined, `Release repo not found for ${rgOrPackage.name}`);
 
 			repoVersion = releaseRepo.version;
 			scheme = flags.scheme ?? detectVersionScheme(repoVersion);
@@ -196,10 +195,8 @@ export default class BumpCommand extends BaseCommand<typeof BumpCommand> {
 		}
 
 		const newVersion =
-			exactVersion === null
-				? // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-				  bumpVersionScheme(repoVersion, bumpType!, scheme)
-				: exactVersion;
+			// eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+			exactVersion ?? bumpVersionScheme(repoVersion, bumpType!, scheme);
 
 		let bumpArg: VersionChangeType;
 		if (bumpType === undefined) {
@@ -216,15 +213,13 @@ export default class BumpCommand extends BaseCommand<typeof BumpCommand> {
 		scheme = flags.scheme ?? detectVersionScheme(newVersion);
 
 		this.logHr();
-		this.log(`Release group: ${chalk.blueBright(rgOrPackageName)}`);
+		this.log(`Release group/package: ${chalk.blueBright(rgOrPackage.name)}`);
 		this.log(`Bump type: ${chalk.blue(bumpType ?? "exact")}`);
 		this.log(`Scheme: ${chalk.cyan(scheme)}`);
 		this.log(`Workspace protocol: ${workspaceProtocol === true ? chalk.green("yes") : "no"}`);
-		this.log(`Versions: ${newVersion} <== ${repoVersion}`);
+		this.log(`Versions: ${newVersion.version} <== ${repoVersion}`);
 		this.log(
-			`Interdependency range: ${
-				interdependencyRange === "" ? "exact" : interdependencyRange
-			}`,
+			`Interdependency range: ${interdependencyRange === "" ? "exact" : interdependencyRange}`,
 		);
 		this.log(`Install: ${shouldInstall ? chalk.green("yes") : "no"}`);
 		this.log(`Commit: ${shouldCommit ? chalk.green("yes") : "no"}`);
@@ -256,7 +251,7 @@ export default class BumpCommand extends BaseCommand<typeof BumpCommand> {
 		);
 
 		if (shouldInstall) {
-			if (!(await FluidRepo.ensureInstalled(updatedPackages, false))) {
+			if (!(await FluidRepo.ensureInstalled(updatedPackages))) {
 				this.error("Install failed.");
 			}
 		} else {
@@ -265,14 +260,14 @@ export default class BumpCommand extends BaseCommand<typeof BumpCommand> {
 
 		if (shouldCommit) {
 			const commitMessage = generateBumpVersionCommitMessage(
-				rgOrPackageName,
+				rgOrPackage.name,
 				bumpArg,
 				repoVersion,
 				scheme,
 			);
 
 			const bumpBranch = generateBumpVersionBranchName(
-				rgOrPackageName,
+				rgOrPackage.name,
 				bumpArg,
 				repoVersion,
 				scheme,

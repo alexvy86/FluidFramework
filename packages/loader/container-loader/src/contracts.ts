@@ -3,29 +3,44 @@
  * Licensed under the MIT License.
  */
 
-import { ITelemetryProperties } from "@fluidframework/common-definitions";
+import { ICriticalContainerError } from "@fluidframework/container-definitions";
 import {
 	IDeltaQueue,
 	ReadOnlyInfo,
-	IConnectionDetailsInternal,
-	ICriticalContainerError,
 	IFluidCodeDetails,
 	isFluidPackage,
-} from "@fluidframework/container-definitions";
+	IConnectionDetails,
+} from "@fluidframework/container-definitions/internal";
+import { IErrorBase, ITelemetryBaseProperties } from "@fluidframework/core-interfaces";
+import { ConnectionMode, IClientDetails } from "@fluidframework/driver-definitions";
 import {
-	ConnectionMode,
-	IDocumentMessage,
-	ISequencedDocumentMessage,
+	IContainerPackageInfo,
 	IClientConfiguration,
-	IClientDetails,
+	IDocumentMessage,
+	ISignalClient,
+	ISequencedDocumentMessage,
 	ISignalMessage,
-} from "@fluidframework/protocol-definitions";
-import { IAnyDriverError, IContainerPackageInfo } from "@fluidframework/driver-definitions";
+} from "@fluidframework/driver-definitions/internal";
 
 export enum ReconnectMode {
 	Never = "Never",
 	Disabled = "Disabled",
 	Enabled = "Enabled",
+}
+
+export interface IConnectionStateChangeReason<T extends IErrorBase = IErrorBase> {
+	text: string;
+	error?: T;
+}
+
+/**
+ * Internal version of IConnectionDetails with props are only exposed internally
+ */
+export interface IConnectionDetailsInternal extends IConnectionDetails {
+	mode: ConnectionMode;
+	version: string;
+	initialClients: ISignalClient[];
+	reason: IConnectionStateChangeReason;
 }
 
 /**
@@ -57,12 +72,12 @@ export interface IConnectionManager {
 	// Various connectivity properties for telemetry describing type of current connection
 	// Things like connection mode, service info, etc.
 	// Called when connection state changes (connect / disconnect)
-	readonly connectionProps: ITelemetryProperties;
+	readonly connectionProps: ITelemetryBaseProperties;
 
 	// Verbose information about connection logged to telemetry in case of issues with
 	// maintaining healthy connection, including op gaps, not receiving join op in time, etc.
 	// Contains details information, like sequence numbers at connection time, initial ops info, etc.
-	readonly connectionVerboseProps: ITelemetryProperties;
+	readonly connectionVerboseProps: ITelemetryBaseProperties;
 
 	/**
 	 * Prepares message to be sent. Fills in clientSequenceNumber.
@@ -84,7 +99,7 @@ export interface IConnectionManager {
 	 * Submits signal to relay service.
 	 * Called only when active connection is present.
 	 */
-	submitSignal(content: any): void;
+	submitSignal: (content: string, targetClientId?: string) => void;
 
 	/**
 	 * Submits messages to relay service.
@@ -95,7 +110,7 @@ export interface IConnectionManager {
 	/**
 	 * Initiates connection to relay service (noop if already connected).
 	 */
-	connect(reason: string, connectionMode?: ConnectionMode): void;
+	connect(reason: IConnectionStateChangeReason, connectionMode?: ConnectionMode): void;
 
 	/**
 	 * Disposed connection manager
@@ -117,10 +132,10 @@ export interface IConnectionManagerFactoryArgs {
 	readonly incomingOpHandler: (messages: ISequencedDocumentMessage[], reason: string) => void;
 
 	/**
-	 * Called by connection manager for each incoming signals.
-	 * Maybe called before connectHandler is called (initial signals on socket connection)
+	 * Called by connection manager for each incoming signal.
+	 * May be called before connectHandler is called (due to initial signals on socket connection)
 	 */
-	readonly signalHandler: (message: ISignalMessage) => void;
+	readonly signalHandler: (signals: ISignalMessage[]) => void;
 
 	/**
 	 * Called when connection manager experiences delay in connecting to relay service.
@@ -139,7 +154,7 @@ export interface IConnectionManagerFactoryArgs {
 	/**
 	 * Called whenever connection to relay service is lost.
 	 */
-	readonly disconnectHandler: (reason: string, error?: IAnyDriverError) => void;
+	readonly disconnectHandler: (reason: IConnectionStateChangeReason) => void;
 
 	/**
 	 * Called whenever new connection to rely service is established
@@ -148,8 +163,6 @@ export interface IConnectionManagerFactoryArgs {
 
 	/**
 	 * Called whenever ping/pong messages are roundtripped on connection.
-	 *
-	 * @deprecated No replacement API intended.
 	 */
 	readonly pongHandler: (latency: number) => void;
 
@@ -165,18 +178,22 @@ export interface IConnectionManagerFactoryArgs {
 	 *
 	 * @param readonly - Whether or not the container is now read-only.
 	 * `undefined` indicates that user permissions are not yet known.
+	 * @param readonlyConnectionReason - reason/error if any for the change
 	 */
-	readonly readonlyChangeHandler: (readonly?: boolean) => void;
+	readonly readonlyChangeHandler: (
+		readonly?: boolean,
+		readonlyConnectionReason?: IConnectionStateChangeReason,
+	) => void;
 
 	/**
 	 * Called whenever we try to start establishing a new connection.
 	 */
-	readonly establishConnectionHandler: (reason: string) => void;
+	readonly establishConnectionHandler: (reason: IConnectionStateChangeReason) => void;
 
 	/**
 	 * Called whenever we cancel the connection in progress.
 	 */
-	readonly cancelConnectionHandler: (reason: string) => void;
+	readonly cancelConnectionHandler: (reason: IConnectionStateChangeReason) => void;
 }
 
 /**

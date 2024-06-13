@@ -2,21 +2,22 @@
  * Copyright (c) Microsoft Corporation and contributors. All rights reserved.
  * Licensed under the MIT License.
  */
+
 import * as path from "path";
 
 import {
 	DEFAULT_INTERDEPENDENCY_RANGE,
 	InterdependencyRange,
-	ReleaseVersion,
 	VersionBumpType,
 } from "@fluid-tools/version-tools";
 
-import { getFluidBuildConfig } from "./fluidUtils";
-import { Logger, defaultLogger } from "./logging";
+import registerDebug from "debug";
+import { TaskDefinitionsOnDisk } from "./fluidTaskDefinitions";
+import { loadFluidBuildConfig } from "./fluidUtils";
 import { MonoRepo } from "./monoRepo";
 import { Package, Packages } from "./npmPackage";
 import { ExecAsyncResult } from "./utils";
-import { TaskDefinitionsOnDisk } from "./fluidTaskDefinitions";
+const traceInit = registerDebug("fluid-build:init");
 
 /**
  * Fluid build configuration that is expected in the repo-root package.json.
@@ -31,20 +32,20 @@ export interface IFluidBuildConfig {
 	 * A mapping of package or release group names to metadata about the package or release group. This can only be
 	 * configured in the repo-wide Fluid build config (the repo-root package.json).
 	 */
-	repoPackages: {
+	repoPackages?: {
 		[name: string]: IFluidRepoPackageEntry;
 	};
 
 	/**
-	 * @deprecated
-	 */
-	generatorName?: string;
-
-	/**
-	 * Policy configuration for the `check:policy` command. This can only be configured in the rrepo-wide Fluid build
+	 * Policy configuration for the `check:policy` command. This can only be configured in the repo-wide Fluid build
 	 * config (the repo-root package.json).
 	 */
 	policy?: PolicyConfig;
+
+	/**
+	 * Configuration for assert tagging.
+	 */
+	assertTagging?: AssertTaggingConfig;
 
 	/**
 	 * A mapping of branch names to previous version baseline styles. The type test generator takes this information
@@ -156,6 +157,107 @@ export interface PolicyConfig {
 	 * exclude that rule from being checked.
 	 */
 	handlerExclusions?: { [rule: string]: string[] };
+
+	packageNames?: PackageNamePolicyConfig;
+
+	/**
+	 * (optional) requirements to enforce against each public package.
+	 */
+	publicPackageRequirements?: PackageRequirements;
+}
+
+export interface AssertTaggingConfig {
+	assertionFunctions: { [functionName: string]: number };
+
+	/**
+	 * An array of paths under which assert tagging applies to. If this setting is provided, only packages whose paths
+	 * match the regular expressions in this setting will be assert-tagged.
+	 */
+	enabledPaths?: RegExp[];
+}
+
+/**
+ * Configuration for package naming and publication policies.
+ */
+export interface PackageNamePolicyConfig {
+	/**
+	 * A list of package scopes that are permitted in the repo.
+	 */
+	allowedScopes?: string[];
+	/**
+	 * A list of packages that have no scope.
+	 */
+	unscopedPackages?: string[];
+	/**
+	 * Packages that must be published.
+	 */
+	mustPublish: {
+		/**
+		 * A list of package names or scopes that must publish to npm, and thus should never be marked private.
+		 */
+		npm?: string[];
+
+		/**
+		 * A list of package names or scopes that must publish to an internal feed, and thus should always be marked
+		 * private.
+		 */
+		internalFeed?: string[];
+	};
+
+	/**
+	 * Packages that may or may not be published.
+	 */
+	mayPublish: {
+		/**
+		 * A list of package names or scopes that may publish to npm, and thus might or might not be marked private.
+		 */
+		npm?: string[];
+
+		/**
+		 * A list of package names or scopes that must publish to an internal feed, and thus might or might not be marked
+		 * private.
+		 */
+		internalFeed?: string[];
+	};
+}
+
+/**
+ * Expresses requirements for a given package, applied to its package.json.
+ */
+export interface PackageRequirements {
+	/**
+	 * (optional) list of script requirements for the package.
+	 */
+	requiredScripts?: ScriptRequirement[];
+
+	/**
+	 * (optional) list of required dev dependencies for the package.
+	 * @remarks Note: there is no enforcement of version requirements, only that a dependency on the specified name must exist.
+	 */
+	requiredDevDependencies?: string[];
+}
+
+/**
+ * Requirements for a given script.
+ */
+export interface ScriptRequirement {
+	/**
+	 * Name of the script to check.
+	 */
+	name: string;
+
+	/**
+	 * Body of the script being checked.
+	 * A contents match will be enforced iff {@link ScriptRequirement.bodyMustMatch}.
+	 * This value will be used as the default contents inserted by the policy resolver (regardless of {@link ScriptRequirement.bodyMustMatch}).
+	 */
+	body: string;
+
+	/**
+	 * Whether or not the script body is required to match {@link ScriptRequirement.body} when running the policy checker.
+	 * @defaultValue `false`
+	 */
+	bodyMustMatch?: boolean;
 }
 
 /**
@@ -205,20 +307,29 @@ export interface IFluidRepoPackage {
 	defaultInterdependencyRange: InterdependencyRange;
 }
 
-export type IFluidRepoPackageEntry = string | IFluidRepoPackage | (string | IFluidRepoPackage)[];
+export type IFluidRepoPackageEntry =
+	| string
+	| IFluidRepoPackage
+	| (string | IFluidRepoPackage)[];
 
 export class FluidRepo {
-	private readonly monoRepos = new Map<string, MonoRepo>();
+	private readonly _releaseGroups = new Map<string, MonoRepo>();
 
 	public get releaseGroups() {
-		return this.monoRepos;
+		return this._releaseGroups;
 	}
 
 	public readonly packages: Packages;
 
-	constructor(public readonly resolvedRoot: string, log: Logger = defaultLogger) {
-		const packageManifest = getFluidBuildConfig(resolvedRoot);
+	public static create(resolvedRoot: string) {
+		const packageManifest = loadFluidBuildConfig(resolvedRoot);
+		return new FluidRepo(resolvedRoot, packageManifest);
+	}
 
+	protected constructor(
+		public readonly resolvedRoot: string,
+		packageManifest: IFluidBuildConfig,
+	) {
 		// Expand to full IFluidRepoPackage and full path
 		const normalizeEntry = (
 			item: IFluidRepoPackageEntry,
@@ -227,7 +338,7 @@ export class FluidRepo {
 				return item.map((entry) => normalizeEntry(entry) as IFluidRepoPackage);
 			}
 			if (typeof item === "string") {
-				log?.verbose(
+				traceInit(
 					`No defaultInterdependencyRange setting found for '${item}'. Defaulting to "${DEFAULT_INTERDEPENDENCY_RANGE}".`,
 				);
 				return {
@@ -256,7 +367,7 @@ export class FluidRepo {
 				}
 				continue;
 			}
-			const monoRepo = MonoRepo.load(group, item, log);
+			const monoRepo = MonoRepo.load(group, item);
 			if (monoRepo) {
 				this.releaseGroups.set(group, monoRepo);
 				loadedPackages.push(...monoRepo.packages);
@@ -275,46 +386,35 @@ export class FluidRepo {
 		this.packages.packages.forEach((pkg) => pkg.reload());
 	}
 
-	public static async ensureInstalled(packages: Package[], check: boolean = true) {
+	public static async ensureInstalled(packages: Package[]) {
 		const installedMonoRepo = new Set<MonoRepo>();
 		const installPromises: Promise<ExecAsyncResult>[] = [];
 		for (const pkg of packages) {
-			if (!check || !(await pkg.checkInstall(false))) {
-				if (pkg.monoRepo) {
-					if (!installedMonoRepo.has(pkg.monoRepo)) {
-						installedMonoRepo.add(pkg.monoRepo);
-						installPromises.push(pkg.monoRepo.install());
-					}
-				} else {
-					installPromises.push(pkg.install());
+			if (pkg.monoRepo) {
+				if (!installedMonoRepo.has(pkg.monoRepo)) {
+					installedMonoRepo.add(pkg.monoRepo);
+					installPromises.push(pkg.monoRepo.install());
 				}
+			} else {
+				installPromises.push(pkg.install());
 			}
 		}
 		const rets = await Promise.all(installPromises);
 		return !rets.some((ret) => ret.error);
 	}
 
-	public async install(nohoist: boolean = false) {
-		if (nohoist) {
-			return this.packages.noHoistInstall(this.resolvedRoot);
-		}
+	public async install() {
 		return FluidRepo.ensureInstalled(this.packages.packages);
 	}
-}
-
-/**
- * Represents a release version and its release date, if applicable.
- *
- * @internal
- */
-export interface VersionDetails {
-	/**
-	 * The version of the release.
-	 */
-	version: ReleaseVersion;
 
 	/**
-	 * The date the version was released, if applicable.
+	 * Transforms an absolute path to a path relative to the repo root.
+	 *
+	 * @param p - The path to make relative to the repo root.
+	 * @returns the relative path.
 	 */
-	date?: Date;
+	public relativeToRepo(p: string): string {
+		// Replace \ in result with / in case OS is Windows.
+		return path.relative(this.resolvedRoot, p).replace(/\\/g, "/");
+	}
 }

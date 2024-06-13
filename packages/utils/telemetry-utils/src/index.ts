@@ -2,16 +2,24 @@
  * Copyright (c) Microsoft Corporation and contributors. All rights reserved.
  * Licensed under the MIT License.
  */
+
 export {
+	createChildMonitoringContext,
 	MonitoringContext,
-	IConfigProviderBase,
 	sessionStorageConfigProvider,
 	mixinMonitoringContext,
 	IConfigProvider,
-	ConfigTypes,
 	loggerToMonitoringContext,
-} from "./config";
-export { DebugLogger } from "./debugLogger";
+	wrapConfigProviderWithDefaults,
+} from "./config.js";
+export {
+	DataCorruptionError,
+	DataProcessingError,
+	extractSafePropertiesFromMessage,
+	GenericError,
+	UsageError,
+	validatePrecondition,
+} from "./error.js";
 export {
 	extractLogSafeErrorProperties,
 	generateErrorWithStack,
@@ -24,41 +32,39 @@ export {
 	LoggingError,
 	NORMALIZED_ERROR_TYPE,
 	normalizeError,
+	overwriteStack,
 	wrapError,
 	wrapErrorAndLog,
-} from "./errorLogging";
-export { EventEmitterWithErrorHandling } from "./eventEmitterWithErrorHandling";
+} from "./errorLogging.js";
+export { EventEmitterWithErrorHandling } from "./eventEmitterWithErrorHandling.js";
 export {
 	connectedEventName,
 	disconnectedEventName,
 	raiseConnectedEvent,
 	safeRaiseEvent,
-} from "./events";
+} from "./events.js";
+export { hasErrorInstanceId, IFluidErrorBase, isFluidError } from "./fluidErrorBase.js";
 export {
-	hasErrorInstanceId,
-	IFluidErrorBase,
-	isFluidError,
-	isValidLegacyError,
-} from "./fluidErrorBase";
-export {
-	BaseTelemetryNullLogger,
-	ChildLogger,
+	eventNamespaceSeparator,
+	createChildLogger,
+	createMultiSinkLogger,
+	formatTick,
 	IPerformanceEventMarkers,
 	ITelemetryLoggerPropertyBag,
 	ITelemetryLoggerPropertyBags,
-	MultiSinkLogger,
+	MultiSinkLoggerProperties,
+	numberFromString,
 	PerformanceEvent,
 	TaggedLoggerAdapter,
+	tagData,
+	tagCodeArtifacts,
 	TelemetryDataTag,
 	TelemetryEventPropertyTypes,
-	TelemetryLogger,
-	TelemetryNullLogger,
-	TelemetryUTLogger,
-} from "./logger";
-export { MockLogger } from "./mockLogger";
-export { ThresholdCounter } from "./thresholdCounter";
-export { SampledTelemetryHelper } from "./sampledTelemetryHelper";
-export { logIfFalse } from "./utils";
+} from "./logger.js";
+export { MockLogger } from "./mockLogger.js";
+export { ThresholdCounter } from "./thresholdCounter.js";
+export { SampledTelemetryHelper } from "./sampledTelemetryHelper.js";
+export { createSampledLogger, IEventSampler, ISampledTelemetryLogger } from "./utils.js";
 export {
 	TelemetryEventPropertyTypeExt,
 	ITelemetryEventExt,
@@ -68,4 +74,5 @@ export {
 	ITelemetryLoggerExt,
 	ITaggedTelemetryPropertyTypeExt,
 	ITelemetryPropertiesExt,
-} from "./telemetryTypes";
+	TelemetryEventCategory,
+} from "./telemetryTypes.js";

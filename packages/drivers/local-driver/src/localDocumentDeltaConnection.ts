@@ -3,22 +3,24 @@
  * Licensed under the MIT License.
  */
 
-import { DocumentDeltaConnection } from "@fluidframework/driver-base";
+import { ITelemetryBaseLogger } from "@fluidframework/core-interfaces";
+import { DocumentDeltaConnection } from "@fluidframework/driver-base/internal";
+import { IClient } from "@fluidframework/driver-definitions";
 import {
-	IClient,
 	IConnect,
 	IDocumentMessage,
 	NackErrorType,
-} from "@fluidframework/protocol-definitions";
-import { TelemetryNullLogger } from "@fluidframework/telemetry-utils";
+} from "@fluidframework/driver-definitions/internal";
 import { LocalWebSocketServer } from "@fluidframework/server-local-server";
 import { IWebSocketServer } from "@fluidframework/server-services-core";
+import { createChildLogger } from "@fluidframework/telemetry-utils/internal";
 import type { Socket } from "socket.io-client";
 
 const testProtocolVersions = ["^0.3.0", "^0.2.0", "^0.1.0"];
 
 /**
  * Represents a connection to a stream of delta updates
+ * @internal
  */
 export class LocalDocumentDeltaConnection extends DocumentDeltaConnection {
 	/**
@@ -38,6 +40,7 @@ export class LocalDocumentDeltaConnection extends DocumentDeltaConnection {
 		client: IClient,
 		webSocketServer: IWebSocketServer,
 		timeoutMs = 60000,
+		logger?: ITelemetryBaseLogger,
 	): Promise<LocalDocumentDeltaConnection> {
 		const socket = (webSocketServer as LocalWebSocketServer).createConnection();
 
@@ -45,7 +48,7 @@ export class LocalDocumentDeltaConnection extends DocumentDeltaConnection {
 		// but should be fine because this delta connection is for local use only.
 		const socketWithListener = socket as unknown as Socket;
 
-		const deltaConnection = new LocalDocumentDeltaConnection(socketWithListener, id);
+		const deltaConnection = new LocalDocumentDeltaConnection(socketWithListener, id, logger);
 
 		const connectMessage: IConnect = {
 			client,
@@ -59,8 +62,8 @@ export class LocalDocumentDeltaConnection extends DocumentDeltaConnection {
 		return deltaConnection;
 	}
 
-	constructor(socket: Socket, documentId: string) {
-		super(socket, documentId, new TelemetryNullLogger());
+	constructor(socket: Socket, documentId: string, logger?: ITelemetryBaseLogger) {
+		super(socket, documentId, createChildLogger({ logger }));
 	}
 
 	/**
@@ -77,7 +80,7 @@ export class LocalDocumentDeltaConnection extends DocumentDeltaConnection {
 	/**
 	 * Submits a new signal to the server
 	 */
-	public submitSignal(message: any): void {
+	public submitSignal(message: string): void {
 		this.emitMessages("submitSignal", [[message]]);
 	}
 

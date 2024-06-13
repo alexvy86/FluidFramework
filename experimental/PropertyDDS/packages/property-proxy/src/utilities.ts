@@ -2,26 +2,27 @@
  * Copyright (c) Microsoft Corporation and contributors. All rights reserved.
  * Licensed under the MIT License.
  */
+
 /* eslint-disable no-param-reassign */
 import {
-	PropertyFactory,
 	ArrayProperty,
 	BaseProperty,
-	ReferenceProperty,
+	ContainerProperty,
+	EnumArrayProperty,
+	EnumProperty,
+	MapProperty,
+	PropertyFactory,
 	ReferenceArrayProperty,
 	ReferenceMapProperty,
-	ValueProperty,
-	ContainerProperty,
-	EnumProperty,
-	EnumArrayProperty,
-	MapProperty,
+	ReferenceProperty,
 	SetProperty,
+	ValueProperty,
 } from "@fluid-experimental/property-properties";
 
-import { ComponentMap } from "./componentMap";
-import { PropertyProxy } from "./propertyProxy";
-import { PropertyProxyErrors } from "./errors";
-import { NonPrimitiveTypes, ReferenceType } from "./interfaces";
+import { ComponentMap } from "./componentMap.js";
+import { PropertyProxyErrors } from "./errors.js";
+import { NonPrimitiveTypes, ReferenceType } from "./interfaces.js";
+import { PropertyProxy } from "./propertyProxy.js";
 
 // TODO(marcus): this function should be removed in the future and a safer
 // way to determine the corrent types is useed
@@ -288,8 +289,7 @@ export namespace Utilities {
 	 * @param key - The key to check.
 	 * @return True if `key` contains a caret.
 	 */
-	export const containsCaret = (key: string) =>
-		String(key) === key && key[key.length - 1] === "^";
+	export const containsCaret = (key: string) => String(key) === key && key.endsWith("^");
 
 	/**
 	 * This method handles the proxification of child properties and also takes care of the special cases,
@@ -358,8 +358,10 @@ export namespace Utilities {
 				const typeid = other_property.getTypeid();
 				const fullTypeid = other_property.getFullTypeid();
 				if (typeid === "Uint64") {
+					// eslint-disable-next-line @typescript-eslint/no-base-to-string
 					return PropertyFactory.create("Uint64", "single", propertyAtKey).toString();
 				} else if (typeid === "Int64") {
+					// eslint-disable-next-line @typescript-eslint/no-base-to-string
 					return PropertyFactory.create("Int64", "single", propertyAtKey).toString();
 				} else if (
 					fullTypeid.includes("<enum<") &&

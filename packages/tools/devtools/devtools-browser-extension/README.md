@@ -1,6 +1,6 @@
 # @fluid-internal/devtools-browser-extension
 
-This package contains a browser (Chrome) developer tools extension for use with [@fluid-experimental/devtools][].
+This package contains a browser (Chrome) developer tools extension for use with [@fluidframework/devtools][].
 It offers visual insights into the workings of the Fluid Framework in your application.
 
 It is currently compatible with [Chromium](https://www.chromium.org/Home/)-based browsers (e.g. [Chrome](https://www.google.com/chrome/) and [Edge](https://www.microsoft.com/en-us/edge/)).
@@ -12,18 +12,9 @@ It is currently compatible with [Chromium](https://www.chromium.org/Home/)-based
 
 Note: this package does not generate any library artifacts, so it is marked as `private` in its `package.json`.
 
-## Testing Local Changes
+## Background
 
-To use a local build of this extension in your browser:
-
-1. Build this package and its dependencies.
-   Your extension files should be generated under the build output directory (`dist/bundle`) in this package directory.
-2. Load the unpacked extension in the browser by following [these instructions](https://developer.chrome.com/docs/extensions/mv3/getstarted/development-basics/#load-unpacked).
-    - For [Windows Subsystem for Linux (WSL)](https://learn.microsoft.com/en-us/windows/wsl/about) users, your Linux files should be at a \\wsl$ path.
-      In File Explorer or any other Windows application that can browse files, navigate to the path: \\wsl$.
-    - If you are working in a [Codespace](https://code.visualstudio.com/docs/remote/codespaces) with Visual Studio Code, you can download the build artifacts by right-clicking on `dist/bundle` in the `Explorer` view and clicking `download`. This will download the files to your local machine, which you can upload to the browser.
-
-## Devtools Extensions
+### Devtools Extensions
 
 This package runs as a [Devtools Extension](https://developer.chrome.com/docs/extensions/mv3/devtools/) in Chromium-based browsers that support them.
 
@@ -33,7 +24,7 @@ For an overview on how Devtools extensions work, see [here](https://developer.ch
 
 For a helpful how-to guide for making a Devtools Extension, see [here](https://learn.microsoft.com/en-us/microsoft-edge/extensions-chromium/developer-guide/devtools-extension).
 
-### Initialization Flow
+#### Initialization Flow
 
 These details are covered by the above articles, but they are a bit obfuscated, so we'll elaborate here for clarity.
 
@@ -80,6 +71,58 @@ sequenceDiagram
    deactivate Content Script
    deactivate Devtools Script
 ```
+
+## Working in the Package
+
+### Building
+
+To build the package, run `npm run build` in a terminal at the root directory of this package.
+
+### Testing
+
+#### Automated Testing
+
+This package uses two different testing libraries for its unit vs end-to-end tests.
+To run all of the automated tests, run `npm run test` in a terminal from the root directory of this package.
+
+##### Unit Tests
+
+This package uses [mocha](https://mochajs.org/) for its unit tests.
+To run just the unit tests, run `npm run test:mocha` in a terminal from the root directory of this package.
+
+##### End-To-End Tests
+
+This package uses [jest](https://jestjs.io/) and a small backing test app to test end-to-end scenarios in a browser environment.
+To run the automated end-to-end tests, run `npm run test:jest` in a terminal from the root directory of this package.
+
+#### Local Extension Testing
+
+To use a local build of this extension in your browser:
+
+1. Build this package and its dependencies.
+   Your extension files should be generated under the build output directory (`dist/bundle`) in this package directory.
+2. Load the unpacked extension in the browser by following [these instructions](https://developer.chrome.com/docs/extensions/mv3/getstarted/development-basics/#load-unpacked).
+    - For [Windows Subsystem for Linux (WSL)](https://learn.microsoft.com/en-us/windows/wsl/about) users, your Linux files should be at a \\wsl$ path.
+      In File Explorer or any other Windows application that can browse files, navigate to the path: \\wsl$.
+    - If you are working in a [Codespace](https://code.visualstudio.com/docs/remote/codespaces) with Visual Studio Code, you can download the build artifacts by right-clicking on `dist/bundle` in the `Explorer` view and clicking `download`. This will download the files to your local machine, which you can upload to the browser.
+
+#### Sending local usage data to Kusto
+
+When doing development on the Devtools browser extension, usage telemetry can be optionally generated and sent to Kusto. To do so, follow these instructions. Note that this is only available to internal Fluid Framework devs.
+
+1. Create a .env file in the devtools-browser-extension's root folder.
+2. The file should have a single line that reads `DEVTOOLS_TELEMETRY_TOKEN=PLACEHOLDER_KEY`. Replace PLACEHOLDER_KEY with the ingestion key. Currently this Consult Alejandro/Wayne to receive this key.
+3. Run `pnpm run build` to build the extension.
+4. Load the unpacked extension in the browser by following the instructions above.
+5. When using the extension on the Devtools example app, ensure that Send Usage Telemetry is toggled in Settings.
+6. After using the extension, go to the Office Fluid Test database in Kusto and query the `office_fluid_devtools_generic` table.
+
+You should now see the Devtools usage telemetry events appear!
+
+### Publishing
+
+Note: The browser extensions may only be published by Microsoft employees.
+For details on the steps required, see [here](https://eng.ms/docs/experiences-devices/opg/office-shared/fluid-framework/fluid-framework-internal/fluid-framework/docs/infrastructure/devtools/publishing-the-browser-extension) (Microsoft only).
 
 <!-- AUTO-GENERATED-CONTENT:START (README_CONTRIBUTION_GUIDELINES_SECTION:includeHeading=TRUE) -->
 
@@ -136,8 +179,7 @@ Thank you!
 
 This project may contain Microsoft trademarks or logos for Microsoft projects, products, or services.
 
-Use of these trademarks or logos must follow Microsoft's [Trademark & Brand
-Guidelines](https://www.microsoft.com/en-us/legal/intellectualproperty/trademarks/usage/general).
+Use of these trademarks or logos must follow Microsoft's [Trademark & Brand Guidelines](https://www.microsoft.com/en-us/legal/intellectualproperty/trademarks/usage/general).
 
 Use of Microsoft trademarks or logos in modified versions of this project must not cause confusion or imply Microsoft sponsorship.
 
@@ -147,4 +189,4 @@ Use of Microsoft trademarks or logos in modified versions of this project must n
 
 <!-- Links -->
 
-[@fluid-experimental/devtools]: https://github.com/microsoft/FluidFramework/tree/main/packages/tools/devtools/devtoor
+[@fluidframework/devtools]: https://github.com/microsoft/FluidFramework/tree/main/packages/tools/devtools/devtoor

@@ -5,6 +5,9 @@
 
 import { IGitManager } from "@fluidframework/server-services-client";
 
+/**
+ * @internal
+ */
 export interface ITenantConfig {
 	id: string;
 
@@ -19,6 +22,9 @@ export interface ITenantConfig {
 	scheduledDeletionTime?: string;
 }
 
+/**
+ * @internal
+ */
 export interface ITenantStorage {
 	// External URL to Historian outside of the cluster
 	historianUrl: string;
@@ -45,6 +51,9 @@ export interface ITenantStorage {
 	};
 }
 
+/**
+ * @internal
+ */
 export interface ITenantOrderer {
 	// URL to the ordering service
 	url: string;
@@ -53,20 +62,51 @@ export interface ITenantOrderer {
 	type: string;
 }
 
+/**
+ * @internal
+ */
 export interface ITenantCustomData {
 	[key: string]: any;
 }
 
+/**
+ * @internal
+ */
 export interface ITenantKeys {
 	key1: string;
 	key2: string;
 }
 
+/**
+ * @internal
+ */
 export enum KeyName {
 	key1 = "key1",
 	key2 = "key2",
 }
 
+// This is tenantEncryptionKey version by year, it's append only.
+// We will add a new version each year.
+/**
+ * @internal
+ */
+export enum EncryptionKeyVersion {
+	key2022 = "2022",
+	key2023 = "2023",
+	key2024 = "2024",
+	key2025 = "2025",
+}
+
+/**
+ * @internal
+ */
+export interface IEncryptedTenantKeys extends ITenantKeys {
+	encryptionKeyVersion?: EncryptionKeyVersion;
+}
+
+/**
+ * @internal
+ */
 export interface ITenant {
 	gitManager: IGitManager;
 
@@ -75,6 +115,9 @@ export interface ITenant {
 	orderer: ITenantOrderer;
 }
 
+/**
+ * @internal
+ */
 export interface ITenantManager {
 	/**
 	 * Creates a new tenant with the given id, or a randomly generated id when none is provided.
@@ -93,6 +136,8 @@ export interface ITenantManager {
 		tenantId: string,
 		documentId: string,
 		storageName?: string,
+		includeDisabledTenant?: boolean,
+		isEphemeralContainer?: boolean,
 	): Promise<IGitManager>;
 
 	/**
@@ -106,6 +151,9 @@ export interface ITenantManager {
 	getKey(tenantId: string): Promise<string>;
 }
 
+/**
+ * @internal
+ */
 export interface ITenantConfigManager {
 	getTenantStorageName(tenantId: string): Promise<string>;
 }

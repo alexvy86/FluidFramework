@@ -3,7 +3,12 @@
  * Licensed under the MIT License.
  */
 
-export { configureWebSocketServices } from "./alfred";
+export {
+	configureWebSocketServices,
+	IBroadcastSignalEventPayload,
+	ICollaborationSessionEvents,
+	IRoom,
+} from "./nexus";
 export { BroadcasterLambda, BroadcasterLambdaFactory } from "./broadcaster";
 export { CopierLambda, CopierLambdaFactory } from "./copier";
 export {
@@ -38,6 +43,9 @@ export {
 	generateClientId,
 	isDocumentSessionValid,
 	isDocumentValid,
+	IRuntimeSignalEnvelope,
 	logCommonSessionEndMetrics,
 	NoOpLambda,
+	NoOpLambdaCheckpointConfiguration,
+	DocumentCheckpointManager,
 } from "./utils";

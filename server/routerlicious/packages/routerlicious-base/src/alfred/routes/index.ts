@@ -3,6 +3,8 @@
  * Licensed under the MIT License.
  */
 
+import { TypedEventEmitter } from "@fluidframework/common-utils";
+import { ICollaborationSessionEvents } from "@fluidframework/server-lambdas";
 import {
 	IDeltaService,
 	IDocumentStorage,
@@ -13,6 +15,7 @@ import {
 	IDocumentRepository,
 	ITokenRevocationManager,
 	IRevokedTokenChecker,
+	IClusterDrainingChecker,
 } from "@fluidframework/server-services-core";
 import { Router } from "express";
 import { Provider } from "nconf";
@@ -39,6 +42,8 @@ export function create(
 	documentDeleteService: IDocumentDeleteService,
 	tokenRevocationManager?: ITokenRevocationManager,
 	revokedTokenChecker?: IRevokedTokenChecker,
+	collaborationSessionEventEmitter?: TypedEventEmitter<ICollaborationSessionEvents>,
+	clusterDrainingChecker?: IClusterDrainingChecker,
 ) {
 	return {
 		api: api.create(
@@ -55,6 +60,8 @@ export function create(
 			documentDeleteService,
 			tokenRevocationManager,
 			revokedTokenChecker,
+			collaborationSessionEventEmitter,
+			clusterDrainingChecker,
 		),
 	};
 }

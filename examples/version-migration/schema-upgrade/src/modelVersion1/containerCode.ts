@@ -5,20 +5,27 @@
 
 import type { IMigrationTool } from "@fluid-example/example-utils";
 import {
-	MigrationToolInstantiationFactory,
+	MigrationToolFactory,
 	ModelContainerRuntimeFactory,
+	getDataStoreEntryPoint,
 } from "@fluid-example/example-utils";
-import type { IContainer } from "@fluidframework/container-definitions";
-import type { IContainerRuntime } from "@fluidframework/container-runtime-definitions";
-import { requestFluidObject } from "@fluidframework/runtime-utils";
+import type { IContainer } from "@fluidframework/container-definitions/internal";
+import type { IContainerRuntime } from "@fluidframework/container-runtime-definitions/internal";
 
-import type { IInventoryList, IInventoryListAppModel } from "../modelInterfaces";
-import { InventoryListAppModel } from "./appModel";
-import { InventoryListInstantiationFactory } from "./inventoryList";
+import type { IInventoryList, IInventoryListAppModel } from "../modelInterfaces.js";
 
-export const inventoryListId = "default-inventory-list";
-export const migrationToolId = "migration-tool";
+import { InventoryListAppModel } from "./appModel.js";
+import { InventoryListInstantiationFactory } from "./inventoryList.js";
 
+const inventoryListId = "default-inventory-list";
+const migrationToolId = "migration-tool";
+
+const migrationToolRegistryKey = "migration-tool";
+const migrationToolFactory = new MigrationToolFactory();
+
+/**
+ * @internal
+ */
 export class InventoryListContainerRuntimeFactory extends ModelContainerRuntimeFactory<IInventoryListAppModel> {
 	/**
 	 * Constructor for the factory. Supports a test mode which spawns the summarizer instantly.
@@ -28,7 +35,7 @@ export class InventoryListContainerRuntimeFactory extends ModelContainerRuntimeF
 		super(
 			new Map([
 				InventoryListInstantiationFactory.registryEntry,
-				MigrationToolInstantiationFactory.registryEntry,
+				[migrationToolRegistryKey, Promise.resolve(migrationToolFactory)],
 			]), // registryEntries
 			testMode
 				? {
@@ -46,7 +53,7 @@ export class InventoryListContainerRuntimeFactory extends ModelContainerRuntimeF
 	protected async containerInitializingFirstTime(runtime: IContainerRuntime) {
 		const inventoryList = await runtime.createDataStore(InventoryListInstantiationFactory.type);
 		await inventoryList.trySetAlias(inventoryListId);
-		const migrationTool = await runtime.createDataStore(MigrationToolInstantiationFactory.type);
+		const migrationTool = await runtime.createDataStore(migrationToolRegistryKey);
 		await migrationTool.trySetAlias(migrationToolId);
 	}
 
@@ -58,21 +65,17 @@ export class InventoryListContainerRuntimeFactory extends ModelContainerRuntimeF
 		// Force the MigrationTool to instantiate in all cases.  The Quorum it uses must be loaded and running in
 		// order to respond with accept ops, and without this call the MigrationTool won't be instantiated on the
 		// summarizer client.
-		await requestFluidObject(await runtime.getRootDataStore(migrationToolId), "");
+		await getDataStoreEntryPoint(runtime, migrationToolId);
 	}
 
 	/**
 	 * {@inheritDoc ModelContainerRuntimeFactory.createModel}
 	 */
 	protected async createModel(runtime: IContainerRuntime, container: IContainer) {
-		const inventoryList = await requestFluidObject<IInventoryList>(
-			await runtime.getRootDataStore(inventoryListId),
-			"",
+		return new InventoryListAppModel(
+			await getDataStoreEntryPoint<IInventoryList>(runtime, inventoryListId),
+			await getDataStoreEntryPoint<IMigrationTool>(runtime, migrationToolId),
+			container,
 		);
-		const migrationTool = await requestFluidObject<IMigrationTool>(
-			await runtime.getRootDataStore(migrationToolId),
-			"",
-		);
-		return new InventoryListAppModel(inventoryList, migrationTool, container);
 	}
 }

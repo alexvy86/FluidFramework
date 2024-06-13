@@ -3,47 +3,49 @@
  * Licensed under the MIT License.
  */
 
-/* eslint-disable @typescript-eslint/restrict-plus-operands */
+import { ITelemetryBaseLogger } from '@fluidframework/core-interfaces';
+import { assert } from '@fluidframework/core-utils/internal';
+import { ITelemetryLoggerExt, createChildLogger } from '@fluidframework/telemetry-utils/internal';
+import { BTree } from '@tylerbu/sorted-btree-es6';
 
-import { assert } from '@fluidframework/common-utils';
-import { ITelemetryLoggerExt } from '@fluidframework/telemetry-utils';
-import BTree from 'sorted-btree';
 import {
-	hasLength,
+	Mutable,
 	assertNotUndefined,
+	assertWithMessage,
 	compareFiniteNumbers,
 	compareFiniteNumbersReversed,
 	compareMaps,
 	compareStrings,
 	fail,
 	getOrCreate,
-	Mutable,
+	hasLength,
 	setPropertyIfDefined,
-	assertWithMessage,
-} from '../Common';
+} from '../Common.js';
 import {
-	LocalCompressedId,
+	AttributionId,
+	CompressedId,
 	FinalCompressedId,
-	SessionSpaceCompressedId,
-	StableId,
+	LocalCompressedId,
 	OpSpaceCompressedId,
 	SessionId,
-	CompressedId,
+	SessionSpaceCompressedId,
+	StableId,
 	UuidString,
-	AttributionId,
-} from '../Identifiers';
-import { assertIsStableId, assertIsUuidString, isStableId } from '../UuidUtilities';
-import { AppendOnlySortedMap } from './AppendOnlySortedMap';
-import { getIds } from './IdRange';
+} from '../Identifiers.js';
+import { assertIsStableId, assertIsUuidString, isStableId } from '../UuidUtilities.js';
+
+import { AppendOnlySortedMap } from './AppendOnlySortedMap.js';
+import { getIds } from './IdRange.js';
 import {
-	numericUuidEquals,
+	NumericUuid,
+	ensureSessionUuid,
 	getPositiveDelta,
 	incrementUuid,
+	numericUuidEquals,
 	numericUuidFromStableId,
-	NumericUuid,
 	stableIdFromNumericUuid,
-	ensureSessionUuid,
-} from './NumericUuid';
+} from './NumericUuid.js';
+import { SessionIdNormalizer } from './SessionIdNormalizer.js';
 import type {
 	IdCreationRange,
 	SerializedCluster,
@@ -55,8 +57,7 @@ import type {
 	SerializedSessionData,
 	UnackedLocalId,
 	VersionedSerializedIdCompressor,
-} from './persisted-types';
-import { SessionIdNormalizer } from './SessionIdNormalizer';
+} from './persisted-types/index.js';
 
 /**
  * A cluster of final (sequenced via consensus), sequentially allocated compressed IDs.
@@ -382,6 +383,8 @@ export class IdCompressor {
 		compareFiniteNumbers
 	);
 
+	private readonly logger: ITelemetryLoggerExt;
+
 	/**
 	 * @param localSessionId - the `IdCompressor`'s current local session ID.
 	 * @param reservedIdCount - the number of IDs that will be known by this compressor without relying on consensus.
@@ -397,7 +400,7 @@ export class IdCompressor {
 		public readonly localSessionId: SessionId,
 		public readonly reservedIdCount: number,
 		attributionId?: AttributionId,
-		private readonly logger?: ITelemetryLoggerExt
+		logger?: ITelemetryBaseLogger
 	) {
 		assert(reservedIdCount >= 0, 0x642 /* reservedIdCount must be non-negative */);
 		if (attributionId !== undefined) {
@@ -418,6 +421,8 @@ export class IdCompressor {
 			this.finalizeCreationRange(reservedIdRange);
 			this.clusterCapacity = clusterCapacity;
 		}
+
+		this.logger = createChildLogger({ logger });
 	}
 
 	/**
@@ -887,7 +892,7 @@ export class IdCompressor {
 	}
 
 	private static isStableInversionKey(inversionKey: InversionKey): inversionKey is StableId {
-		return inversionKey.charAt(0) !== nonStableOverridePrefix;
+		return !inversionKey.startsWith(nonStableOverridePrefix);
 	}
 
 	/**
@@ -1081,9 +1086,7 @@ export class IdCompressor {
 			// `localOverrides`s. Otherwise, it is a sequential allocation from the session UUID and can simply be negated and
 			// added to that UUID to obtain the stable ID associated with it.
 			const localOverride = this.localOverrides?.get(id);
-			return localOverride !== undefined
-				? localOverride
-				: stableIdFromNumericUuid(this.localSession.sessionUuid, idOffset - 1);
+			return localOverride ?? stableIdFromNumericUuid(this.localSession.sessionUuid, idOffset - 1);
 		}
 	}
 
@@ -1653,12 +1656,12 @@ export class IdCompressor {
 			| [
 					serialized: SerializedIdCompressorWithNoSession,
 					newSessionIdMaybe: SessionId,
-					attributionIdMaybe?: AttributionId
+					attributionIdMaybe?: AttributionId,
 			  ]
 			| [
 					serialized: SerializedIdCompressorWithOngoingSession,
 					newSessionIdMaybe?: undefined,
-					attributionIdMaybe?: undefined
+					attributionIdMaybe?: undefined,
 			  ]
 	): IdCompressor {
 		const [serialized, newSessionIdMaybe, attributionIdMaybe] = args;

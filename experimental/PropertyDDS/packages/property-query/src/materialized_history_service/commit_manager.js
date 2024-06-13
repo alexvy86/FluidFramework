@@ -2,6 +2,7 @@
  * Copyright (c) Microsoft Corporation and contributors. All rights reserved.
  * Licensed under the MIT License.
  */
+
 /* eslint max-nested-callbacks: ["error", 5]*/
 /**
  * @fileoverview Code that is related to commit management
@@ -628,9 +629,8 @@ class CommitManager {
 					this._storage.get("commitTemplates:" + previousCommitGuid),
 				);
 			}
-			[previousCommitNode, previousCommitTemplatesNode] = await Promise.all(
-				previousNodePromises,
-			);
+			[previousCommitNode, previousCommitTemplatesNode] =
+				await Promise.all(previousNodePromises);
 
 			previousCSPromises.push(this._storage.getNodeChangeset(previousCommitNode.rootNodeRef));
 			if (in_params.fetchSchemas) {

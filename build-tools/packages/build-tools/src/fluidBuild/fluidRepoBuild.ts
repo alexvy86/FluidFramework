@@ -2,26 +2,28 @@
  * Copyright (c) Microsoft Corporation and contributors. All rights reserved.
  * Licensed under the MIT License.
  */
+
 import * as path from "path";
 import chalk from "chalk";
-import { FluidRepo } from "../common/fluidRepo";
+import registerDebug from "debug";
+import { FluidRepo, IFluidBuildConfig } from "../common/fluidRepo";
 import { getFluidBuildConfig } from "../common/fluidUtils";
 import { defaultLogger } from "../common/logging";
 import { MonoRepo } from "../common/monoRepo";
 import { Package, Packages } from "../common/npmPackage";
 import {
+	ExecAsyncResult,
 	existsSync,
 	globFn,
 	isSameFileOrDir,
 	lookUpDirSync,
-	ExecAsyncResult,
 } from "../common/utils";
 import { BuildGraph } from "./buildGraph";
-import { FluidPackageCheck } from "./fluidPackageCheck";
 import { NpmDepChecker } from "./npmDepChecker";
 import { ISymlinkOptions, symlinkPackage } from "./symlinkUtils";
+const traceInit = registerDebug("fluid-build:init");
 
-const { log, verbose } = defaultLogger;
+const { log } = defaultLogger;
 
 export interface IPackageMatchedOptions {
 	match: string[];
@@ -30,19 +32,18 @@ export interface IPackageMatchedOptions {
 	releaseGroups: string[];
 }
 
-/** Packages in this list will not have their scripts checked for conformance with repo standards. */
-const uncheckedPackages = [
-	"@fluid-internal/build-cli",
-	"@fluid-internal/version-tools",
-	"@fluid-tools/build-cli",
-	"@fluid-tools/version-tools",
-	"@fluidframework/build-tools",
-	"@fluidframework/eslint-config-fluid",
-];
-
 export class FluidRepoBuild extends FluidRepo {
-	constructor(resolvedRoot: string) {
-		super(resolvedRoot);
+	public static create(resolvedRoot: string) {
+		// Default to just resolveRoot if no config is found
+		const packageManifest = getFluidBuildConfig(resolvedRoot) ?? {
+			repoPackages: {
+				root: "",
+			},
+		};
+		return new FluidRepoBuild(resolvedRoot, packageManifest);
+	}
+	private constructor(resolvedRoot: string, packageManifest: IFluidBuildConfig) {
+		super(resolvedRoot, packageManifest);
 	}
 
 	public async clean() {
@@ -78,12 +79,14 @@ export class FluidRepoBuild extends FluidRepo {
 				matched = true;
 			});
 
-			options.releaseGroups.forEach((releaseGroup) => {
-				if (!this.matchWithFilter((pkg) => pkg.monoRepo?.kind === releaseGroup)) {
+			options.releaseGroups.forEach((releaseGroupName) => {
+				const releaseGroup = this.releaseGroups.get(releaseGroupName);
+				if (releaseGroup === undefined) {
 					throw new Error(
-						`Release group '${releaseGroup}' specified is not defined in the repo.`,
+						`Release group '${releaseGroupName}' specified is not defined in the repo.`,
 					);
 				}
+				this.setMatchedReleaseGroup(releaseGroup);
 				matched = true;
 			});
 			return matched;
@@ -98,36 +101,16 @@ export class FluidRepoBuild extends FluidRepo {
 		return true;
 	}
 
-	public async checkPackages(fix: boolean) {
-		for (const pkg of this.packages.packages) {
-			if (!pkg.matched) {
-				// Only check package that matched to build
-				continue;
-			}
-			// TODO: Make this configurable and/or teach fluid-build about new scripts
-
-			if (uncheckedPackages.includes(pkg.name)) {
-				verbose(`Skipping ${pkg.nameColored} because it's ignored.`);
-				continue;
-			}
-			if (FluidPackageCheck.checkScripts(pkg, fix)) {
-				await pkg.savePackageJson();
-			}
-			await FluidPackageCheck.checkNpmIgnore(pkg, fix);
-			await FluidPackageCheck.checkTsConfig(pkg, fix);
-			await FluidPackageCheck.checkTestDir(pkg, fix);
-		}
-	}
-	public async depcheck() {
+	public async depcheck(fix: boolean) {
 		for (const pkg of this.packages.packages) {
 			// Fluid specific
 			let checkFiles: string[];
 			if (pkg.packageJson.dependencies) {
 				const tsFiles = await globFn(`${pkg.directory}/**/*.ts`, {
-					ignore: `${pkg.directory}/node_modules`,
+					ignore: `${pkg.directory}/node_modules/**`,
 				});
 				const tsxFiles = await globFn(`${pkg.directory}/**/*.tsx`, {
-					ignore: `${pkg.directory}/node_modules`,
+					ignore: `${pkg.directory}/node_modules/**`,
 				});
 				checkFiles = tsFiles.concat(tsxFiles);
 			} else {
@@ -135,7 +118,7 @@ export class FluidRepoBuild extends FluidRepo {
 			}
 
 			const npmDepChecker = new NpmDepChecker(pkg, checkFiles);
-			if (await npmDepChecker.run()) {
+			if (await npmDepChecker.run(fix)) {
 				await pkg.savePackageJson();
 			}
 		}
@@ -156,6 +139,7 @@ export class FluidRepoBuild extends FluidRepo {
 	public createBuildGraph(options: ISymlinkOptions, buildTargetNames: string[]) {
 		return new BuildGraph(
 			this.createPackageMap(),
+			this.getReleaseGroupPackages(),
 			buildTargetNames,
 			getFluidBuildConfig(this.resolvedRoot)?.tasks,
 			(pkg: Package) => {
@@ -164,6 +148,14 @@ export class FluidRepoBuild extends FluidRepo {
 				};
 			},
 		);
+	}
+
+	private getReleaseGroupPackages() {
+		const releaseGroupPackages: Package[] = [];
+		for (const releaseGroup of this.releaseGroups.values()) {
+			releaseGroupPackages.push(releaseGroup.pkg);
+		}
+		return releaseGroupPackages;
 	}
 
 	private matchWithFilter(callback: (pkg: Package) => boolean) {
@@ -177,7 +169,7 @@ export class FluidRepoBuild extends FluidRepo {
 		return matched;
 	}
 
-	private setMatchedDir(dir: string, matchMonoRepo: boolean) {
+	private setMatchedDir(dir: string, matchReleaseGroup: boolean) {
 		const pkgDir = lookUpDirSync(dir, (currentDir) => {
 			return existsSync(path.join(currentDir, "package.json"));
 		});
@@ -185,10 +177,12 @@ export class FluidRepoBuild extends FluidRepo {
 			throw new Error(`Unable to look up package in directory '${dir}'.`);
 		}
 
-		for (const monoRepo of this.releaseGroups.values()) {
-			if (isSameFileOrDir(monoRepo.repoPath, pkgDir)) {
-				log(`Release group ${chalk.cyanBright(monoRepo.kind)} matched (directory: ${dir})`);
-				this.setMatchedMonoRepo(monoRepo);
+		for (const releaseGroup of this.releaseGroups.values()) {
+			if (isSameFileOrDir(releaseGroup.repoPath, pkgDir)) {
+				log(
+					`Release group ${chalk.cyanBright(releaseGroup.kind)} matched (directory: ${dir})`,
+				);
+				this.setMatchedReleaseGroup(releaseGroup);
 				return;
 			}
 		}
@@ -202,27 +196,25 @@ export class FluidRepoBuild extends FluidRepo {
 			);
 		}
 
-		if (matchMonoRepo && foundPackage.monoRepo !== undefined) {
+		if (matchReleaseGroup && foundPackage.monoRepo !== undefined) {
 			log(
 				`\tRelease group ${chalk.cyanBright(
 					foundPackage.monoRepo.kind,
 				)} matched (directory: ${dir})`,
 			);
-			this.setMatchedMonoRepo(foundPackage.monoRepo);
+			this.setMatchedReleaseGroup(foundPackage.monoRepo);
 		} else {
 			log(`\t${foundPackage.nameColored} matched (${dir})`);
 			this.setMatchedPackage(foundPackage);
 		}
 	}
 
-	private setMatchedMonoRepo(monoRepo: MonoRepo) {
-		if (!this.matchWithFilter((pkg) => MonoRepo.isSame(pkg.monoRepo, monoRepo))) {
-			throw new Error(`Release group '${monoRepo.kind}' does not have any packages`);
-		}
+	private setMatchedReleaseGroup(monoRepo: MonoRepo) {
+		this.setMatchedPackage(monoRepo.pkg);
 	}
 
 	private setMatchedPackage(pkg: Package) {
-		verbose(`${pkg.nameColored}: matched`);
+		traceInit(`${pkg.nameColored}: matched`);
 		pkg.setMatched();
 	}
 }

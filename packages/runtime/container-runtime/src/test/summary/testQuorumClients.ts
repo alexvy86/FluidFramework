@@ -3,12 +3,9 @@
  * Licensed under the MIT License.
  */
 
-import { TypedEventEmitter } from "@fluidframework/common-utils";
-import {
-	IQuorumClients,
-	IQuorumEvents,
-	ISequencedClient,
-} from "@fluidframework/protocol-definitions";
+import { TypedEventEmitter } from "@fluid-internal/client-utils";
+import { IQuorumClients, ISequencedClient } from "@fluidframework/driver-definitions";
+import { IQuorumEvents } from "@fluidframework/driver-definitions/internal";
 
 export class TestQuorumClients extends TypedEventEmitter<IQuorumEvents> implements IQuorumClients {
 	public disposed = false;

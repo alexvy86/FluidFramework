@@ -3,33 +3,34 @@
  * Licensed under the MIT License.
  */
 
-import { ContainerProperty, PropertyFactory } from "@fluid-experimental/property-properties";
+import { type ContainerProperty, PropertyFactory } from "@fluid-experimental/property-properties";
 import Button from "@material-ui/core/Button";
 import InputAdornment from "@material-ui/core/InputAdornment";
-import { makeStyles } from "@material-ui/core/styles";
 import TextField from "@material-ui/core/TextField";
+import { makeStyles } from "@material-ui/core/styles";
 import classNames from "classnames";
 import React, { useEffect, useState } from "react";
 import AutoSizer from "react-virtualized-auto-sizer";
+
+import {
+	DecoratedSelect,
+	type DecoratedSelectGroupedOptionsType,
+	type DecoratedSelectOptionsType,
+	type DecoratedSelectValueType,
+	type IDecoratedSelectOptionType,
+} from "./DecoratedSelect.js";
+import { ErrorPopup } from "./ErrorPopup.js";
+import { ErrorTooltip } from "./ErrorTooltip.js";
+import type { IInspectorRow } from "./InspectorTableTypes.js";
+import { SvgIcon } from "./SVGIcon.js";
+import { TypeIcon } from "./TypeIcon.js";
 import {
 	backGroundGrayColor,
 	borderGrayColor,
 	colorWhite,
 	iconMarginRight,
 	unit,
-} from "./constants";
-import {
-	DecoratedSelect,
-	DecoratedSelectGroupedOptionsType,
-	DecoratedSelectOptionsType,
-	DecoratedSelectValueType,
-	IDecoratedSelectOptionType,
-} from "./DecoratedSelect";
-import { ErrorPopup } from "./ErrorPopup";
-import { ErrorTooltip } from "./ErrorTooltip";
-import { IInspectorRow } from "./InspectorTableTypes";
-import { SvgIcon } from "./SVGIcon";
-import { TypeIcon } from "./TypeIcon";
+} from "./constants.js";
 
 const useStyles = makeStyles(
 	{
@@ -166,48 +167,35 @@ export const NewDataForm: React.FunctionComponent<INewDataFormProps> = (props) =
 
 	// Reshape the 'options' array which into an object suitable for consumption by react-select.
 	// Also into each option add an SVG icon corresponding to its label.
-	const typeOptions: DecoratedSelectGroupedOptionsType = options.map((group) => ({
+	const allTypeOptions: DecoratedSelectGroupedOptionsType = options.map((group) => ({
 		label: group[0],
 		options: addCorrespondingSvgIcon(group[1]),
 	}));
+	let typeOptions = allTypeOptions;
 
 	let listOfContextOptions: DecoratedSelectOptionsType = contextOptions;
-	let defaultTypeOption: IDecoratedSelectOptionType;
+	let defaultTypeOption: IDecoratedSelectOptionType = typeOptions[0].options[0];
 	const defaultContainerOption: IDecoratedSelectOptionType = listOfContextOptions[0];
 
-	const excludeUninheritedTemplates = () => {
-		typeOptions.forEach((subType) => {
-			const subTypeOptions: IDecoratedSelectOptionType[] = [];
-			subType.options.forEach((typ) => {
-				const parentTypes = PropertyFactory.getAllParentsForTemplate(typ.value);
-				if (
-					typ.value === rowData.parent!.getTypeid() ||
-					parentTypes.includes(rowData.parent!.getTypeid())
-				) {
-					subTypeOptions.push(typ);
-				}
-			});
-			subType.options = subTypeOptions;
-		});
-	};
-
-	const filterTypeOptions = (parentTypeid: string) => {
-		const allOptions = typeOptions.reduce<IDecoratedSelectOptionType[]>(
-			(acc, val) => acc.concat(val.options),
-			[],
-		);
-		const parentTypeidOption = allOptions.find((typ) => typ.value === parentTypeid);
-		return parentTypeidOption !== undefined ? parentTypeidOption : allOptions[0];
-	};
+	const excludeUninheritedTemplates = (parentTypeId: string) => (subType) => ({
+		...subType,
+		options: subType.options.filter((typ: IDecoratedSelectOptionType) => {
+			const parentTypes = PropertyFactory.getAllParentsForTemplate(typ.value);
+			return typ.value === parentTypeId || parentTypes.includes(parentTypeId);
+		}),
+	});
 
 	// Choose default value depending on the context
-	// For "single" context  or when parent is undefined we choose the first option from the "options" property
+	// For "single" context or when parent is undefined we choose the first option from the "options" property
 	// For sets, maps and arrays we need to extract the typeid of parent collection and set contextOptions only to single
-	if (!rowData.parent || rowData.parent!.getContext() === "single") {
-		defaultTypeOption = typeOptions[0].options[0];
-	} else {
-		excludeUninheritedTemplates();
-		defaultTypeOption = filterTypeOptions(rowData.parent!.getTypeid());
+	if (rowData.parent && rowData.parent.getContext() !== "single") {
+		const parentTypeId = rowData.parent.getTypeid();
+		typeOptions = allTypeOptions.map(excludeUninheritedTemplates(parentTypeId));
+		const allOptions = typeOptions.reduce<IDecoratedSelectOptionType[]>(
+			(acc, group) => acc.concat(group.options),
+			[],
+		);
+		defaultTypeOption = allOptions.find((typ) => typ.value === parentTypeId) ?? allOptions[0];
 		listOfContextOptions = contextOptions.filter((cOption) => cOption.value === "single");
 	}
 

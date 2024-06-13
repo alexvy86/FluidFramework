@@ -2,70 +2,72 @@
 	"Definitions": {
 		"dotGroup": false,
 		"layers": {
-			"Base-Definitions": {
+			"Common-Definitions": {
 				"dotSameRank": true,
-				"packages": [
-					"@fluidframework/common-definitions",
-					"@fluidframework/core-interfaces",
-					"@fluidframework/gitresources"
-				]
+				"packages": ["@fluidframework/gitresources"]
+			},
+			"Core-Interfaces": {
+				"packages": ["@fluidframework/core-interfaces"],
+				"deps": []
 			},
 			"Protocol-Definitions": {
 				"packages": ["@fluidframework/protocol-definitions"],
-				"deps": ["@fluidframework/common-definitions"]
+				"deps": []
 			},
 			"Driver-Definitions": {
 				"packages": [
 					"@fluidframework/driver-definitions",
 					"@fluidframework/odsp-driver-definitions"
 				],
-				"deps": ["Protocol-Definitions", "@fluidframework/core-interfaces"]
+				"deps": ["Core-Interfaces"]
 			},
 			"Container-Definitions": {
 				"packages": ["@fluidframework/container-definitions"],
-				"deps": ["Driver-Definitions", "@fluidframework/core-interfaces"]
+				"deps": ["Driver-Definitions", "Core-Interfaces"]
 			}
 		}
 	},
 	"Utils": {
 		"layers": {
-			"Base-Utils": {
+			"Common-Utils": {
 				"packages": ["@fluidframework/common-utils"],
-				"deps": ["Base-Definitions"]
+				"deps": ["Common-Definitions"]
 			},
 			"Core-Utils": {
 				"packages": ["@fluidframework/core-utils"],
 				"deps": []
 			},
+			"Client-Utils": {
+				"packages": ["@fluid-internal/client-utils"],
+				"deps": ["Core-Interfaces", "Core-Utils"]
+			},
 			"Protocol-Utils": {
 				"packages": ["@fluidframework/protocol-base"],
-				"deps": ["Base-Utils", "Protocol-Definitions"]
+				"deps": ["Common-Utils", "Protocol-Definitions"]
 			},
 			"Driver-Utils": {
 				"packages": ["@fluidframework/driver-utils"],
-				"deps": ["Protocol-Utils", "Driver-Definitions", "Telemetry-Utils"]
-			},
-			"Framework-Utils": {
-				"packages": ["@fluidframework/view-adapters", "@fluidframework/view-interfaces"],
-				"deps": ["Base-Definitions"]
+				"deps": ["Protocol-Utils", "Driver-Definitions", "Telemetry-Utils", "Core-Utils"]
 			},
 			"Other-Utils": {
 				"dot": false,
 				"packages": ["@fluidframework/odsp-doclib-utils"],
-				"deps": ["Driver-Definitions", "Driver-Utils", "Server-Shared-Utils"]
+				"deps": ["Driver-Definitions", "Driver-Utils", "Server-Shared-Utils", "Client-Utils"]
 			},
 			"Tool-Utils": {
 				"dot": false,
 				"packages": ["@fluidframework/tool-utils"],
-				"deps": ["Base-Utils", "Other-Utils"]
+				"deps": ["Common-Utils", "Client-Utils", "Other-Utils"]
 			},
 			"Telemetry-Utils": {
 				"packages": ["@fluidframework/telemetry-utils"],
-				"deps": ["Base-Utils", "Base-Definitions"]
-			},
-			"Container-Utils": {
-				"packages": ["@fluidframework/container-utils"],
-				"deps": ["Telemetry-Utils", "Container-Definitions"]
+				"deps": [
+					"Common-Utils",
+					"Core-Interfaces",
+					"Core-Utils",
+					"Client-Utils",
+					"Driver-Definitions"
+				]
 			}
 		}
 	},
@@ -74,15 +76,15 @@
 		"layers": {
 			"Driver": {
 				"dirs": ["packages/drivers/"],
-				"deps": ["Driver-Utils", "@fluidframework/core-interfaces", "Other-Utils"]
+				"deps": ["Driver-Utils", "Core-Interfaces", "Client-Utils", "Other-Utils"]
 			},
 			"Loader": {
 				"dirs": ["packages/loader/"],
-				"deps": ["Container-Definitions", "Driver-Utils", "Container-Utils"]
+				"deps": ["Container-Definitions", "Driver-Utils", "Client-Utils"]
 			},
 			"Runtime": {
 				"dirs": ["experimental/dds/", "packages/dds/", "packages/runtime/"],
-				"deps": ["Container-Definitions", "Container-Utils", "Core-Utils", "Driver-Utils"]
+				"deps": ["Container-Definitions", "Core-Utils", "Client-Utils", "Driver-Utils"]
 			},
 			"Framework": {
 				"packages": ["@fluid-experimental/data-objects", "@fluidframework/fluid-static"],
@@ -91,18 +93,7 @@
 					"experimental/PropertyDDS/packages/",
 					"packages/framework/"
 				],
-				"deps": ["Framework-Utils", "Loader", "Runtime"]
-			},
-			"ServiceClients": {
-				"packages": ["@fluidframework/tinylicious-client"],
-				"deps": [
-					"Framework",
-					"Loader",
-					"Routerlicious-Driver",
-					"Server-Libs",
-					"Server-Shared-Utils",
-					"Test-Utils"
-				]
+				"deps": ["Loader", "Runtime", "Client-Utils"]
 			},
 			"Examples": {
 				"dot": false,
@@ -119,6 +110,7 @@
 				"packages": [
 					"@fluidframework/build-common",
 					"@fluidframework/eslint-config-fluid",
+					"@fluid-internal/eslint-plugin-fluid",
 					"@fluid-tools/benchmark"
 				]
 			},
@@ -129,17 +121,32 @@
 			},
 			"Tests": {
 				"dev": true,
-				"dirs": ["packages/test/", "azure/packages/test/"]
+				"dirs": [
+					"packages/test/",
+					"azure/packages/test/",
+					"packages/service-clients/end-to-end-tests"
+				]
 			},
 			"Test-Utils": {
 				"dev": true,
 				"packages": [
-					"@fluid-internal/stochastic-test-utils",
-					"@fluid-internal/test-dds-utils",
+					"@fluid-private/stochastic-test-utils",
+					"@fluid-private/test-dds-utils",
 					"@fluidframework/local-driver",
-					"@fluidframework/test-runtime-utils",
-					"@fluidframework/test-client-utils",
-					"@fluid-tools/webpack-fluid-loader"
+					"@fluidframework/test-runtime-utils"
+				]
+			},
+			"ServiceClients": {
+				"dirs": ["packages/service-clients/"],
+				"deps": [
+					"Container-Definitions",
+					"Driver",
+					"Framework",
+					"Runtime",
+					"Routerlicious-Driver",
+					"Loader",
+					"Server-Libs",
+					"Test-Utils"
 				]
 			},
 			"AzureClient": {
@@ -158,18 +165,15 @@
 			},
 			"Azure-Service-Utils": {
 				"packages": ["@fluidframework/azure-service-utils"],
-				"deps": ["Protocol-Definitions", "Server-Shared-Utils", "Test-Utils"]
+				"deps": ["Driver-Definitions", "Server-Shared-Utils", "Test-Utils"]
 			},
 			"Azure-Service": {
 				"packages": ["@fluidframework/azure-local-service"],
 				"deps": ["Server-Tools"]
 			},
 			"Azure-Examples": {
-				"packages": [
-					"@fluid-example/presence-tracker",
-					"@fluid-example/app-integration-external-controller"
-				],
-				"deps": ["UberPackage", "AzureClient", "ServiceClients"]
+				"packages": ["@fluid-example/app-integration-external-controller"],
+				"deps": ["UberPackage", "ServiceClients"]
 			}
 		}
 	},
@@ -191,8 +195,8 @@
 				"dirs": ["server/gitrest/", "server/gitrest/packages/"],
 				"deps": [
 					"Server-Libs",
-					"Base-Utils",
-					"Base-Definitions",
+					"Common-Utils",
+					"Common-Definitions",
 					"Protocol-Utils",
 					"Protocol-Definitions",
 					"Server-Shared-Utils"
@@ -202,8 +206,8 @@
 				"dirs": ["server/historian/", "server/historian/packages/"],
 				"deps": [
 					"Server-Libs",
-					"Base-Utils",
-					"Base-Definitions",
+					"Common-Utils",
+					"Common-Definitions",
 					"Protocol-Utils",
 					"Protocol-Definitions",
 					"Server-Shared-Utils"

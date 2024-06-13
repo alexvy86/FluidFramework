@@ -3,13 +3,14 @@
  * Licensed under the MIT License.
  */
 
-import { IContainer } from "@fluidframework/container-definitions";
-import { IContainerRuntime } from "@fluidframework/container-runtime-definitions";
-import { requestFluidObject } from "@fluidframework/runtime-utils";
+import { getDataStoreEntryPoint } from "@fluid-example/example-utils";
+import { IProvideRuntimeAttributor, IRuntimeAttributor } from "@fluid-experimental/attributor";
+import { IContainer } from "@fluidframework/container-definitions/internal";
+import { IContainerRuntime } from "@fluidframework/container-runtime-definitions/internal";
 import { FluidObject } from "@fluidframework/core-interfaces";
-import { IRuntimeAttributor, IProvideRuntimeAttributor } from "@fluid-experimental/attributor";
-import { ModelContainerRuntimeFactoryWithAttribution } from "./modelContainerRuntimeFactoryWithAttribution";
-import { HitCounter } from "./dataObject";
+
+import { HitCounter } from "./dataObject.js";
+import { ModelContainerRuntimeFactoryWithAttribution } from "./modelContainerRuntimeFactoryWithAttribution.js";
 
 export interface IHitCounterAppModel {
 	readonly hitCounter: HitCounter;
@@ -35,7 +36,7 @@ export class HitCounterContainerRuntimeFactory extends ModelContainerRuntimeFact
 	/**
 	 * {@inheritDoc ModelContainerRuntimeFactory.containerInitializingFirstTime}
 	 */
-	protected async containerInitializingFirstTime(runtime: IContainerRuntime) {
+	protected async containerInitializingFirstTime(runtime: IContainerRuntime): Promise<void> {
 		const hitCounter = await runtime.createDataStore(HitCounter.getFactory().type);
 		await hitCounter.trySetAlias(hitCounterId);
 	}
@@ -43,11 +44,11 @@ export class HitCounterContainerRuntimeFactory extends ModelContainerRuntimeFact
 	/**
 	 * {@inheritDoc ModelContainerRuntimeFactory.createModel}
 	 */
-	protected async createModel(runtime: IContainerRuntime, container: IContainer) {
-		const hitCounter = await requestFluidObject<HitCounter>(
-			await runtime.getRootDataStore(hitCounterId),
-			"",
-		);
+	protected async createModel(
+		runtime: IContainerRuntime,
+		container: IContainer,
+	): Promise<HitCounterAppModel> {
+		const hitCounter = await getDataStoreEntryPoint<HitCounter>(runtime, hitCounterId);
 		const maybeProvidesAttributor: FluidObject<IProvideRuntimeAttributor> = runtime.scope;
 		const runtimeAttributor = maybeProvidesAttributor.IRuntimeAttributor;
 		return new HitCounterAppModel(hitCounter, runtimeAttributor);

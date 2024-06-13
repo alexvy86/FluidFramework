@@ -2,13 +2,13 @@
  * Copyright (c) Microsoft Corporation and contributors. All rights reserved.
  * Licensed under the MIT License.
  */
+
+import { DevtoolsPanel, WindowMessageRelay } from "@fluid-internal/devtools-view";
 import { Resizable } from "re-resizable";
 import React from "react";
 import ReactDOM from "react-dom";
 
-import { DevtoolsPanel, WindowMessageRelay } from "@fluid-experimental/devtools-view";
-
-import { App } from "./App";
+import { App } from "./App.js";
 
 console.log("Rendering app...");
 
@@ -27,6 +27,8 @@ document.body.append(devtoolsElement);
 
 ReactDOM.render(<DevtoolsView />, devtoolsElement, () => {
 	console.log("Devtools UI rendered!");
+	// Setting "fluidStarted" is just for our test automation
+	globalThis.fluidStarted = true;
 });
 
 function DevtoolsView(): React.ReactElement {

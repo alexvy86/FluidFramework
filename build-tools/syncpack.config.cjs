@@ -50,13 +50,6 @@ module.exports = {
 			range: "",
 		},
 
-		// PropertyDDS packages' dependencies are ignored because they use a lot of exact deps.
-		{
-			dependencies: ["**"],
-			packages: ["@fluid-experimental/property-*"],
-			isIgnored: true,
-		},
-
 		{
 			label: "Overridden server dependencies should always be exact versions",
 			dependencyTypes: ["pnpmOverrides"],
@@ -79,7 +72,7 @@ module.exports = {
 
 		{
 			label: "Must use exact dependency ranges",
-			dependencies: ["sort-package-json"],
+			dependencies: ["jssm", "jssm-viz-cli", "sort-package-json"],
 			packages: ["**"],
 			range: "",
 		},
@@ -97,9 +90,20 @@ module.exports = {
 				"typescript",
 				"vue",
 				"webpack-dev-server",
+			],
+			packages: ["**"],
+			range: "~",
+		},
 
-				// Required due to use of "unstable" tree component APIs
-				"@fluentui/react-components",
+		{
+			label:
+				"Dependencies on other fluid packages within the workspace should use tilde dependency ranges",
+			dependencies: [
+				"@fluid-private/readme-command",
+				"@fluid-tools/build-cli",
+				"@fluid-tools/version-tools",
+				"@fluidframework/build-tools",
+				"@fluidframework/bundle-size-tools",
 			],
 			packages: ["**"],
 			range: "~",
@@ -122,6 +126,12 @@ module.exports = {
 	 * `syncpack list-mismatches`, the output is grouped by label.
 	 */
 	versionGroups: [
+		{
+			label: "chalk >2 is ESM only but build-tools and version-tools are still CJS only.",
+			dependencies: ["chalk"],
+			packages: ["@fluidframework/build-tools", "@fluid-tools/version-tools"],
+		},
+
 		{
 			label: "Versions of common Fluid packages should all match",
 			dependencies: [
@@ -147,12 +157,14 @@ module.exports = {
 		},
 
 		{
-			label: "Ignore interdependencies on other Fluid packages. This is needed because syncpack doesn't understand our >= < semver ranges",
+			label:
+				"Ignore interdependencies on other Fluid packages. This is needed because syncpack doesn't understand our >= < semver ranges",
 			isIgnored: true,
 			packages: [
 				"@fluid-example/**",
 				"@fluid-experimental/**",
 				"@fluid-internal/**",
+				"@fluid-private/**",
 				"@fluid-tools/**",
 				"@fluidframework/**",
 				"fluid-framework",
@@ -161,6 +173,7 @@ module.exports = {
 				"@fluid-example/**",
 				"@fluid-experimental/**",
 				"@fluid-internal/**",
+				"@fluid-private/**",
 				"@fluid-tools/**",
 				"@fluidframework/**",
 				"fluid-framework",

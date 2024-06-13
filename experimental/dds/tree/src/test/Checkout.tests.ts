@@ -4,25 +4,28 @@
  */
 
 import { strict as assert } from 'assert';
-import { validateAssertionError } from '@fluidframework/test-runtime-utils';
-import { ITelemetryBaseEvent } from '@fluidframework/common-definitions';
+
+import { ITelemetryBaseEvent } from '@fluidframework/core-interfaces';
+import { validateAssertionError } from '@fluidframework/test-runtime-utils/internal';
 import { expect } from 'chai';
+
 import {
-	setTrait,
+	Change,
+	Checkout,
+	CheckoutEvent,
 	EditStatus,
-	StableRange,
-	StablePlace,
 	EditValidationResult,
 	SharedTree,
 	SharedTreeEvent,
-	Checkout,
-	CheckoutEvent,
-	Change,
 	Side,
+	StablePlace,
+	StableRange,
 	areRevisionViewsSemanticallyEqual,
-} from '../index';
-import { TestTree } from './utilities/TestNode';
-import { setUpTestSharedTree, SharedTreeTestingOptions, setUpTestTree } from './utilities/TestUtilities';
+	setTrait,
+} from '../index.js';
+
+import { TestTree } from './utilities/TestNode.js';
+import { SharedTreeTestingOptions, setUpTestSharedTree, setUpTestTree } from './utilities/TestUtilities.js';
 
 /**
  * Checkout test suite
@@ -158,7 +161,7 @@ export function checkoutTests(
 			// Is still malformed after a subsequent valid edit
 			assert.throws(
 				() => checkout.applyChanges(Change.delete(StableRange.only(testTree.left))),
-				(e) =>
+				(e: Error) =>
 					validateAssertionError(e, 'Cannot apply change to an edit unless all previous changes have applied')
 			);
 			expect(checkout.getEditStatus()).equals(EditStatus.Malformed);
@@ -205,7 +208,7 @@ export function checkoutTests(
 
 			assert.throws(
 				() => checkout.closeEdit(),
-				(e) => validateAssertionError(e, /Cannot close a transaction that has already failed./)
+				(e: Error) => validateAssertionError(e, /Cannot close a transaction that has already failed./)
 			);
 			expect(events.length).to.equal(1);
 		});
@@ -275,14 +278,14 @@ export function checkoutTests(
 			// Is still invalid after a subsequent valid edit
 			assert.throws(
 				() => checkout.applyChanges(Change.delete(StableRange.only(testTree.left))),
-				(e) =>
+				(e: Error) =>
 					validateAssertionError(e, 'Cannot apply change to an edit unless all previous changes have applied')
 			);
 			expect(checkout.getEditStatus()).equals(EditStatus.Invalid);
 
 			assert.throws(
 				() => checkout.closeEdit(),
-				(e) => validateAssertionError(e, /Cannot close a transaction that has already failed./)
+				(e: Error) => validateAssertionError(e, /Cannot close a transaction that has already failed./)
 			);
 
 			// Next edit is unaffected
@@ -313,14 +316,14 @@ export function checkoutTests(
 			// Is still malformed after a subsequent valid edit
 			assert.throws(
 				() => checkout.applyChanges(Change.delete(StableRange.only(testTree.left))),
-				(e) =>
+				(e: Error) =>
 					validateAssertionError(e, 'Cannot apply change to an edit unless all previous changes have applied')
 			);
 			expect(checkout.getEditStatus()).equals(EditStatus.Malformed);
 
 			assert.throws(
 				() => checkout.closeEdit(),
-				(e) => validateAssertionError(e, /Cannot close a transaction that has already failed./)
+				(e: Error) => validateAssertionError(e, /Cannot close a transaction that has already failed./)
 			);
 
 			// Next edit is unaffected

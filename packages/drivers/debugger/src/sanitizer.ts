@@ -18,21 +18,22 @@
  * Messages must match known structures when scrubbing for Fluid Preview.
  */
 
+import { assert } from "@fluidframework/core-utils/internal";
+import { ISequencedDocumentMessage } from "@fluidframework/driver-definitions/internal";
 import * as Validator from "jsonschema";
-import { assert } from "@fluidframework/common-utils";
-import { ISequencedDocumentMessage } from "@fluidframework/protocol-definitions";
+
 import {
 	attachContentsSchema,
 	chunkedOpContentsSchema,
 	joinContentsSchema,
 	joinDataSchema,
 	opContentsMapSchema,
-	opContentsSchema,
 	opContentsMergeTreeDeltaOpSchema,
 	opContentsMergeTreeGroupOpSchema,
 	opContentsRegisterCollectionSchema,
+	opContentsSchema,
 	proposeContentsSchema,
-} from "./messageSchema";
+} from "./messageSchema.js";
 
 enum TextType {
 	Generic,
@@ -241,7 +242,7 @@ export class Sanitizer {
 		return result.valid;
 	};
 
-	readonly chunkProcessor = new ChunkedOpProcessor(this.objectMatchesSchema, this.debug);
+	readonly chunkProcessor: ChunkedOpProcessor;
 
 	constructor(
 		readonly messages: ISequencedDocumentMessage[],
@@ -255,6 +256,7 @@ export class Sanitizer {
 		this.defaultExcludedKeys.add("snapshotFormatVersion");
 		this.defaultExcludedKeys.add("packageVersion");
 		this.mergeTreeExcludedKeys.add("nodeType");
+		this.chunkProcessor = new ChunkedOpProcessor(this.objectMatchesSchema, debug);
 	}
 
 	debugMsg(msg: any) {
@@ -331,8 +333,10 @@ export class Sanitizer {
 	 * @param excludedKeys - object keys for which to skip replacement when not in fullScrub
 	 */
 	replaceObject(
+		// eslint-disable-next-line @rushstack/no-new-null
 		input: object | null,
 		excludedKeys: Set<string> = this.defaultExcludedKeys,
+		// eslint-disable-next-line @rushstack/no-new-null
 	): object | null {
 		// File might contain actual nulls
 		if (input === null || input === undefined) {

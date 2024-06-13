@@ -4,17 +4,26 @@
  */
 
 import * as fs from "fs";
-import { ITelemetryLoggerExt, ChildLogger } from "@fluidframework/telemetry-utils";
-import { CSVFileLogger } from "./csvFileLogger";
-import { IFileLogger, ITelemetryOptions, OutputFormat } from "./fileLogger";
-import { JSONFileLogger } from "./jsonFileLogger";
+
+import { ITelemetryLoggerExt, createChildLogger } from "@fluidframework/telemetry-utils/internal";
+
+import { CSVFileLogger } from "./csvFileLogger.js";
+import { IFileLogger, ITelemetryOptions, OutputFormat } from "./fileLogger.js";
+import { JSONFileLogger } from "./jsonFileLogger.js";
 
 /**
- * Create a ITelemetryLoggerExt wrapped around provided IFileLogger
- * ! It is expected that all events be sent through the returned "logger" value
- * ! The "fileLogger" value should have its "close()" method called at the end of execution
- * Note: if an output format is not supplied, default is JSON
- * @returns - both the IFileLogger implementation and ITelemetryLoggerExt wrapper to be called
+ * Create an {@link @fluidframework/telemetry-utils#ITelemetryLoggerExt} wrapped around provided {@link IFileLogger}.
+ *
+ * @remarks
+ *
+ * It is expected that all events be sent through the returned "logger" value.
+ *
+ * The "fileLogger" value should have its "close()" method called at the end of execution.
+ *
+ * Note: if an output format is not supplied, default is JSON.
+ *
+ * @returns Both the `IFileLogger` implementation and `ITelemetryLoggerExt` wrapper to be called.
+ * @internal
  */
 export function createLogger(
 	filePath: string,
@@ -25,8 +34,12 @@ export function createLogger(
 			? new CSVFileLogger(filePath, options?.eventsPerFlush, options?.defaultProps)
 			: new JSONFileLogger(filePath, options?.eventsPerFlush, options?.defaultProps);
 
-	const logger = ChildLogger.create(fileLogger, "LocalSnapshotRunnerApp", {
-		all: { Event_Time: () => Date.now() },
+	const logger = createChildLogger({
+		logger: fileLogger,
+		namespace: "LocalSnapshotRunnerApp",
+		properties: {
+			all: { Event_Time: () => Date.now() },
+		},
 	});
 
 	return { logger, fileLogger };
@@ -35,6 +48,7 @@ export function createLogger(
 /**
  * Validate the telemetryFile command line argument
  * @param telemetryFile - path where telemetry will be written
+ * @internal
  */
 export function getTelemetryFileValidationError(telemetryFile: string): string | undefined {
 	if (!telemetryFile) {
@@ -50,6 +64,7 @@ export function getTelemetryFileValidationError(telemetryFile: string): string |
  * Validate the provided output format and default properties
  * @param format - desired output format of the telemetry
  * @param props - default properties to be added to every telemetry entry
+ * @internal
  */
 export function validateAndParseTelemetryOptions(
 	format?: string,

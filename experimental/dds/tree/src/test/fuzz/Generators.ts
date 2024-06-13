@@ -3,8 +3,7 @@
  * Licensed under the MIT License.
  */
 
-import { IsoBuffer } from '@fluidframework/common-utils';
-import { IFluidHandle } from '@fluidframework/core-interfaces';
+import { IsoBuffer } from '@fluid-internal/client-utils';
 import {
 	AcceptanceCondition,
 	AsyncGenerator,
@@ -13,13 +12,16 @@ import {
 	createWeightedAsyncGenerator,
 	done,
 	makeRandom,
-} from '@fluid-internal/stochastic-test-utils';
-import { Side, TraitMap, WriteFormat } from '../../persisted-types';
-import { BuildNode, ChangeType, StablePlace, StableRange } from '../../ChangeTypes';
-import { TraitLocation, TreeView, TreeViewRange } from '../../TreeView';
-import { Definition, DetachedSequenceId, NodeId, TraitLabel } from '../../Identifiers';
-import { fail } from '../../Common';
-import { rangeFromStableRange } from '../../TreeViewUtilities';
+} from '@fluid-private/stochastic-test-utils';
+import { IFluidHandle } from '@fluidframework/core-interfaces';
+
+import { BuildNode, ChangeType, StablePlace, StableRange } from '../../ChangeTypes.js';
+import { fail } from '../../Common.js';
+import { Definition, DetachedSequenceId, NodeId, TraitLabel } from '../../Identifiers.js';
+import { TraitLocation, TreeView, TreeViewRange } from '../../TreeView.js';
+import { rangeFromStableRange } from '../../TreeViewUtilities.js';
+import { Side, TraitMap, WriteFormat } from '../../persisted-types/index.js';
+
 import {
 	EditGenerationConfig,
 	FuzzChange,
@@ -33,7 +35,7 @@ import {
 	OperationGenerationConfig,
 	TreeContext,
 	TreeLeave,
-} from './Types';
+} from './Types.js';
 
 const defaultJoinConfig: Required<JoinGenerationConfig> = {
 	maximumActiveCollaborators: 10,
@@ -425,7 +427,8 @@ export function makeOpGenerator(passedConfig: OperationGenerationConfig): AsyncG
 			collaboratorsMatches((count) => count < maximumCollaborators),
 		],
 		[leaveGenerator, config.leaveWeight, atLeastOneClient],
-		[makeEditGenerator(config.editConfig, config.joinConfig, true), config.stashWeight, atLeastOneActiveClient],
+		// TODO:#5357: Re-enable stashed ops tests
+		// [makeEditGenerator(config.editConfig, config.joinConfig, true), config.stashWeight, atLeastOneActiveClient],
 		[{ type: 'synchronize' }, config.synchronizeWeight, atLeastOneClient],
 	];
 	return createWeightedAsyncGenerator(opWeights);

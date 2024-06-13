@@ -4,6 +4,7 @@
  */
 
 import { assert } from "chai";
+
 import { Phase } from "./runBenchmark";
 import { Timer } from "./timer";
 
@@ -97,10 +98,16 @@ for (const type of Object.values(TestType)) {
 export type BenchmarkArguments = Titled &
 	(BenchmarkSyncArguments | BenchmarkAsyncArguments | CustomBenchmarkArguments);
 
+/**
+ * @public
+ */
 export type CustomBenchmarkArguments = MochaExclusiveOptions &
 	CustomBenchmark &
 	BenchmarkDescription;
 
+/**
+ * @public
+ */
 export type BenchmarkRunningOptions =
 	| BenchmarkSyncArguments
 	| BenchmarkAsyncArguments
@@ -160,12 +167,18 @@ export interface BenchmarkAsyncFunction extends BenchmarkOptions {
 	benchmarkFnAsync: () => Promise<unknown>;
 }
 
+/**
+ * @public
+ */
 export interface BenchmarkTimer<T> {
 	readonly iterationsPerBatch: number;
 	readonly timer: Timer<T>;
 	recordBatch(duration: number): boolean;
 }
 
+/**
+ * @public
+ */
 export interface CustomBenchmark extends BenchmarkTimingOptions {
 	benchmarkFnCustom<T>(state: BenchmarkTimer<T>): Promise<void>;
 }
@@ -317,6 +330,7 @@ export type HookFunction = () => void | Promise<unknown>;
  * Note that this approach is slightly misleading in the data it measures: if this library chooses a cycle size of 10k,
  * the time reported per iteration is really an average of the time taken to insert 10k elements at the start, and not
  * the average time to insert an element to the start of the empty list as the test body might suggest at a glance.
+ *
  * @example
  *
  * ```typescript
@@ -409,6 +423,7 @@ export function benchmarkArgumentsIsCustom(
 	const isAsync = intersection.benchmarkFnAsync !== undefined;
 	const isCustom = intersection.benchmarkFnCustom !== undefined;
 	assert(
+		// eslint-disable-next-line unicorn/prefer-native-coercion-functions
 		[isSync, isAsync, isCustom].filter((x) => x).length === 1,
 		"Exactly one of `benchmarkFn`, `benchmarkFnAsync` or `benchmarkFnCustom` should be defined.",
 	);
@@ -416,11 +431,13 @@ export function benchmarkArgumentsIsCustom(
 }
 
 /**
- * Tags and formats the provided Title from the supplied BenchmarkDescription to create a
+ * Tags and formats the provided Title from the supplied {@link BenchmarkDescription} to create a
  * tagged and formatted Title for the Reporter.
  *
- * @param args - see {@link BenchmarkDescription} and {@link Titled}
- * @returns - a formatted tagged title from the supplied BenchmarkDescription
+ * @param args - See {@link BenchmarkDescription} and {@link Titled}
+ * @returns A formatted tagged title from the supplied `BenchmarkDescription`.
+ *
+ * @public
  */
 export function qualifiedTitle(args: BenchmarkDescription & Titled): string {
 	const benchmarkTypeTag = BenchmarkType[args.type ?? BenchmarkType.Measurement];

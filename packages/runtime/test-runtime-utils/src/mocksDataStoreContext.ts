@@ -3,22 +3,22 @@
  * Licensed under the MIT License.
  */
 
-import { ITelemetryLoggerExt, DebugLogger } from "@fluidframework/telemetry-utils";
-import { IFluidHandle, IFluidHandleContext, FluidObject } from "@fluidframework/core-interfaces";
+import { AttachState, IAudience } from "@fluidframework/container-definitions";
+import { IDeltaManager } from "@fluidframework/container-definitions/internal";
+import { FluidObject } from "@fluidframework/core-interfaces";
 import {
-	IAudience,
-	IDeltaManager,
-	AttachState,
-	ILoaderOptions,
-} from "@fluidframework/container-definitions";
-
+	IFluidHandleContext,
+	type IFluidHandleInternal,
+} from "@fluidframework/core-interfaces/internal";
+import { IClientDetails, IQuorumClients } from "@fluidframework/driver-definitions";
 import {
-	IClientDetails,
+	IDocumentStorageService,
 	IDocumentMessage,
-	IQuorumClients,
-	ISequencedDocumentMessage,
 	ISnapshotTree,
-} from "@fluidframework/protocol-definitions";
+	ISequencedDocumentMessage,
+} from "@fluidframework/driver-definitions/internal";
+import type { IIdCompressor } from "@fluidframework/id-compressor";
+import type { IIdCompressorCore } from "@fluidframework/id-compressor/internal";
 import {
 	CreateChildSummarizerNodeFn,
 	CreateChildSummarizerNodeParam,
@@ -26,18 +26,20 @@ import {
 	IFluidDataStoreContext,
 	IFluidDataStoreRegistry,
 	IGarbageCollectionDetailsBase,
-	IIdCompressor,
-	IIdCompressorCore,
-} from "@fluidframework/runtime-definitions";
+} from "@fluidframework/runtime-definitions/internal";
+import { ITelemetryLoggerExt, createChildLogger } from "@fluidframework/telemetry-utils/internal";
 import { v4 as uuid } from "uuid";
-import { IDocumentStorageService } from "@fluidframework/driver-definitions";
 
+/**
+ * @alpha
+ */
 export class MockFluidDataStoreContext implements IFluidDataStoreContext {
 	public isLocalDataStore: boolean = true;
 	public packagePath: readonly string[] = undefined as any;
-	public options: ILoaderOptions = undefined as any;
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	public options: Record<string | number, any> = {};
 	public clientId: string | undefined = uuid();
-	public clientDetails: IClientDetails = undefined as any;
+	public clientDetails: IClientDetails;
 	public connected: boolean = true;
 	public baseSnapshot: ISnapshotTree | undefined;
 	public deltaManager: IDeltaManager<ISequencedDocumentMessage, IDocumentMessage> =
@@ -47,6 +49,8 @@ export class MockFluidDataStoreContext implements IFluidDataStoreContext {
 	public IFluidDataStoreRegistry: IFluidDataStoreRegistry = undefined as any;
 	public IFluidHandleContext: IFluidHandleContext = undefined as any;
 	public idCompressor: IIdCompressorCore & IIdCompressor = undefined as any;
+	public readonly gcThrowOnTombstoneUsage = false;
+	public readonly gcTombstoneEnforcementAllowed = false;
 
 	/**
 	 * Indicates the attachment state of the data store to a host service.
@@ -62,10 +66,13 @@ export class MockFluidDataStoreContext implements IFluidDataStoreContext {
 	constructor(
 		public readonly id: string = uuid(),
 		public readonly existing: boolean = false,
-		public readonly logger: ITelemetryLoggerExt = DebugLogger.create(
-			"fluid:MockFluidDataStoreContext",
-		),
-	) {}
+		public readonly baseLogger: ITelemetryLoggerExt = createChildLogger({
+			namespace: "fluid:MockFluidDataStoreContext",
+		}),
+		interactive: boolean = true,
+	) {
+		this.clientDetails = { capabilities: { interactive } };
+	}
 
 	on(event: string | symbol, listener: (...args: any[]) => void): this {
 		switch (event) {
@@ -85,6 +92,7 @@ export class MockFluidDataStoreContext implements IFluidDataStoreContext {
 		throw new Error("Method not implemented.");
 	}
 
+	// back-compat: to be removed in 2.0
 	public ensureNoDataModelChanges<T>(callback: () => T): T {
 		return callback();
 	}
@@ -109,10 +117,6 @@ export class MockFluidDataStoreContext implements IFluidDataStoreContext {
 		throw new Error("Method not implemented.");
 	}
 
-	public bindToContext(): void {
-		throw new Error("Method not implemented.");
-	}
-
 	public setChannelDirty(address: string): void {
 		throw new Error("Method not implemented.");
 	}
@@ -128,11 +132,19 @@ export class MockFluidDataStoreContext implements IFluidDataStoreContext {
 		throw new Error("Method not implemented.");
 	}
 
-	public async uploadBlob(blob: ArrayBufferLike): Promise<IFluidHandle<ArrayBufferLike>> {
+	public deleteChildSummarizerNode(id: string): void {
+		throw new Error("Method not implemented.");
+	}
+
+	public async uploadBlob(blob: ArrayBufferLike): Promise<IFluidHandleInternal<ArrayBufferLike>> {
 		throw new Error("Method not implemented.");
 	}
 
 	public async getBaseGCDetails(): Promise<IGarbageCollectionDetailsBase> {
+		throw new Error("Method not implemented.");
+	}
+
+	public addedGCOutboundRoute(fromPath: string, toPath: string) {
 		throw new Error("Method not implemented.");
 	}
 }

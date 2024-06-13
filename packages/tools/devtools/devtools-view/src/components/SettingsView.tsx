@@ -3,41 +3,45 @@
  * Licensed under the MIT License.
  */
 
-import React from "react";
 import {
 	Dropdown,
+	Link,
 	Option,
+	Switch,
 	makeStyles,
-	shorthands,
 	teamsHighContrastTheme,
 	webDarkTheme,
 	webLightTheme,
 } from "@fluentui/react-components";
+import React from "react";
 
-import { ThemeContext } from "../ThemeHelper";
-
-/**
- * An enum with options for the DevTools themes.
- */
-export enum ThemeOption {
-	Light = "Light",
-	Dark = "Dark",
-	HighContrast = "High Contrast",
-}
+import { useTelemetryOptIn } from "../TelemetryUtils.js";
+import { ThemeOption, useThemeContext } from "../ThemeHelper.js";
 
 const useStyles = makeStyles({
 	root: {
-		...shorthands.gap("10px"),
-		alignItems: "start",
-		display: "grid",
 		justifyItems: "start",
 		height: "100%",
 		width: "100%",
 	},
 
 	/**
-	 * Styles to apply to option entries
-	 * (container around label and value)
+	 * Styles to apply to sections (groupings of related options, with a header)
+	 */
+	section: {
+		display: "flex",
+		flexDirection: "column",
+	},
+
+	/**
+	 * Styles to apply to section headers
+	 */
+	sectionHeader: {
+		fontWeight: "bold",
+	},
+
+	/**
+	 * Styles to apply to option entries within a section (container around label and value)
 	 */
 	option: {
 		display: "flex",
@@ -45,29 +49,25 @@ const useStyles = makeStyles({
 	},
 
 	/**
-	 * Styles to apply to settings option labels
-	 */
-	label: { fontSize: "12px" },
-
-	/**
 	 * Styles to apply to settings option drop-downs
 	 */
 	dropdown: {
-		minWidth: "150px",
-		fontWeight: "bold",
+		width: "180px",
 	},
 });
-
 /**
  * Settings page for the devtools.
+ *
+ * @remarks {@link ThemeContext} must be set in order to use this component.
  */
 export function SettingsView(): React.ReactElement {
-	const { setTheme } = React.useContext(ThemeContext) ?? {};
+	const { themeInfo, setTheme } = useThemeContext();
 
 	const styles = useStyles();
+	const [optedIn, setOptedIn] = useTelemetryOptIn();
 
 	function handleThemeChange(
-		event,
+		_event,
 		option: {
 			optionValue: string | undefined;
 			optionText: string | undefined;
@@ -75,39 +75,43 @@ export function SettingsView(): React.ReactElement {
 		},
 	): void {
 		switch (option.optionValue) {
-			case ThemeOption.Light:
+			case ThemeOption.Light: {
 				setTheme({
-					name: "light",
+					name: ThemeOption.Light,
 					theme: webLightTheme,
 				});
 				break;
-			case ThemeOption.Dark:
+			}
+			case ThemeOption.Dark: {
 				setTheme({
-					name: "dark",
+					name: ThemeOption.Dark,
 					theme: webDarkTheme,
 				});
 				break;
-			case ThemeOption.HighContrast:
+			}
+			case ThemeOption.HighContrast: {
 				setTheme({
-					name: "highContrast",
+					name: ThemeOption.HighContrast,
 					theme: teamsHighContrastTheme,
 				});
 				break;
-			default:
+			}
+			default: {
 				setTheme({
-					name: "dark",
+					name: ThemeOption.Dark,
 					theme: webDarkTheme,
 				});
 				break;
+			}
 		}
 	}
 
 	return (
 		<div className={styles.root}>
-			<div className={styles.option}>
-				<label className={styles.label}>Select theme</label>
+			<div className={styles.section}>
+				<h4 className={styles.sectionHeader}>Theme</h4>
 				<Dropdown
-					placeholder="Theme"
+					value={themeInfo.name}
 					className={styles.dropdown}
 					onOptionSelect={handleThemeChange}
 				>
@@ -115,6 +119,22 @@ export function SettingsView(): React.ReactElement {
 					<Option value={ThemeOption.Dark}>Dark</Option>
 					<Option value={ThemeOption.HighContrast}>High Contrast</Option>
 				</Dropdown>
+			</div>
+			<div className={styles.section}>
+				<h4 className={styles.sectionHeader}>Usage telemetry</h4>
+				<Link
+					href="https://go.microsoft.com/fwlink/?LinkId=521839"
+					target="_blank"
+					rel="noreferrer"
+					inline
+				>
+					Microsoft Privacy Statement
+				</Link>
+				<Switch
+					label="Send usage telemetry to Microsoft"
+					checked={optedIn}
+					onChange={(ev, data): void => setOptedIn(data.checked)}
+				/>
 			</div>
 		</div>
 	);

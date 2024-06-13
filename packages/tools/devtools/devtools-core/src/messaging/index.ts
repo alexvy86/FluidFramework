@@ -13,7 +13,7 @@
  * by the Fluid Devtools.
  */
 
-export { devtoolsMessageSource } from "./Constants";
+export { devtoolsMessageSource } from "./Constants.js";
 export {
 	AudienceSummary,
 	CloseContainer,
@@ -21,6 +21,7 @@ export {
 	ContainerDevtoolsFeatures,
 	ContainerStateChange,
 	ContainerStateHistory,
+	DataEdit,
 	DataVisualization,
 	DisconnectContainer,
 	GetAudienceSummary,
@@ -29,22 +30,26 @@ export {
 	GetDataVisualization,
 	GetRootDataVisualizations,
 	RootDataVisualizations,
-} from "./container-devtools-messages";
+} from "./container-devtools-messages/index.js";
 export {
 	ContainerList,
 	DevtoolsDisposed,
 	DevtoolsFeatures,
 	GetContainerList,
 	GetDevtoolsFeatures,
-} from "./devtools-messages";
-export { ISourcedDevtoolsMessage, IDevtoolsMessage } from "./Messages";
-export { IMessageRelay, IMessageRelayEvents } from "./MessageRelay";
-export { GetTelemetryHistory, TelemetryEvent, TelemetryHistory } from "./telemetry-messages";
+	SetUnsampledTelemetry,
+} from "./devtools-messages/index.js";
+export type { ISourcedDevtoolsMessage, IDevtoolsMessage } from "./Messages.js";
+export type { IMessageRelay, IMessageRelayEvents } from "./MessageRelay.js";
+export {
+	GetTelemetryHistory,
+	TelemetryEvent,
+	TelemetryHistory,
+} from "./telemetry-messages/index.js";
+export type { InboundHandlers, MessageLoggingOptions } from "./Utilities.js";
 export {
 	handleIncomingMessage,
 	handleIncomingWindowMessage,
-	InboundHandlers,
 	isDevtoolsMessage,
-	MessageLoggingOptions,
 	postMessagesToWindow,
-} from "./Utilities";
+} from "./Utilities.js";

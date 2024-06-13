@@ -6,16 +6,19 @@
 import { strict } from "assert";
 import child_process from "child_process";
 import fs from "fs";
-import { assert, Lazy } from "@fluidframework/common-utils";
+
+import { AttachState } from "@fluidframework/container-definitions";
+import { IContainer } from "@fluidframework/container-definitions/internal";
+import { ITelemetryBaseEvent, ITelemetryBaseLogger } from "@fluidframework/core-interfaces";
+import { assert, Lazy } from "@fluidframework/core-utils/internal";
+import { ISummaryTree } from "@fluidframework/driver-definitions";
 import {
-	MockEmptyDeltaConnection,
-	MockFluidDataStoreRuntime,
-	MockStorage,
-} from "@fluidframework/test-runtime-utils";
-import { SharedMatrix, SharedMatrixFactory } from "@fluidframework/matrix";
-import { ITelemetryBaseEvent, ITelemetryBaseLogger } from "@fluidframework/common-definitions";
-import { IContainer } from "@fluidframework/container-definitions";
-import { ChildLogger, TelemetryLogger } from "@fluidframework/telemetry-utils";
+	ITree,
+	ITreeEntry,
+	MessageType,
+	TreeEntry,
+	ISequencedDocumentMessage,
+} from "@fluidframework/driver-definitions/internal";
 import {
 	FileDeltaStorageService,
 	FileDocumentServiceFactory,
@@ -23,27 +26,27 @@ import {
 	FileStorageDocumentName,
 	FluidFetchReaderFileSnapshotWriter,
 	ISnapshotWriterStorage,
-	Replayer,
 	ReplayFileDeltaConnection,
-} from "@fluidframework/file-driver";
+	Replayer,
+} from "@fluidframework/file-driver/internal";
+import { SharedMatrix, SharedMatrixFactory } from "@fluidframework/matrix/internal";
+import { FileSnapshotReader, IFileSnapshot } from "@fluidframework/replay-driver/internal";
+import { convertToSummaryTreeWithStats } from "@fluidframework/runtime-utils/internal";
+import { ITelemetryLoggerExt, createChildLogger } from "@fluidframework/telemetry-utils/internal";
 import {
-	ISequencedDocumentMessage,
-	ITree,
-	TreeEntry,
-	MessageType,
-	ITreeEntry,
-	ISummaryTree,
-} from "@fluidframework/protocol-definitions";
-import { FileSnapshotReader, IFileSnapshot } from "@fluidframework/replay-driver";
-import { convertToSummaryTreeWithStats } from "@fluidframework/runtime-utils";
+	MockEmptyDeltaConnection,
+	MockFluidDataStoreRuntime,
+	MockStorage,
+} from "@fluidframework/test-runtime-utils/internal";
 import stringify from "json-stable-stringify";
+
 import {
 	compareWithReferenceSnapshot,
 	getNormalizedFileSnapshot,
 	loadContainer,
 	uploadSummary,
-} from "./helpers";
-import { ReplayArgs } from "./replayArgs";
+} from "./helpers.js";
+import { ReplayArgs } from "./replayArgs.js";
 
 // "worker_threads" does not resolve without --experimental-worker flag on command line
 let threads = { isMainThread: true };
@@ -167,7 +170,7 @@ class Document {
 	private documentSeqNumber = 0;
 	private from: number = -1;
 	private snapshotFileName: string = "";
-	private docLogger: TelemetryLogger;
+	private docLogger: ITelemetryLoggerExt;
 	private originalSummarySeqs: number[];
 
 	public constructor(
@@ -211,7 +214,9 @@ class Document {
 			deltaConnection,
 		);
 
-		this.docLogger = ChildLogger.create(new Logger(this.containerDescription, errorHandler));
+		this.docLogger = createChildLogger({
+			logger: new Logger(this.containerDescription, errorHandler),
+		});
 		this.container = await loadContainer(
 			documentServiceFactory,
 			FileStorageDocumentName,
@@ -282,6 +287,7 @@ class Document {
 
 /**
  * All the logic of replay tool
+ * @internal
  */
 export class ReplayTool {
 	private storage: ISnapshotWriterStorage;
@@ -380,10 +386,10 @@ export class ReplayTool {
 
 	private async setup() {
 		if (this.args.inDirName === undefined) {
-			return Promise.reject(new Error("Please provide --indir argument"));
+			throw new Error("Please provide --indir argument");
 		}
 		if (!fs.existsSync(this.args.inDirName)) {
-			return Promise.reject(new Error("File does not exist"));
+			throw new Error("File does not exist");
 		}
 
 		this.deltaStorageService = new FileDeltaStorageService(this.args.inDirName);
@@ -392,7 +398,7 @@ export class ReplayTool {
 		// If there are snapshots present (from fetch tool), find latest snapshot and load from it.
 		if (this.args.fromVersion === undefined) {
 			for (const name of fs.readdirSync(this.args.inDirName)) {
-				if (name.indexOf("9-") === 0) {
+				if (name.startsWith("9-")) {
 					// It can be any file, even created not detached and downloaded by fetch-tool
 					// Do quick and ugly test to see if it's for sequenceNumber <= 1.
 					// Note we rely here on a fact that .attributes are always downloaded by fetch tool first
@@ -402,7 +408,7 @@ export class ReplayTool {
 					for (const file of fs.readdirSync(dir)) {
 						try {
 							if (
-								file.indexOf("0-") === 0 &&
+								file.startsWith("0-") &&
 								JSON.parse(fs.readFileSync(`${dir}/${file}`).toString("utf-8"))
 									.sequenceNumber <= 1
 							) {
@@ -438,9 +444,7 @@ export class ReplayTool {
 				);
 			}
 			if (this.mainDocument.currentOp > this.args.to) {
-				return Promise.reject(
-					new Error("--to argument is below snapshot starting op. Nothing to do!"),
-				);
+				throw new Error("--to argument is below snapshot starting op. Nothing to do!");
 			}
 		}
 
@@ -901,21 +905,21 @@ async function assertDdsEqual(
 		return;
 	}
 
-	const dataStoreRuntime = new MockFluidDataStoreRuntime();
-	dataStoreRuntime.local = true;
+	const dataStoreRuntime = new MockFluidDataStoreRuntime({ attachState: AttachState.Detached });
 	const deltaConnection = new MockEmptyDeltaConnection();
 
 	async function newMatrix(summary: ISummaryTree): Promise<SharedMatrix> {
 		const objectStorage = MockStorage.createFromSummary(summary);
-		const matrix = new SharedMatrix(
-			dataStoreRuntime as any,
+		const matrixFactory = SharedMatrix.getFactory();
+		const matrix = await matrixFactory.load(
+			dataStoreRuntime,
 			"1",
-			SharedMatrixFactory.Attributes,
+			{
+				deltaConnection,
+				objectStorage,
+			},
+			matrixFactory.attributes,
 		);
-		await matrix.load({
-			deltaConnection,
-			objectStorage,
-		});
 		return matrix;
 	}
 

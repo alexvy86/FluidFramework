@@ -3,15 +3,20 @@
  * Licensed under the MIT License.
  */
 
-import assert from "assert";
-import { ITelemetryBaseEvent } from "@fluidframework/common-definitions";
+import assert from "node:assert";
+
+import { ITelemetryBaseEvent } from "@fluidframework/core-interfaces";
+
 import {
-	ITelemetryLoggerPropertyBags,
 	ITelemetryLoggerPropertyBag,
+	ITelemetryLoggerPropertyBags,
 	TelemetryLogger,
 	convertToBasePropertyType,
-} from "../logger";
-import { ITaggedTelemetryPropertyTypeExt, TelemetryEventPropertyTypeExt } from "../telemetryTypes";
+} from "../logger.js";
+import {
+	ITaggedTelemetryPropertyTypeExt,
+	TelemetryEventPropertyTypeExt,
+} from "../telemetryTypes.js";
 
 class TestTelemetryLogger extends TelemetryLogger {
 	public events: ITelemetryBaseEvent[] = [];
@@ -23,26 +28,29 @@ class TestTelemetryLogger extends TelemetryLogger {
 const allCases: ITelemetryLoggerPropertyBag[] = [
 	{},
 	{ allProp: 1 },
-	{ allGetter: () => 1 },
-	{ allProp: 1, allGetter: () => 1 },
+	{ allGetter: (): number => 1 },
+	{ allProp: 1, allGetter: (): number => 1 },
 ];
 const errorCases: ITelemetryLoggerPropertyBag[] = [
 	{},
 	{ errorProp: 2 },
-	{ errorGetter: () => 2 },
-	{ errorProp: 2, errorGetter: () => 2 },
+	{ errorGetter: (): number => 2 },
+	{ errorProp: 2, errorGetter: (): number => 2 },
 ];
 
+// eslint-disable-next-line unicorn/no-array-reduce
 const propertyCases: (ITelemetryLoggerPropertyBags | undefined)[] = allCases.reduce<
 	ITelemetryLoggerPropertyBags[]
 >((pv, all) => {
 	pv.push(...errorCases.map((error) => ({ all, error })));
 	return pv;
 }, []);
-propertyCases.push(...allCases.map((all) => ({ all, error: all })));
-propertyCases.push(...allCases);
-propertyCases.push(...errorCases);
-propertyCases.push(undefined);
+propertyCases.push(
+	...allCases.map((all) => ({ all, error: all })),
+	...allCases,
+	...errorCases,
+	undefined,
+);
 
 describe("TelemetryLogger", () => {
 	describe("Properties", () => {
@@ -79,7 +87,8 @@ describe("TelemetryLogger", () => {
 				// should include error props too
 				const expected = { error: "whatever", ...props?.all, ...props?.error };
 				const propsKeys = Object.keys(expected);
-				propsKeys.forEach((k) => {
+				for (const k of propsKeys) {
+					// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
 					const e = typeof expected[k] === "function" ? expected[k]() : expected[k];
 					assert.strictEqual(
 						event[k],
@@ -87,7 +96,7 @@ describe("TelemetryLogger", () => {
 						`${k} value does not match.
                          actual: ${JSON.stringify(event[k])} expected: ${JSON.stringify(e)}`,
 					);
-				});
+				}
 				// +2 for category and event name
 				assert.strictEqual(
 					eventKeys.length,
@@ -111,7 +120,8 @@ describe("TelemetryLogger", () => {
 				// should include error props too
 				const expected = { error: "bad", ...props?.all, ...props?.error };
 				const propsKeys = Object.keys(expected);
-				propsKeys.forEach((k) => {
+				for (const k of propsKeys) {
+					// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
 					const e = typeof expected[k] === "function" ? expected[k]() : expected[k];
 					assert.strictEqual(
 						event[k],
@@ -119,7 +129,7 @@ describe("TelemetryLogger", () => {
 						`${k} value does not match.
                          actual: ${JSON.stringify(event[k])} expected: ${JSON.stringify(e)}`,
 					);
-				});
+				}
 				// +2 for category and event name
 				assert.strictEqual(
 					eventKeys.length,
@@ -148,7 +158,8 @@ describe("TelemetryLogger", () => {
 					...props?.error,
 				};
 				const propsKeys = Object.keys(expected);
-				propsKeys.forEach((k) => {
+				for (const k of propsKeys) {
+					// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
 					const e = typeof expected[k] === "function" ? expected[k]() : expected[k];
 					assert.strictEqual(
 						event[k],
@@ -156,7 +167,7 @@ describe("TelemetryLogger", () => {
 						`${k} value does not match.
                          actual: ${JSON.stringify(event[k])} expected: ${JSON.stringify(e)}`,
 					);
-				});
+				}
 				// +4 for category, event name, message and stack
 				assert.strictEqual(
 					eventKeys.length,
@@ -318,7 +329,8 @@ describe("convertToBasePropertyType", () => {
 	describe("Check various invalid (per typings) cases", () => {
 		it("nested ITaggedTelemetryPropertyTypeExt", () => {
 			const taggedProperty: ITaggedTelemetryPropertyTypeExt = {
-				value: { value: true, tag: "tag" } as any,
+				// eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+				value: { value: true, tag: "tag" } as TelemetryEventPropertyTypeExt,
 				tag: "tag",
 			};
 			const converted = convertToBasePropertyType(taggedProperty);
@@ -330,7 +342,8 @@ describe("convertToBasePropertyType", () => {
 		});
 		it("nested non ITaggedTelemetryPropertyTypeExt", () => {
 			const taggedProperty: ITaggedTelemetryPropertyTypeExt = {
-				value: { foo: 3, bar: { x: 5 } as any },
+				// eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+				value: { foo: 3, bar: { x: 5 } as unknown } as TelemetryEventPropertyTypeExt,
 				tag: "tag",
 			};
 			const converted = convertToBasePropertyType(taggedProperty);
@@ -344,7 +357,7 @@ describe("convertToBasePropertyType", () => {
 			const taggedProperty: ITaggedTelemetryPropertyTypeExt = {
 				value: function x() {
 					return 54;
-				} as any,
+				} as unknown as TelemetryEventPropertyTypeExt,
 				tag: "tag",
 			};
 			const converted = convertToBasePropertyType(taggedProperty);
@@ -356,7 +369,8 @@ describe("convertToBasePropertyType", () => {
 		});
 		it("tagged null value", () => {
 			const taggedProperty: ITaggedTelemetryPropertyTypeExt = {
-				value: null as any,
+				// eslint-disable-next-line unicorn/no-null
+				value: null as unknown as TelemetryEventPropertyTypeExt,
 				tag: "tag",
 			};
 			const converted = convertToBasePropertyType(taggedProperty);
@@ -368,7 +382,7 @@ describe("convertToBasePropertyType", () => {
 		});
 		it("tagged symbol", () => {
 			const taggedProperty: ITaggedTelemetryPropertyTypeExt = {
-				value: Symbol("Test") as any,
+				value: Symbol("Test") as unknown as TelemetryEventPropertyTypeExt,
 				tag: "tag",
 			};
 			const converted = convertToBasePropertyType(taggedProperty);
@@ -383,24 +397,35 @@ describe("convertToBasePropertyType", () => {
 				foo: { foo: true, test: "test" },
 				test: "test",
 			};
-			const converted = convertToBasePropertyType(nestedObject as any);
+			const converted = convertToBasePropertyType(
+				nestedObject as unknown as
+					| TelemetryEventPropertyTypeExt
+					| ITaggedTelemetryPropertyTypeExt,
+			);
 			const expected = '{"foo":{"foo":true,"test":"test"},"test":"test"}';
 			assert.deepStrictEqual(converted, expected);
 		});
 		it("function", () => {
 			const converted = convertToBasePropertyType(function x() {
 				return 54;
-			} as any);
+			} as unknown as TelemetryEventPropertyTypeExt | ITaggedTelemetryPropertyTypeExt);
 			const expected = "INVALID PROPERTY (typed as function)";
 			assert.deepStrictEqual(converted, expected);
 		});
 		it("null", () => {
-			const converted = convertToBasePropertyType(null as any);
+			const converted = convertToBasePropertyType(
+				// eslint-disable-next-line unicorn/no-null
+				null as unknown as TelemetryEventPropertyTypeExt | ITaggedTelemetryPropertyTypeExt,
+			);
 			const expected = "null";
 			assert.deepStrictEqual(converted, expected);
 		});
 		it("symbol", () => {
-			const converted = convertToBasePropertyType(Symbol("Test") as any);
+			const converted = convertToBasePropertyType(
+				Symbol("Test") as unknown as
+					| TelemetryEventPropertyTypeExt
+					| ITaggedTelemetryPropertyTypeExt,
+			);
 			const expected = "INVALID PROPERTY (typed as symbol)";
 			assert.deepStrictEqual(converted, expected);
 		});

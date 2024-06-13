@@ -3,31 +3,44 @@
  * Licensed under the MIT License.
  */
 
-import commander from "commander";
-import { makeRandom } from "@fluid-internal/stochastic-test-utils";
 import {
+	DriverEndpoint,
 	ITestDriver,
 	TestDriverTypes,
-	DriverEndpoint,
-} from "@fluidframework/test-driver-definitions";
-import { Loader, ConnectionState } from "@fluidframework/container-loader";
-import { requestFluidObject } from "@fluidframework/runtime-utils";
+} from "@fluid-internal/test-driver-definitions";
+import { makeRandom } from "@fluid-private/stochastic-test-utils";
+import { IContainer, LoaderHeader } from "@fluidframework/container-definitions/internal";
+import { ConnectionState } from "@fluidframework/container-loader";
+import { IContainerExperimental, Loader } from "@fluidframework/container-loader/internal";
 import { IRequestHeader } from "@fluidframework/core-interfaces";
-import { IContainer, LoaderHeader } from "@fluidframework/container-definitions";
-import { IDocumentServiceFactory } from "@fluidframework/driver-definitions";
-import { assert } from "@fluidframework/common-utils";
-import { ITelemetryLoggerExt } from "@fluidframework/telemetry-utils";
-import { IFluidDataStoreRuntime } from "@fluidframework/datastore-definitions";
-import { IInboundSignalMessage } from "@fluidframework/runtime-definitions";
-import { ILoadTest, IRunConfig } from "./loadTestDataStore";
-import { createCodeLoader, createLogger, createTestDriver, getProfile, safeExit } from "./utils";
-import { FaultInjectionDocumentServiceFactory } from "./faultInjectionDriver";
+import { assert, delay } from "@fluidframework/core-utils/internal";
+import { IFluidDataStoreRuntime } from "@fluidframework/datastore-definitions/internal";
+import { IDocumentServiceFactory } from "@fluidframework/driver-definitions/internal";
+import { getRetryDelayFromError } from "@fluidframework/driver-utils/internal";
+import { IInboundSignalMessage } from "@fluidframework/runtime-definitions/internal";
+import { GenericError, ITelemetryLoggerExt } from "@fluidframework/telemetry-utils/internal";
+import commander from "commander";
+
+import {
+	FaultInjectionDocumentServiceFactory,
+	FaultInjectionError,
+} from "./faultInjectionDriver.js";
+import { ILoadTest, IRunConfig } from "./loadTestDataStore.js";
 import {
 	generateConfigurations,
 	generateLoaderOptions,
 	generateRuntimeOptions,
 	getOptionOverride,
-} from "./optionsMatrix";
+} from "./optionsMatrix.js";
+import {
+	configProvider,
+	createCodeLoader,
+	createLogger,
+	createTestDriver,
+	getProfile,
+	globalConfigurations,
+	safeExit,
+} from "./utils.js";
 
 function printStatus(runConfig: IRunConfig, message: string) {
 	if (runConfig.verbose) {
@@ -215,6 +228,16 @@ async function runnerProcess(
 
 			// Construct the loader
 			runConfig.loaderConfig = loaderOptions[runConfig.runId % loaderOptions.length];
+			const testConfiguration = configurations[runConfig.runId % configurations.length];
+			runConfig.logger.sendTelemetryEvent({
+				eventName: "RunConfigOptions",
+				details: JSON.stringify({
+					loaderOptions: runConfig.loaderConfig,
+					containerOptions: containerOptions[runConfig.runId % containerOptions.length],
+					logLevel: runConfig.logger.minLogLevel,
+					configurations: { ...globalConfigurations, ...testConfiguration },
+				}),
+			});
 			const loader = new Loader({
 				urlResolver: testDriver.createUrlResolver(),
 				documentServiceFactory,
@@ -223,44 +246,43 @@ async function runnerProcess(
 				),
 				logger: runConfig.logger,
 				options: runConfig.loaderConfig,
-				configProvider: {
-					getRawConfig(name) {
-						return configurations[runConfig.runId % configurations.length][name];
-					},
-				},
+				configProvider: configProvider(testConfiguration),
 			});
 
-			let stashedOps = stashedOpP ? await stashedOpP : undefined;
+			const stashedOps = stashedOpP ? await stashedOpP : undefined;
 			stashedOpP = undefined; // delete to avoid reuse
-
-			// temp fix for #15538: remove clientId from empty stash blobs
-			if (stashedOps !== undefined) {
-				const parsed = JSON.parse(stashedOps);
-				if (
-					parsed.pendingRuntimeState.pending === undefined &&
-					Object.keys(parsed.pendingRuntimeState.pendingAttachmentBlobs).length === 0
-				) {
-					parsed.clientId = undefined;
-					stashedOps = JSON.stringify(parsed);
-				}
-			}
 
 			container = await loader.resolve({ url, headers }, stashedOps);
 
 			container.connect();
-			const test = await requestFluidObject<ILoadTest>(container, "/");
+			const test = (await container.getEntryPoint()) as ILoadTest;
 
 			// Retain old behavior of runtime being disposed on container close
-			container.once("closed", () => container?.dispose());
+			container.once("closed", (err) => {
+				// everywhere else we gracefully handle container close/dispose,
+				// and don't create more errors which add noise to the stress
+				// results. This should be the only place we on error close/dispose ,
+				// as this place catches closes with no error specified, which
+				// should never happen. if it does happen, the container is
+				// closing without error which could be a test or product bug,
+				// but we don't want silent failures.
+				container?.dispose(
+					err === undefined
+						? new GenericError("Container closed unexpectedly without error")
+						: undefined,
+				);
+			});
 
 			if (enableOpsMetrics) {
 				const testRuntime = await test.getRuntime();
-				metricsCleanup = await setupOpsMetrics(
-					container,
-					runConfig.logger,
-					runConfig.testConfig.progressIntervalMs,
-					testRuntime,
-				);
+				if (testRuntime !== undefined) {
+					metricsCleanup = await setupOpsMetrics(
+						container,
+						runConfig.logger,
+						runConfig.testConfig.progressIntervalMs,
+						testRuntime,
+					);
+				}
 			}
 
 			// Control fault injection period through config.
@@ -300,6 +322,8 @@ async function runnerProcess(
 			reset = false;
 			printStatus(runConfig, done ? `finished` : "closed");
 		} catch (error) {
+			// clear stashed op in case of error
+			stashedOpP = undefined;
 			runConfig.logger.sendErrorEvent(
 				{
 					eventName: "RunnerFailed",
@@ -307,9 +331,19 @@ async function runnerProcess(
 				},
 				error,
 			);
+			// Add a little backpressure:
+			// if the runner closed with some sort of throttling error, avoid running into a throttling loop
+			// by respecting that delay before starting the load process for a new container.
+			const delayMs = getRetryDelayFromError(error);
+			if (delayMs !== undefined) {
+				await delay(delayMs);
+			}
 		} finally {
-			if (container?.closed === false) {
-				container?.close();
+			if (container?.disposed === false) {
+				// this should be the only place we dispose the container
+				// to avoid the closed handler above. This is also
+				// the only expected, non-fault, closure.
+				container?.dispose();
 			}
 			metricsCleanup();
 		}
@@ -336,9 +370,8 @@ function scheduleFaultInjection(
 				container.connectionState === ConnectionState.Connected &&
 				container.resolvedUrl !== undefined
 			) {
-				const deltaConn = ds.documentServices.get(
-					container.resolvedUrl,
-				)?.documentDeltaConnection;
+				const deltaConn = ds.documentServices.get(container.resolvedUrl)
+					?.documentDeltaConnection;
 				if (deltaConn !== undefined && !deltaConn.disposed) {
 					// 1 in numClients chance of non-retritable error to not overly conflict with container close
 					const canRetry = random.bool(1 - 1 / runConfig.testConfig.numClients);
@@ -416,7 +449,9 @@ function scheduleContainerClose(
 						);
 						setTimeout(() => {
 							if (!container.closed) {
-								container.close();
+								container.close(
+									new FaultInjectionError("scheduleContainerClose", false),
+								);
 							}
 						}, leaveTime);
 					}
@@ -438,7 +473,7 @@ function scheduleContainerClose(
 
 async function scheduleOffline(
 	dsf: FaultInjectionDocumentServiceFactory,
-	container: IContainer,
+	container: IContainerExperimental,
 	runConfig: IRunConfig,
 	offlineDelayMinMs: number,
 	offlineDelayMaxMs: number,
@@ -480,7 +515,8 @@ async function scheduleOffline(
 				}
 				if (
 					runConfig.loaderConfig?.enableOfflineLoad === true &&
-					random.real() < stashPercent
+					random.real() < stashPercent &&
+					container.closeAndGetPendingLocalState
 				) {
 					printStatus(runConfig, "closing offline container!");
 					return container.closeAndGetPendingLocalState();

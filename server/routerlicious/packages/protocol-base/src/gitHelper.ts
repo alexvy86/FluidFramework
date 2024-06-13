@@ -2,6 +2,7 @@
  * Copyright (c) Microsoft Corporation and contributors. All rights reserved.
  * Licensed under the MIT License.
  */
+
 import * as git from "@fluidframework/gitresources";
 import {
 	FileMode,
@@ -16,6 +17,7 @@ import { unreachableCase } from "@fluidframework/common-utils";
  *
  * @param value - summary object
  * @returns the git mode of summary object
+ * @internal
  */
 export function getGitMode(value: SummaryObject): string {
 	const type = value.type === SummaryType.Handle ? value.handleType : value.type;
@@ -35,6 +37,7 @@ export function getGitMode(value: SummaryObject): string {
  *
  * @param value - summary object
  * @returns the type of summary object
+ * @internal
  */
 export function getGitType(value: SummaryObject): "blob" | "tree" {
 	const type = value.type === SummaryType.Handle ? value.handleType : value.type;
@@ -51,15 +54,16 @@ export function getGitType(value: SummaryObject): "blob" | "tree" {
 }
 
 /**
- * NOTE: Renamed from `buildHierarchy` to `buildGitTreeHeirarchy`. There is usage of this function in loader and driver layer.
+ * NOTE: Renamed from `buildHierarchy` to `buildGitTreeHierarchy`. There is usage of this function in loader and driver layer.
  * Build a tree hierarchy base on a flat tree
  *
  * @param flatTree - a flat tree
  * @param blobsShaToPathCache - Map with blobs sha as keys and values as path of the blob.
  * @param removeAppTreePrefix - Remove `.app/` from beginning of paths when present
  * @returns the hierarchical tree
+ * @internal
  */
-export function buildGitTreeHeirarchy(
+export function buildGitTreeHierarchy(
 	flatTree: git.ITree,
 	blobsShaToPathCache: Map<string, string> = new Map<string, string>(),
 	removeAppTreePrefix = false,

@@ -2,13 +2,14 @@
  * Copyright (c) Microsoft Corporation and contributors. All rights reserved.
  * Licensed under the MIT License.
  */
-import { strict as assert } from "assert";
+
+import { strict as assert } from "node:assert";
 import execa from "execa";
 import inquirer from "inquirer";
 import { Machine } from "jssm";
 
-import { FluidRepo } from "@fluidframework/build-tools";
 import { bumpVersionScheme } from "@fluid-tools/version-tools";
+import { FluidRepo } from "@fluidframework/build-tools";
 
 import {
 	generateBumpDepsBranchName,
@@ -19,13 +20,13 @@ import {
 	getPreReleaseDependencies,
 	getReleaseSourceForReleaseGroup,
 	isReleased,
-} from "../lib";
-import { CommandLogger } from "../logging";
-import { MachineState } from "../machines";
-import { isReleaseGroup } from "../releaseGroups";
-import { getRunPolicyCheckDefault } from "../repoConfig";
-import { FluidReleaseStateHandlerData } from "./fluidReleaseStateHandler";
-import { BaseStateHandler, StateHandlerFunction } from "./stateHandlers";
+} from "../library/index.js";
+import { CommandLogger } from "../logging.js";
+import { MachineState } from "../machines/index.js";
+import { ReleaseSource, isReleaseGroup } from "../releaseGroups.js";
+import { getRunPolicyCheckDefault } from "../repoConfig.js";
+import { FluidReleaseStateHandlerData } from "./fluidReleaseStateHandler.js";
+import { BaseStateHandler, StateHandlerFunction } from "./stateHandlers.js";
 
 /**
  * Checks that the current branch matches the expected branch for a release.
@@ -64,9 +65,7 @@ export const checkBranchName: StateHandlerFunction = async (
 
 			case "major":
 			case "minor": {
-				log.verbose(
-					`Checking if ${context.originalBranchName} is 'main', 'next', or 'lts'.`,
-				);
+				log.verbose(`Checking if ${context.originalBranchName} is 'main', 'next', or 'lts'.`);
 				if (!["main", "next", "lts"].includes(context.originalBranchName)) {
 					log.warning(
 						`Release prep should only be done on 'main', 'next', or 'lts' branches, but current branch is '${context.originalBranchName}'.`,
@@ -164,15 +163,15 @@ export const checkDoesReleaseFromReleaseBranch: StateHandlerFunction = async (
 			choices: [
 				{
 					name: "main/lts",
-					value: "direct",
+					value: "direct" as ReleaseSource,
 				},
-				{ name: "release branch", value: "releaseBranches" },
+				{ name: "release branch", value: "releaseBranches" as ReleaseSource },
 			],
 			message: `The ${releaseGroup} release group can be released directly from main, or you can create a release branch. Would you like to release from main or a release branch? If in doubt, select 'release branch'.`,
 		};
 
 		const answers = await inquirer.prompt(branchToReleaseFrom);
-		releaseSource = answers.releaseType;
+		releaseSource = answers.releaseType as ReleaseSource;
 	}
 
 	if (releaseSource === "direct") {
@@ -239,9 +238,9 @@ export const checkDependenciesInstalled: StateHandlerFunction = async (
 	const packagesToCheck = isReleaseGroup(releaseGroup)
 		? context.packagesInReleaseGroup(releaseGroup)
 		: // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-		  [context.fullPackageMap.get(releaseGroup)!];
+			[context.fullPackageMap.get(releaseGroup)!];
 
-	const installed = await FluidRepo.ensureInstalled(packagesToCheck, true);
+	const installed = await FluidRepo.ensureInstalled(packagesToCheck);
 
 	if (installed) {
 		BaseStateHandler.signalSuccess(machine, state);
@@ -787,7 +786,7 @@ export const checkValidReleaseGroup: StateHandlerFunction = async (
 
 	if (isReleaseGroup(releaseGroup)) {
 		BaseStateHandler.signalSuccess(machine, state);
-		// eslint-disable-next-line no-negated-condition
+		// eslint-disable-next-line unicorn/no-negated-condition
 	} else if (context.fullPackageMap.get(releaseGroup) !== undefined) {
 		BaseStateHandler.signalSuccess(machine, state);
 	} else {

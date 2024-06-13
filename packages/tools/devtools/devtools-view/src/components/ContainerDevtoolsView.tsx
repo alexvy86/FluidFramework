@@ -5,32 +5,34 @@
 
 import {
 	Divider,
-	makeStyles,
-	SelectTabData,
-	SelectTabEvent,
-	shorthands,
+	type SelectTabData,
+	type SelectTabEvent,
 	Tab,
 	TabList,
-	TabValue,
+	type TabValue,
+	makeStyles,
+	shorthands,
 } from "@fluentui/react-components";
 import {
-	ContainerDevtoolsFeature,
-	ContainerDevtoolsFeatureFlags,
+	type ContainerDevtoolsFeatureFlags,
 	ContainerDevtoolsFeatures,
 	GetContainerDevtoolsFeatures,
-	HasContainerKey,
-	ISourcedDevtoolsMessage,
-	InboundHandlers,
+	type HasContainerKey,
+	type ISourcedDevtoolsMessage,
+	type InboundHandlers,
 	handleIncomingMessage,
-} from "@fluid-experimental/devtools-core";
+} from "@fluidframework/devtools-core/internal";
 import React from "react";
 
-import { useMessageRelay } from "../MessageRelayContext";
-import { AudienceView } from "./AudienceView";
-import { ContainerHistoryView } from "./ContainerHistoryView";
-import { ContainerSummaryView } from "./ContainerSummaryView";
-import { DataObjectsView } from "./DataObjectsView";
-import { Waiting } from "./Waiting";
+import { ContainerFeatureFlagContext } from "../ContainerFeatureFlagHelper.js";
+import { useMessageRelay } from "../MessageRelayContext.js";
+import { useLogger } from "../TelemetryUtils.js";
+
+import { AudienceView } from "./AudienceView.js";
+import { ContainerHistoryView } from "./ContainerHistoryView.js";
+import { ContainerSummaryView } from "./ContainerSummaryView.js";
+import { DataObjectsView } from "./DataObjectsView.js";
+import { Waiting } from "./Waiting.js";
 
 // TODOs:
 // - Allow consumers to specify additional tabs / views for list of inner app view options.
@@ -77,7 +79,7 @@ const useStyles = makeStyles({
 
 /**
  * Container Devtools view.
- * Communicates with {@link @fluid-experimental/devtools-core#ContainerDevtools} via {@link MessageRelayContext} to get
+ * Communicates with {@link @fluidframework/devtools-core#ContainerDevtools} via {@link MessageRelayContext} to get
  * Container-level stats to display, including Container states and history, Audience state and history, and Container
  * data.
  */
@@ -100,6 +102,7 @@ export function ContainerDevtoolsView(props: ContainerDevtoolsViewProps): React.
 				const message = untypedMessage as ContainerDevtoolsFeatures.Message;
 				if (message.data.containerKey === containerKey) {
 					setSupportedFeatures(message.data.features);
+
 					return true;
 				}
 				return false;
@@ -149,32 +152,46 @@ function _ContainerDevtoolsView(props: _ContainerDevtoolsViewProps): React.React
 	const { containerKey, supportedFeatures } = props;
 
 	const styles = useStyles();
-
+	const usageLogger = useLogger();
 	const panelViews = Object.values(PanelView);
 	// Inner view selection
 	const [innerViewSelection, setInnerViewSelection] = React.useState<TabValue>(
-		supportedFeatures[ContainerDevtoolsFeature.ContainerData] === true
+		supportedFeatures.containerDataVisualization === true
 			? PanelView.ContainerData
 			: PanelView.ContainerStateHistory,
 	);
 
 	let innerView: React.ReactElement;
 	switch (innerViewSelection) {
-		case PanelView.ContainerData:
-			innerView = <DataObjectsView containerKey={containerKey} />;
+		case PanelView.ContainerData: {
+			innerView = (
+				<ContainerFeatureFlagContext.Provider
+					value={{ containerFeatureFlags: supportedFeatures }}
+				>
+					<DataObjectsView containerKey={containerKey} />
+				</ContainerFeatureFlagContext.Provider>
+			);
 			break;
-		case PanelView.Audience:
+		}
+		case PanelView.Audience: {
 			innerView = <AudienceView containerKey={containerKey} />;
 			break;
-		case PanelView.ContainerStateHistory:
+		}
+		case PanelView.ContainerStateHistory: {
 			innerView = <ContainerHistoryView containerKey={containerKey} />;
 			break;
-		default:
+		}
+		default: {
 			throw new Error(`Unrecognized PanelView selection value: "${innerViewSelection}".`);
+		}
 	}
 
 	const onTabSelect = (event: SelectTabEvent, data: SelectTabData): void => {
 		setInnerViewSelection(data.value);
+		usageLogger?.sendTelemetryEvent({
+			eventName: "Navigation",
+			details: { target: `Container_${data.value}Tab` },
+		});
 	};
 
 	return (

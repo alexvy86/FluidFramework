@@ -2,18 +2,20 @@
  * Copyright (c) Microsoft Corporation and contributors. All rights reserved.
  * Licensed under the MIT License.
  */
+
 import * as path from "path";
 
-import { defaultLogger } from "../../../common/logging";
+import { readdir, stat } from "fs/promises";
+import picomatch from "picomatch";
 import { globFn, readFileAsync, statAsync, toPosixPath, unquote } from "../../../common/utils";
+import { getTypeTestPreviousPackageDetails } from "../../../typeValidator/validatorUtils";
 import { BuildPackage } from "../../buildGraph";
-import { LeafTask, LeafWithDoneFileTask, LeafWithFileStatDoneFileTask } from "./leafTask";
-
-/* eslint-disable @typescript-eslint/no-empty-function */
-
-const { verbose } = defaultLogger;
+import { LeafTask, LeafWithFileStatDoneFileTask } from "./leafTask";
 
 export class EchoTask extends LeafTask {
+	protected get isIncremental() {
+		return true;
+	}
 	protected get taskWeight() {
 		return 0; // generally cheap relative to other tasks
 	}
@@ -23,6 +25,9 @@ export class EchoTask extends LeafTask {
 }
 
 export class LesscTask extends LeafTask {
+	protected get isIncremental() {
+		return true;
+	}
 	protected get taskWeight() {
 		return 0; // generally cheap relative to other tasks
 	}
@@ -43,8 +48,8 @@ export class LesscTask extends LeafTask {
 				this.traceNotUpToDate();
 			}
 			return result;
-		} catch (e: any) {
-			verbose(`${this.node.pkg.nameColored}: ${e.message}`);
+		} catch (e) {
+			this.traceError(`stat error: ${(e as Error).message}`);
 			this.traceTrigger("failed to get file stats");
 			return false;
 		}
@@ -53,8 +58,12 @@ export class LesscTask extends LeafTask {
 
 export class CopyfilesTask extends LeafWithFileStatDoneFileTask {
 	private parsed: boolean = false;
-	private readonly upLevel: number = 0;
-	private readonly copySrcArg: string = "";
+	private readonly up: number = 0;
+	private readonly copySrcArg: string[] = [];
+	private readonly ignore: string = "";
+	private readonly all: boolean = false;
+	private readonly follow: boolean = false;
+	private readonly flat: boolean = false;
 	private readonly copyDstArg: string = "";
 
 	constructor(node: BuildPackage, command: string, taskName: string | undefined) {
@@ -63,30 +72,72 @@ export class CopyfilesTask extends LeafWithFileStatDoneFileTask {
 		// TODO: something better
 		const args = this.command.split(" ");
 
+		const input: string[] = [];
 		for (let i = 1; i < args.length; i++) {
 			// Only handle -u arg
 			if (args[i] === "-u" || args[i] === "--up") {
 				if (i + 1 >= args.length) {
 					return;
 				}
-				this.upLevel = parseInt(args[i + 1]);
+				this.up = parseInt(args[i + 1]);
 				i++;
 				continue;
 			}
-			if (this.copySrcArg === "") {
-				this.copySrcArg = unquote(args[i]);
-			} else if (this.copyDstArg === "") {
-				this.copyDstArg = unquote(args[i]);
-			} else {
-				return;
+			if (args[i] === "-e") {
+				if (i + 1 >= args.length) {
+					return;
+				}
+				this.ignore = args[i + 1];
+				i++;
+				continue;
 			}
+			if (args[i] === "-f") {
+				this.flat = true;
+				continue;
+			}
+			if (args[i] === "-F") {
+				this.follow = true;
+				continue;
+			}
+			if (args[i] === "-a") {
+				this.all = true;
+				continue;
+			}
+			if (args[i].startsWith("-") || args[i].startsWith("--")) {
+				// copyfiles ignores flags it doesn't know as well.
+				continue;
+			}
+
+			const unquoted = unquote(args[i]);
+			if (unquoted.includes("**") && unquoted === args[i]) {
+				// Shell expansion of glob star may be different than the glob library.
+				console.warn(
+					`${this.nameColored}: warning: copyfiles glob pattern '${args[i]}' should be quoted. May have different behavior in different shell and OS.`,
+				);
+			}
+			input.push(unquote(args[i]));
 		}
+
+		if (input.length < 2) {
+			// Not enough arguments
+			return;
+		}
+
+		// eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+		this.copyDstArg = input.pop()!;
+		this.copySrcArg = input;
 
 		this.parsed = true;
 	}
 
 	private _srcFiles: string[] | undefined;
 	private _dstFiles: string[] | undefined;
+
+	protected get recheckLeafIsUpToDate(): boolean {
+		// The task knows all the input, so we can check if this task needs to execute
+		// even dependent tasks are out of date.
+		return true;
+	}
 
 	protected get taskWeight() {
 		return 0; // generally cheap relative to other tasks
@@ -97,9 +148,16 @@ export class CopyfilesTask extends LeafWithFileStatDoneFileTask {
 			throw new Error("error parsing command line");
 		}
 		if (!this._srcFiles) {
-			// eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-			const srcGlob = path.join(this.node.pkg.directory, this.copySrcArg!);
-			this._srcFiles = await globFn(srcGlob, { nodir: true });
+			const srcFilesP = this.copySrcArg.map(async (srcArg) => {
+				const srcGlob = path.resolve(this.node.pkg.directory, srcArg);
+				return globFn(srcGlob, {
+					nodir: true,
+					dot: this.all,
+					follow: this.follow,
+					ignore: this.ignore,
+				});
+			});
+			this._srcFiles = (await Promise.all(srcFilesP)).flat();
 		}
 		return this._srcFiles;
 	}
@@ -111,20 +169,23 @@ export class CopyfilesTask extends LeafWithFileStatDoneFileTask {
 		}
 		if (!this._dstFiles) {
 			const directory = toPosixPath(this.node.pkg.directory);
-			const dstPath = directory + "/" + this.copyDstArg;
+			const dstPath = path.resolve(directory, this.copyDstArg);
 			const srcFiles = await this.getInputFiles();
 			this._dstFiles = srcFiles.map((match) => {
+				if (this.flat) {
+					return path.join(dstPath, path.basename(match));
+				}
 				const relPath = path.relative(directory, match);
-				let currRelPath = relPath;
-				for (let i = 0; i < this.upLevel; i++) {
-					const index = currRelPath.indexOf(path.sep);
-					if (index === -1) {
-						break;
-					}
-					currRelPath = currRelPath.substring(index + 1);
+				if (this.up === 0) {
+					return path.join(dstPath, relPath);
 				}
 
-				return path.join(dstPath, currRelPath);
+				const paths = relPath.split(path.sep);
+				if (paths.length - 1 < this.up) {
+					throw new Error("Cannot go up that far");
+				}
+
+				return path.join(dstPath, ...paths.slice(this.up));
 			});
 		}
 
@@ -133,6 +194,9 @@ export class CopyfilesTask extends LeafWithFileStatDoneFileTask {
 }
 
 export class GenVerTask extends LeafTask {
+	protected get isIncremental() {
+		return true;
+	}
 	protected get taskWeight() {
 		return 0; // generally cheap relative to other tasks
 	}
@@ -163,9 +227,43 @@ export class GenVerTask extends LeafTask {
 	}
 }
 
-export class TypeValidationTask extends LeafWithDoneFileTask {
-	protected async getDoneFileContent(): Promise<string | undefined> {
-		return JSON.stringify(this.package.packageJson);
+export class TypeValidationTask extends LeafWithFileStatDoneFileTask {
+	private inputFiles: string[] | undefined;
+	private outputFiles: string[] | undefined;
+
+	/**
+	 * All config for the type tests is contained in package.json.
+	 */
+	protected async getInputFiles(): Promise<string[]> {
+		if (this.inputFiles === undefined) {
+			this.inputFiles = [path.join(this.node.pkg.directory, "package.json")];
+			if (!(this.node.pkg.packageJson.typeValidation?.disabled === true)) {
+				// TODO: depend on all of input to product tsc, which impacts the API.
+				// This task is effectively a TscDependentTask with additional input,
+				// but some packages build tests including type tests as part of
+				// production build, which would create a dependency cycle.
+				// AB#7318 would make sure type tests are separate.
+
+				// The package.json file of prior package is a pretty good representative
+				// for exposed types of prior package. If this is missing, task won't be
+				// incremental. That is okay because task will also fail.
+				this.inputFiles.push(getTypeTestPreviousPackageDetails(this.node.pkg).packageJsonPath);
+			}
+		}
+		return this.inputFiles;
+	}
+
+	/**
+	 * Includes all type test files that are output by the task.
+	 * This implementation assumes all typetest output is in src/test/types.
+	 */
+	protected async getOutputFiles(): Promise<string[]> {
+		if (this.outputFiles === undefined) {
+			// Assumes all typetest output is in src/test/types
+			const typetestGlob = path.join(this.node.pkg.directory, "src/test/types/**");
+			this.outputFiles = await globFn(typetestGlob, { nodir: true });
+		}
+		return this.outputFiles;
 	}
 }
 
@@ -195,6 +293,57 @@ export class GoodFence extends LeafWithFileStatDoneFileTask {
 		return this.inputFiles;
 	}
 	protected async getOutputFiles(): Promise<string[]> {
+		return [];
+	}
+}
+
+export class DepCruiseTask extends LeafWithFileStatDoneFileTask {
+	private inputFiles: string[] | undefined;
+	protected async getInputFiles(): Promise<string[]> {
+		if (this.inputFiles === undefined) {
+			const argv = this.command.split(" ");
+			const fileOrDir: string[] = [];
+			for (let i = 1; i < argv.length; i++) {
+				if (argv[i].startsWith("--")) {
+					i++;
+					continue;
+				}
+				fileOrDir.push(argv[i]);
+			}
+
+			const inputFiles: string[] = [];
+
+			for (const file of fileOrDir) {
+				const scan = picomatch.scan(file);
+				if (scan.isGlob) {
+					const match = picomatch(scan.glob);
+					const fullPath = path.join(this.node.pkg.directory, scan.base);
+					const files = await readdir(fullPath, { recursive: true });
+					inputFiles.push(
+						...files.filter((file) => match(file)).map((file) => path.join(fullPath, file)),
+					);
+				} else {
+					const fullPath = path.resolve(this.node.pkg.directory, file);
+					const info = await stat(fullPath);
+					if (info.isDirectory()) {
+						const files = await readdir(fullPath, { recursive: true });
+						inputFiles.push(...files.map((file) => path.join(fullPath, file)));
+					} else {
+						inputFiles.push(fullPath);
+					}
+				}
+			}
+			// Currently,
+			// - We don't read the config files to filter with includeOnly, exclude and doNotFollow
+			// - We don't filter out extensions that depcruise doesn't scan.
+			// So incremental detection will be conservative.
+			this.inputFiles = inputFiles;
+		}
+		return this.inputFiles;
+	}
+
+	protected async getOutputFiles(): Promise<string[]> {
+		// No output file
 		return [];
 	}
 }

@@ -13,15 +13,27 @@ import {
 	IZookeeperClient,
 	ZookeeperClientConstructor,
 } from "@fluidframework/server-services-core";
+import { Lumberjack } from "@fluidframework/server-services-telemetry";
 import { IKafkaBaseOptions, IKafkaEndpoints, RdkafkaBase } from "./rdkafkaBase";
 
+/**
+ * @internal
+ */
 export interface IKafkaConsumerOptions extends Partial<IKafkaBaseOptions> {
 	consumeTimeout: number;
 	consumeLoopTimeoutDelay: number;
 	optimizedRebalance: boolean;
 	commitRetryDelay: number;
+
+	/**
+	 * Amount of milliseconds to delay after a successful offset commit.
+	 * This allows slowing down how often commits are done.
+	 */
+	commitSuccessDelay?: number;
+
 	automaticConsume: boolean;
 	maxConsumerCommitRetries: number;
+
 	zooKeeperClientConstructor?: ZookeeperClientConstructor;
 
 	/**
@@ -32,6 +44,7 @@ export interface IKafkaConsumerOptions extends Partial<IKafkaBaseOptions> {
 
 /**
  * Kafka consumer using the node-rdkafka library
+ * @internal
  */
 export class RdkafkaConsumer extends RdkafkaBase implements IConsumer {
 	private readonly consumerOptions: IKafkaConsumerOptions;
@@ -68,6 +81,7 @@ export class RdkafkaConsumer extends RdkafkaBase implements IConsumer {
 			consumeLoopTimeoutDelay: options?.consumeLoopTimeoutDelay ?? 100,
 			optimizedRebalance: options?.optimizedRebalance ?? false,
 			commitRetryDelay: options?.commitRetryDelay ?? 1000,
+			commitSuccessDelay: options?.commitSuccessDelay ?? 0,
 			automaticConsume: options?.automaticConsume ?? true,
 			maxConsumerCommitRetries: options?.maxConsumerCommitRetries ?? 10,
 		};
@@ -87,13 +101,14 @@ export class RdkafkaConsumer extends RdkafkaBase implements IConsumer {
 		return this.latestOffsets.get(partitionId);
 	}
 
-	protected connect() {
+	protected async connect() {
 		if (this.closed) {
 			return;
 		}
 
 		const zookeeperEndpoints = this.endpoints.zooKeeper;
 		if (
+			!this.consumerOptions.eventHubConnString &&
 			zookeeperEndpoints &&
 			zookeeperEndpoints.length > 0 &&
 			this.consumerOptions.zooKeeperClientConstructor
@@ -152,9 +167,9 @@ export class RdkafkaConsumer extends RdkafkaBase implements IConsumer {
 		consumer.on("connection.failure", async (error) => {
 			await this.close(true);
 
-			this.error(error);
+			this.error(error, { restart: false, errorLabel: "rdkafkaConsumer:connection.failure" });
 
-			this.connect();
+			await this.connect();
 		});
 
 		consumer.on("data", this.processMessage.bind(this));
@@ -171,7 +186,10 @@ export class RdkafkaConsumer extends RdkafkaBase implements IConsumer {
 						err.code === this.kafka.CODES.ERRORS.ERR_ILLEGAL_GENERATION);
 
 				if (!shouldRetryCommit) {
-					this.error(err);
+					this.error(err, {
+						restart: false,
+						errorLabel: "rdkafkaConsumer:offset.commit",
+					});
 				}
 			}
 
@@ -198,7 +216,10 @@ export class RdkafkaConsumer extends RdkafkaBase implements IConsumer {
 						this.emit("checkpoint", offset.partition, offset.offset);
 					}
 				} else {
-					this.error(new Error(`Unknown commit for partition ${offset.partition}`));
+					this.error(new Error(`Unknown commit for partition ${offset.partition}`), {
+						restart: false,
+						errorLabel: "rdkafkaConsumer:offset.commit",
+					});
 				}
 			}
 		});
@@ -271,21 +292,21 @@ export class RdkafkaConsumer extends RdkafkaBase implements IConsumer {
 					}
 				} catch (ex) {
 					this.isRebalancing = false;
-					this.error(ex);
+					this.error(ex, { restart: false, errorLabel: "rdkafkaConsumer:rebalance" });
 				} finally {
 					this.pendingMessages.clear();
 				}
 			} else {
-				this.error(err);
+				this.error(err, { restart: false, errorLabel: "rdkafkaConsumer:rebalance" });
 			}
 		});
 
 		consumer.on("rebalance.error", (error) => {
-			this.error(error);
+			this.error(error, { restart: false, errorLabel: "rdkafkaConsumer:rebalance.error" });
 		});
 
 		consumer.on("event.error", (error) => {
-			this.error(error);
+			this.error(error, { restart: false, errorLabel: "rdkafkaConsumer:event.error" });
 		});
 
 		consumer.on("event.throttle", (event) => {
@@ -294,8 +315,10 @@ export class RdkafkaConsumer extends RdkafkaBase implements IConsumer {
 
 		consumer.on("event.log", (event) => {
 			this.emit("log", event);
+			Lumberjack.info(`RdKafka consumer: ${event.message}`);
 		});
 
+		await this.setOauthBearerTokenIfNeeded(consumer);
 		consumer.connect();
 	}
 
@@ -371,6 +394,16 @@ export class RdkafkaConsumer extends RdkafkaBase implements IConsumer {
 
 			const result = await deferredCommit.promise;
 			const latency = Date.now() - startTime;
+
+			if (
+				this.consumerOptions.commitSuccessDelay !== undefined &&
+				this.consumerOptions.commitSuccessDelay > 0
+			) {
+				await new Promise((resolve) =>
+					setTimeout(resolve, this.consumerOptions.commitSuccessDelay),
+				);
+			}
+
 			this.emit("checkpoint_success", partitionId, queuedMessage, retries, latency);
 			return result;
 		} catch (ex) {

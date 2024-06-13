@@ -9,7 +9,12 @@ export {
 	validateTokenClaims,
 	validateTokenClaimsExpiration,
 } from "./auth";
-export { convertSortedNumberArrayToRanges } from "./array";
+export {
+	convertSortedNumberArrayToRanges,
+	dedupeSortedArray,
+	mergeKArrays,
+	mergeSortedArrays,
+} from "./array";
 export { CorrelationIdHeaderName, DriverVersionHeaderName, LatestSummaryId } from "./constants";
 export {
 	createFluidServiceNetworkError,
@@ -20,6 +25,7 @@ export {
 } from "./error";
 export { choose, getRandomName } from "./generateNames";
 export { GitManager } from "./gitManager";
+export { Heap, IHeapComparator } from "./heap";
 export { getAuthorizationTokenFromCredentials, Historian, ICredentials } from "./historian";
 export { IAlfredTenant, ISession } from "./interfaces";
 export { promiseTimeout } from "./promiseTimeout";
@@ -42,6 +48,7 @@ export {
 } from "./scribeHelper";
 export {
 	ICreateRefParamsExternal,
+	IExternalWriterConfig,
 	IGetRefParamsExternal,
 	IGitCache,
 	IGitManager,
@@ -76,7 +83,13 @@ export {
 	buildTreePath,
 	convertSummaryTreeToWholeSummaryTree,
 	convertWholeFlatSummaryToSnapshotTreeAndBlobs,
+	convertFirstSummaryWholeSummaryTreeToSummaryTree,
 } from "./storageUtils";
 export { SummaryTreeUploadManager } from "./summaryTreeUploadManager";
+export {
+	ITimeoutContext,
+	getGlobalTimeoutContext,
+	setGlobalTimeoutContext,
+} from "./timeoutContext";
 export { getOrCreateRepository, getRandomInt } from "./utils";
 export { WholeSummaryUploadManager } from "./wholeSummaryUploadManager";

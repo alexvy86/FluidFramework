@@ -2,26 +2,45 @@
  * Copyright (c) Microsoft Corporation and contributors. All rights reserved.
  * Licensed under the MIT License.
  */
+
 import { strict as assert } from "assert";
-import {
-	ContainerRuntime,
-	IContainerRuntimeOptions,
-	ISummarizer,
-} from "@fluidframework/container-runtime";
-import { requestFluidObject } from "@fluidframework/runtime-utils";
+
+import { assertDocumentTypeInfo, isDocumentMatrixInfo } from "@fluid-private/test-version-utils";
 import {
 	ContainerRuntimeFactoryWithDefaultDataStore,
 	DataObject,
 	DataObjectFactory,
-} from "@fluidframework/aqueduct";
-import { SharedMatrix } from "@fluidframework/matrix";
-import { SharedString } from "@fluidframework/sequence";
-import { IFluidHandle, IRequest } from "@fluidframework/core-interfaces";
-import { IContainer, LoaderHeader } from "@fluidframework/container-definitions";
-import { createSummarizerFromFactory, summarizeNow } from "@fluidframework/test-utils";
-import { assertDocumentTypeInfo, isDocumentMatrixInfo } from "@fluid-internal/test-version-utils";
-import { ITelemetryLoggerExt } from "@fluidframework/telemetry-utils";
-import { IDocumentLoaderAndSummarizer, IDocumentProps, ISummarizeResult } from "./DocumentCreator";
+} from "@fluidframework/aqueduct/internal";
+import { IContainer, LoaderHeader } from "@fluidframework/container-definitions/internal";
+import {
+	ContainerRuntime,
+	IContainerRuntimeOptions,
+	ISummarizer,
+} from "@fluidframework/container-runtime/internal";
+import {
+	ConfigTypes,
+	IConfigProviderBase,
+	IFluidHandle,
+	IRequest,
+} from "@fluidframework/core-interfaces";
+import { SharedMatrix } from "@fluidframework/matrix/internal";
+import { SharedString } from "@fluidframework/sequence/internal";
+import { ITelemetryLoggerExt } from "@fluidframework/telemetry-utils/internal";
+import { createSummarizerFromFactory, summarizeNow } from "@fluidframework/test-utils/internal";
+
+import {
+	IDocumentLoaderAndSummarizer,
+	IDocumentProps,
+	ISummarizeResult,
+} from "./DocumentCreator.js";
+
+const configProvider = (settings: Record<string, ConfigTypes>): IConfigProviderBase => ({
+	getRawConfig: (name: string): ConfigTypes => settings[name],
+});
+
+const featureGates = {
+	"Fluid.Driver.Odsp.TestOverride.DisableSnapshotCache": true,
+};
 
 // Tests usually make use of the default data object provided by the test object provider.
 // However, it only creates a single DDS and in these tests we create multiple (3) DDSes per data store.
@@ -124,10 +143,6 @@ export class DocumentMatrix implements IDocumentLoaderAndSummarizer {
 			"Container should be initialized before creating data stores",
 		);
 		assert(
-			this.containerRuntime !== undefined,
-			"ContainerRuntime should be initialized before creating data stores",
-		);
-		assert(
 			this.mainDataStore !== undefined,
 			"mainDataStore should be initialized before creating data stores",
 		);
@@ -146,7 +161,6 @@ export class DocumentMatrix implements IDocumentLoaderAndSummarizer {
 				sharedString.insertText(0, randomString);
 				matrix.setCell(i, j, sharedString.getText());
 			}
-			await this.waitForContainerSave(this._mainContainer);
 		}
 	}
 
@@ -168,13 +182,13 @@ export class DocumentMatrix implements IDocumentLoaderAndSummarizer {
 			[SharedMatrix.getFactory(), SharedString.getFactory()],
 			[],
 		);
-		this.runtimeFactory = new ContainerRuntimeFactoryWithDefaultDataStore(
-			this.dataObjectFactory,
-			[[this.dataObjectFactory.type, Promise.resolve(this.dataObjectFactory)]],
-			undefined,
-			undefined,
+		this.runtimeFactory = new ContainerRuntimeFactoryWithDefaultDataStore({
+			defaultFactory: this.dataObjectFactory,
+			registryEntries: [
+				[this.dataObjectFactory.type, Promise.resolve(this.dataObjectFactory)],
+			],
 			runtimeOptions,
-		);
+		});
 
 		assertDocumentTypeInfo(this.props.documentTypeInfo, this.props.documentType);
 		// Now TypeScript knows that info.documentTypeInfo is either DocumentMapInfo or DocumentMultipleDataStoresInfo
@@ -193,13 +207,29 @@ export class DocumentMatrix implements IDocumentLoaderAndSummarizer {
 	}
 
 	public async initializeDocument(): Promise<void> {
-		this._mainContainer = await this.props.provider.createContainer(this.runtimeFactory);
+		const loader = this.props.provider.createLoader(
+			[[this.props.provider.defaultCodeDetails, this.runtimeFactory]],
+			{ logger: this.props.logger, configProvider: configProvider(featureGates) },
+		);
+		this._mainContainer = await loader.createDetachedContainer(
+			this.props.provider.defaultCodeDetails,
+		);
 		this.props.provider.updateDocumentId(this._mainContainer.resolvedUrl);
-		this.mainDataStore = await requestFluidObject<TestDataObject>(this._mainContainer, "/");
-		this.containerRuntime = this.mainDataStore._context.containerRuntime as ContainerRuntime;
+		this.mainDataStore = (await this._mainContainer.getEntryPoint()) as TestDataObject;
 		this.mainDataStore._root.set("mode", "write");
-		await this.ensureContainerConnectedWriteMode(this._mainContainer);
+
 		await this.createDataStores();
+
+		await this._mainContainer.attach(
+			this.props.provider.driver.createCreateNewRequest(this.props.provider.documentId),
+		);
+
+		await this.waitForContainerSave(this._mainContainer);
+		this.containerRuntime = this.mainDataStore._context.containerRuntime as ContainerRuntime;
+
+		if (this._mainContainer.deltaManager.active) {
+			await this.ensureContainerConnectedWriteMode(this._mainContainer);
+		}
 	}
 
 	/**
@@ -219,9 +249,10 @@ export class DocumentMatrix implements IDocumentLoaderAndSummarizer {
 			url: requestUrl,
 		};
 
-		const loader = this.props.provider.createLoader([
-			[this.props.provider.defaultCodeDetails, this.runtimeFactory],
-		]);
+		const loader = this.props.provider.createLoader(
+			[[this.props.provider.defaultCodeDetails, this.runtimeFactory]],
+			{ logger: this.props.logger, configProvider: configProvider(featureGates) },
+		);
 		const container2 = await loader.resolve(request);
 		return container2;
 	}
@@ -234,22 +265,21 @@ export class DocumentMatrix implements IDocumentLoaderAndSummarizer {
 	}
 
 	public async summarize(
+		_container: IContainer,
 		summaryVersion?: string,
 		closeContainer: boolean = true,
 	): Promise<ISummarizeResult> {
-		assert(
-			this._mainContainer !== undefined,
-			"Container should be initialized before summarize",
-		);
+		assert(_container !== undefined, "Container should be initialized before summarize");
 		const { container: containerClient, summarizer: summarizerClient } =
 			await createSummarizerFromFactory(
 				this.props.provider,
-				this._mainContainer,
+				_container,
 				this.dataObjectFactory,
 				summaryVersion,
 				undefined,
 				undefined,
 				this.logger,
+				configProvider(featureGates),
 			);
 
 		const newSummaryVersion = await this.waitForSummary(summarizerClient);

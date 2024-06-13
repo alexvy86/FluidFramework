@@ -3,42 +3,41 @@
  * Licensed under the MIT License.
  */
 
-import { assert } from "@fluidframework/common-utils";
+import { IDisposable, ITelemetryBaseProperties, LogLevel } from "@fluidframework/core-interfaces";
+import { assert } from "@fluidframework/core-utils/internal";
+import { ConnectionMode } from "@fluidframework/driver-definitions";
 import {
 	IAnyDriverError,
 	IDocumentDeltaConnection,
 	IDocumentDeltaConnectionEvents,
-} from "@fluidframework/driver-definitions";
-import { createGenericNetworkError } from "@fluidframework/driver-utils";
-import {
-	ConnectionMode,
 	IClientConfiguration,
 	IConnect,
 	IConnected,
 	IDocumentMessage,
-	ISequencedDocumentMessage,
 	ISignalClient,
-	ISignalMessage,
 	ITokenClaims,
 	ScopeType,
-} from "@fluidframework/protocol-definitions";
-import { IDisposable, ITelemetryProperties } from "@fluidframework/common-definitions";
+	ISequencedDocumentMessage,
+	ISignalMessage,
+} from "@fluidframework/driver-definitions/internal";
+import { UsageError, createGenericNetworkError } from "@fluidframework/driver-utils/internal";
 import {
 	ITelemetryLoggerExt,
-	ChildLogger,
+	EventEmitterWithErrorHandling,
+	MonitoringContext,
+	createChildMonitoringContext,
 	extractLogSafeErrorProperties,
 	getCircularReplacer,
-	loggerToMonitoringContext,
-	MonitoringContext,
-	EventEmitterWithErrorHandling,
 	normalizeError,
-} from "@fluidframework/telemetry-utils";
+} from "@fluidframework/telemetry-utils/internal";
 import type { Socket } from "socket.io-client";
+
 // For now, this package is versioned and released in unison with the specific drivers
-import { pkgVersion as driverVersion } from "./packageVersion";
+import { pkgVersion as driverVersion } from "./packageVersion.js";
 
 /**
- * Represents a connection to a stream of delta updates
+ * Represents a connection to a stream of delta updates.
+ * @internal
  */
 export class DocumentDeltaConnection
 	extends EventEmitterWithErrorHandling<IDocumentDeltaConnectionEvents>
@@ -72,6 +71,8 @@ export class DocumentDeltaConnection
 	private socketConnectionTimeout: ReturnType<typeof setTimeout> | undefined;
 
 	private _details: IConnected | undefined;
+
+	private trackLatencyTimeout: ReturnType<typeof setTimeout> | undefined;
 
 	// Listeners only needed while the connection is in progress
 	private readonly connectionListeners: Map<string, (...args: any[]) => void> = new Map();
@@ -129,15 +130,17 @@ export class DocumentDeltaConnection
 			logger.sendErrorEvent(
 				{
 					eventName: "DeltaConnection:EventException",
-					name,
+					// Coerce to string as past typings also allowed symbols and number, but
+					// we want telemtry properties to be consistently string.
+					name: String(name),
 				},
 				error,
 			);
 		});
 
-		this.mc = loggerToMonitoringContext(ChildLogger.create(logger, "DeltaConnection"));
+		this.mc = createChildMonitoringContext({ logger, namespace: "DeltaConnection" });
 
-		this.on("newListener", (event, listener) => {
+		this.on("newListener", (event, _listener) => {
 			assert(!this.disposed, 0x20a /* "register for event on disposed object" */);
 
 			// Some events are already forwarded - see this.addTrackedListener() calls in initialize().
@@ -160,9 +163,29 @@ export class DocumentDeltaConnection
 				0x20b /* "mismatch" */,
 			);
 			if (!this.trackedListeners.has(event)) {
-				this.addTrackedListener(event, (...args: any[]) => {
-					this.emit(event, ...args);
-				});
+				if (event === "pong") {
+					// Empty callback for tracking purposes in this class
+					this.trackedListeners.set("pong", () => {});
+
+					const sendPingLoop = () => {
+						const start = Date.now();
+
+						this.socket.volatile?.emit("ping", () => {
+							this.emit("pong", Date.now() - start);
+
+							// Schedule another ping event in 1 minute
+							this.trackLatencyTimeout = setTimeout(() => {
+								sendPingLoop();
+							}, 1000 * 60);
+						});
+					};
+
+					sendPingLoop();
+				} else {
+					this.addTrackedListener(event, (...args: any[]) => {
+						this.emit(event, ...args);
+					});
+				}
 			}
 		});
 	}
@@ -286,7 +309,9 @@ export class DocumentDeltaConnection
 		return this.details.initialClients;
 	}
 
-	protected emitMessages(type: string, messages: IDocumentMessage[][]) {
+	protected emitMessages(type: "submitOp", messages: IDocumentMessage[][]): void;
+	protected emitMessages(type: "submitSignal", messages: string[][]): void;
+	protected emitMessages(type: string, messages: unknown): void {
 		// Although the implementation here disconnects the socket and does not reuse it, other subclasses
 		// (e.g. OdspDocumentDeltaConnection) may reuse the socket.  In these cases, we need to avoid emitting
 		// on the still-live socket.
@@ -308,11 +333,17 @@ export class DocumentDeltaConnection
 	/**
 	 * Submits a new signal to the server
 	 *
-	 * @param message - signal to submit
+	 * @param content - Content of the signal.
+	 * @param targetClientId - When specified, the signal is only sent to the provided client id.
 	 */
-	public submitSignal(message: IDocumentMessage): void {
+	public submitSignal(content: string, targetClientId?: string): void {
 		this.checkNotDisposed();
-		this.emitMessages("submitSignal", [[message]]);
+
+		if (targetClientId && this.details.supportedFeatures?.submit_signals_v2 !== true) {
+			throw new UsageError("Sending signals to specific client ids is not supported.");
+		}
+
+		this.emitMessages("submitSignal", [[content]]);
 	}
 
 	/**
@@ -359,6 +390,11 @@ export class DocumentDeltaConnection
 		// "dispose" event.
 		if (this._disposed) {
 			return;
+		}
+
+		if (this.trackLatencyTimeout !== undefined) {
+			clearTimeout(this.trackLatencyTimeout);
+			this.trackLatencyTimeout = undefined;
 		}
 
 		// We set the disposed flag as a part of the contract for overriding the disconnect method. This is used by
@@ -543,6 +579,15 @@ export class DocumentDeltaConnection
 					}
 				}
 
+				this.logger.sendTelemetryEvent(
+					{
+						eventName: "ConnectDocumentSuccess",
+						pendingClientId: response.clientId,
+					},
+					undefined,
+					LogLevel.verbose,
+				);
+
 				this.checkpointSequenceNumber = response.checkpointSequenceNumber;
 
 				this.removeConnectionListeners();
@@ -614,8 +659,12 @@ export class DocumentDeltaConnection
 		this.queuedMessages.push(...msgs);
 	};
 
-	protected earlySignalHandler = (msg: ISignalMessage) => {
-		this.queuedSignals.push(msg);
+	protected earlySignalHandler = (msg: ISignalMessage | ISignalMessage[]) => {
+		if (Array.isArray(msg)) {
+			this.queuedSignals.push(...msg);
+		} else {
+			this.queuedSignals.push(msg);
+		}
 	};
 
 	private removeEarlyOpHandler() {
@@ -687,7 +736,7 @@ export class DocumentDeltaConnection
 	private createErrorObjectWithProps(
 		handler: string,
 		error?: any,
-		props?: ITelemetryProperties,
+		props?: ITelemetryBaseProperties,
 		canRetry = true,
 	): IAnyDriverError {
 		return createGenericNetworkError(
@@ -699,6 +748,7 @@ export class DocumentDeltaConnection
 				details: JSON.stringify({
 					...this.getConnectionDetailsProps(),
 				}),
+				scenarioName: handler,
 			},
 		);
 	}
@@ -715,6 +765,7 @@ export class DocumentDeltaConnection
 				details: JSON.stringify({
 					...this.getConnectionDetailsProps(),
 				}),
+				scenarioName: handler,
 			},
 		);
 	}

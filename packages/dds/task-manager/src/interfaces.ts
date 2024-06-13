@@ -3,17 +3,19 @@
  * Licensed under the MIT License.
  */
 
-import { ISharedObject, ISharedObjectEvents } from "@fluidframework/shared-object-base";
+import { ISharedObject, ISharedObjectEvents } from "@fluidframework/shared-object-base/internal";
 
 /**
  * Describes the event listener format for {@link ITaskManagerEvents} events.
  *
  * @param taskId - The unique identifier of the related task.
+ * @alpha
  */
 export type TaskEventListener = (taskId: string) => void;
 
 /**
- * Events emitted by {@link TaskManager}.
+ * Events emitted by {@link ITaskManager}.
+ * @alpha
  */
 export interface ITaskManagerEvents extends ISharedObjectEvents {
 	/**
@@ -47,7 +49,7 @@ export interface ITaskManagerEvents extends ISharedObjectEvents {
  *
  * @example Creation
  *
- * To create a {@link TaskManager}, call the static create method:
+ * To create a {@link ITaskManager}, call the static create method:
  *
  * ```typescript
  * const taskManager = TaskManager.create(this.runtime, id);
@@ -131,6 +133,7 @@ export interface ITaskManagerEvents extends ISharedObjectEvents {
  * when using {@link ITaskManager.subscribeToTask}.
  *
  * See {@link ITaskManagerEvents} for more details.
+ * @alpha
  */
 export interface ITaskManager extends ISharedObject<ITaskManagerEvents> {
 	/**

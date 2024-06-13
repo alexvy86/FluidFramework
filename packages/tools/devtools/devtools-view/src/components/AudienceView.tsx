@@ -2,21 +2,24 @@
  * Copyright (c) Microsoft Corporation and contributors. All rights reserved.
  * Licensed under the MIT License.
  */
-import React from "react";
+
 import { Divider } from "@fluentui/react-components";
 import {
 	AudienceSummary,
 	GetAudienceSummary,
+	type HasContainerKey,
+	type IDevtoolsMessage,
+	type InboundHandlers,
 	handleIncomingMessage,
-	HasContainerKey,
-	IDevtoolsMessage,
-	InboundHandlers,
-} from "@fluid-experimental/devtools-core";
-import { IClient } from "@fluidframework/protocol-definitions";
-import { useMessageRelay } from "../MessageRelayContext";
-import { AudienceStateTable } from "./AudienceStateTable";
-import { AudienceHistoryTable } from "./AudienceHistoryTable";
-import { Waiting } from "./Waiting";
+} from "@fluidframework/devtools-core/internal";
+import { type IClient } from "@fluidframework/driver-definitions";
+import React from "react";
+
+import { useMessageRelay } from "../MessageRelayContext.js";
+
+import { AudienceHistoryTable } from "./AudienceHistoryTable.js";
+import { AudienceStateTable } from "./AudienceStateTable.js";
+import { Waiting } from "./Waiting.js";
 
 // TODOs:
 // - Special annotation for the member elected as the summarizer
@@ -136,5 +139,5 @@ export interface TransformedAudienceStateData {
 export interface TransformedAudienceHistoryData {
 	clientId: string;
 	time: string;
-	changeKind: string;
+	changeKind: "joined" | "left";
 }

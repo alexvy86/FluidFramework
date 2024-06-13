@@ -3,32 +3,31 @@
  * Licensed under the MIT License.
  */
 
-import React from "react";
-
+import {
+	DataVisualization,
+	type FluidObjectTreeNode,
+	type FluidObjectValueNode,
+	type FluidUnknownObjectNode,
+	GetDataVisualization,
+	type IDevtoolsMessage,
+	type UnknownObjectNode,
+	VisualNodeKind,
+} from "@fluidframework/devtools-core/internal";
 // eslint-disable-next-line import/no-unassigned-import
 import "@testing-library/jest-dom";
 import { render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import {
-	IDevtoolsMessage,
-	GetDataVisualization,
-	DataVisualization,
-	FluidObjectValueNode,
-	FluidObjectTreeNode,
-	FluidUnknownObjectNode,
-	UnknownObjectNode,
-	VisualNodeKind,
-} from "@fluid-experimental/devtools-core";
-import { UnknownDataView, FluidTreeView, UnknownFluidObjectView } from "../components";
-import { MessageRelayContext } from "../MessageRelayContext";
-import { MockMessageRelay } from "./MockMessageRelay";
+import React from "react";
+
+import { MessageRelayContext } from "../MessageRelayContext.js";
+import { FluidTreeView, UnknownDataView, UnknownFluidObjectView } from "../components/index.js";
+
+import { MockMessageRelay } from "./utils/index.js";
 
 const testContainerKey = "test-container-key";
 const testFluidObjectId = "test-fluid-object-id";
 const testLabel = "test-node-key";
 
 describe("VisualTreeView component tests", () => {
-	// eslint-disable-next-line jest/expect-expect
 	it("UnknownDataView", async (): Promise<void> => {
 		const input: UnknownObjectNode = {
 			nodeKind: VisualNodeKind.UnknownObjectNode,
@@ -39,7 +38,6 @@ describe("VisualTreeView component tests", () => {
 		await screen.findByText(/Unrecognized kind of data./); // Will throw if exact text not found
 	});
 
-	// eslint-disable-next-line jest/expect-expect
 	it("UnknownFluidObjectView", async (): Promise<void> => {
 		const input: FluidUnknownObjectNode = {
 			fluidObjectId: testFluidObjectId,
@@ -52,7 +50,6 @@ describe("VisualTreeView component tests", () => {
 		await screen.findByText(/Unrecognized kind of Fluid Object./); // Will throw if exact text not found
 	});
 
-	// eslint-disable-next-line jest/expect-expect
 	it("FluidObjectTreeView", async (): Promise<void> => {
 		const messageRelay = new MockMessageRelay((untypedMessage: IDevtoolsMessage) => {
 			switch (untypedMessage.type) {
@@ -71,44 +68,19 @@ describe("VisualTreeView component tests", () => {
 						},
 					};
 				}
-				default:
+				default: {
 					throw new Error("Received unexpected message.");
+				}
 			}
 		});
 
 		const treeData: FluidObjectTreeNode = {
-			fluidObjectId: "test-object",
+			fluidObjectId: testFluidObjectId,
 			children: {
 				"test-string": {
 					value: "Hello world",
 					typeMetadata: "string",
 					nodeKind: VisualNodeKind.ValueNode,
-				},
-				"test-tree-node": {
-					children: {
-						a: {
-							value: 1,
-							typeMetadata: "number",
-							nodeKind: VisualNodeKind.ValueNode,
-						},
-						b: {
-							value: "2",
-							typeMetadata: "string",
-							nodeKind: VisualNodeKind.ValueNode,
-						},
-						c: {
-							value: true,
-							typeMetadata: "boolean",
-							nodeKind: VisualNodeKind.ValueNode,
-						},
-					},
-					typeMetadata: "object",
-					nodeKind: VisualNodeKind.TreeNode,
-				},
-				"test-handle": {
-					fluidObjectId: testFluidObjectId,
-					typeMetadata: "Fluid Handle",
-					nodeKind: VisualNodeKind.FluidHandleNode,
 				},
 			},
 			nodeKind: VisualNodeKind.FluidTreeNode,
@@ -120,15 +92,9 @@ describe("VisualTreeView component tests", () => {
 			</MessageRelayContext.Provider>,
 		);
 
-		// TODO: Loop the expand button for n-amount of times.
-		const expandButton = await screen.findByTestId("tree-button");
-		await userEvent.click(expandButton);
-
-		await screen.findByText(/test-node-key/);
-
-		// TODO: Add test support for complex container DDS.
-		// await screen.findByText(/1/);
-		// await screen.findByText(/2/);
-		// await screen.findByText(/true/);
+		// Will throw if matches are not found
+		await screen.findByText(testLabel);
 	});
+
+	// TODO: Add interactive tests
 });

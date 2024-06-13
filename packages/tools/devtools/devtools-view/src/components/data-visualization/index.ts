@@ -3,12 +3,21 @@
  * Licensed under the MIT License.
  */
 
-export { FluidHandleView, FluidHandleViewProps } from "./FluidHandleView";
-export { FluidTreeView, FluidTreeViewProps } from "./FluidTreeView";
-export { FluidValueView, FluidValueViewProps } from "./FluidValueView";
-export { TreeDataView, TreeDataViewProps } from "./TreeDataView";
-export { TreeHeader, TreeHeaderProps } from "./TreeHeader";
-export { TreeView, TreeViewProps } from "./TreeView";
-export { UnknownDataView, UnknownDataViewProps } from "./UnknownDataView";
-export { UnknownFluidObjectView, UnknownFluidObjectViewProps } from "./UnknownFluidObjectView";
-export { ValueView, ValueViewProps } from "./ValueView";
+export type { FluidHandleViewProps } from "./FluidHandleView.js";
+export { FluidHandleView } from "./FluidHandleView.js";
+export type { FluidTreeViewProps } from "./FluidTreeView.js";
+export { FluidTreeView } from "./FluidTreeView.js";
+export type { FluidValueViewProps } from "./FluidValueView.js";
+export { FluidValueView } from "./FluidValueView.js";
+export type { TreeDataViewProps } from "./TreeDataView.js";
+export { TreeDataView } from "./TreeDataView.js";
+export type { TreeHeaderProps } from "./TreeHeader.js";
+export { TreeHeader } from "./TreeHeader.js";
+export type { TreeViewProps } from "./TreeView.js";
+export { TreeView } from "./TreeView.js";
+export type { UnknownDataViewProps } from "./UnknownDataView.js";
+export { UnknownDataView } from "./UnknownDataView.js";
+export type { UnknownFluidObjectViewProps } from "./UnknownFluidObjectView.js";
+export { UnknownFluidObjectView } from "./UnknownFluidObjectView.js";
+export type { ValueViewProps } from "./ValueView.js";
+export { ValueView } from "./ValueView.js";

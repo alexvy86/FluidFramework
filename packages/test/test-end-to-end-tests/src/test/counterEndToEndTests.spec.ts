@@ -4,35 +4,34 @@
  */
 
 import { strict as assert } from "assert";
-import { ISharedCounter, SharedCounter } from "@fluidframework/counter";
-import { requestFluidObject } from "@fluidframework/runtime-utils";
-import {
-	ITestObjectProvider,
-	ITestContainerConfig,
-	DataObjectFactoryType,
-	ChannelFactoryRegistry,
-	ITestFluidObject,
-} from "@fluidframework/test-utils";
-import {
-	describeFullCompat,
-	describeNoCompat,
-	itExpects,
-} from "@fluid-internal/test-version-utils";
-import { ContainerErrorType, IContainer } from "@fluidframework/container-definitions";
 
-import { ConfigTypes, IConfigProviderBase } from "@fluidframework/telemetry-utils";
-import { ContainerRuntime } from "@fluidframework/container-runtime";
+import { describeCompat, itExpects } from "@fluid-private/test-version-utils";
+import { ContainerErrorTypes, IContainer } from "@fluidframework/container-definitions/internal";
+import { ContainerRuntime } from "@fluidframework/container-runtime/internal";
+import { ConfigTypes, IConfigProviderBase } from "@fluidframework/core-interfaces";
+import type { ISharedCounter, SharedCounter } from "@fluidframework/counter/internal";
+import {
+	ChannelFactoryRegistry,
+	DataObjectFactoryType,
+	ITestContainerConfig,
+	ITestFluidObject,
+	ITestObjectProvider,
+	getContainerEntryPointBackCompat,
+} from "@fluidframework/test-utils/internal";
 
 const counterId = "counterKey";
-const registry: ChannelFactoryRegistry = [[counterId, SharedCounter.getFactory()]];
-const testContainerConfig: ITestContainerConfig = {
-	fluidDataObjectType: DataObjectFactoryType.Test,
-	registry,
-};
 
-describeFullCompat("SharedCounter", (getTestObjectProvider) => {
+describeCompat("SharedCounter", "FullCompat", (getTestObjectProvider, apis) => {
+	const { SharedCounter } = apis.dds;
+
+	const registry: ChannelFactoryRegistry = [[counterId, SharedCounter.getFactory()]];
+	const testContainerConfig: ITestContainerConfig = {
+		fluidDataObjectType: DataObjectFactoryType.Test,
+		registry,
+	};
+
 	let provider: ITestObjectProvider;
-	beforeEach(() => {
+	beforeEach("getTestObjectProvider", () => {
 		provider = getTestObjectProvider();
 	});
 	let dataStore1: ITestFluidObject;
@@ -40,20 +39,20 @@ describeFullCompat("SharedCounter", (getTestObjectProvider) => {
 	let sharedCounter2: ISharedCounter;
 	let sharedCounter3: ISharedCounter;
 
-	beforeEach(async () => {
+	beforeEach("setup", async () => {
 		// Create a Container for the first client.
 		const container1 = await provider.makeTestContainer(testContainerConfig);
-		dataStore1 = await requestFluidObject<ITestFluidObject>(container1, "default");
+		dataStore1 = await getContainerEntryPointBackCompat<ITestFluidObject>(container1);
 		sharedCounter1 = await dataStore1.getSharedObject<SharedCounter>(counterId);
 
 		// Load the Container that was created by the first client.
 		const container2 = await provider.loadTestContainer(testContainerConfig);
-		const dataStore2 = await requestFluidObject<ITestFluidObject>(container2, "default");
+		const dataStore2 = await getContainerEntryPointBackCompat<ITestFluidObject>(container2);
 		sharedCounter2 = await dataStore2.getSharedObject<SharedCounter>(counterId);
 
 		// Load the Container that was created by the first client.
 		const container3 = await provider.loadTestContainer(testContainerConfig);
-		const dataStore3 = await requestFluidObject<ITestFluidObject>(container3, "default");
+		const dataStore3 = await getContainerEntryPointBackCompat<ITestFluidObject>(container3);
 		sharedCounter3 = await dataStore3.getSharedObject<SharedCounter>(counterId);
 
 		await provider.ensureSynchronized();
@@ -79,14 +78,17 @@ describeFullCompat("SharedCounter", (getTestObjectProvider) => {
 			// SharedCounter was created in beforeEach
 			assert.ok(
 				sharedCounter1,
+				// eslint-disable-next-line @typescript-eslint/no-base-to-string
 				`Couldn't find the counter in container1, instead got ${sharedCounter1}`,
 			);
 			assert.ok(
 				sharedCounter2,
+				// eslint-disable-next-line @typescript-eslint/no-base-to-string
 				`Couldn't find the counter in container2, instead got ${sharedCounter2}`,
 			);
 			assert.ok(
 				sharedCounter3,
+				// eslint-disable-next-line @typescript-eslint/no-base-to-string
 				`Couldn't find the counter in container3, instead got ${sharedCounter3}`,
 			);
 		});
@@ -164,9 +166,17 @@ describeFullCompat("SharedCounter", (getTestObjectProvider) => {
 	});
 });
 
-describeNoCompat("SharedCounter orderSequentially", (getTestObjectProvider) => {
+describeCompat("SharedCounter orderSequentially", "NoCompat", (getTestObjectProvider, apis) => {
+	const { SharedCounter } = apis.dds;
+
+	const registry: ChannelFactoryRegistry = [[counterId, SharedCounter.getFactory()]];
+	const testContainerConfig: ITestContainerConfig = {
+		fluidDataObjectType: DataObjectFactoryType.Test,
+		registry,
+	};
+
 	let provider: ITestObjectProvider;
-	beforeEach(() => {
+	beforeEach("getTestObjectProvider", () => {
 		provider = getTestObjectProvider();
 	});
 
@@ -181,7 +191,7 @@ describeNoCompat("SharedCounter orderSequentially", (getTestObjectProvider) => {
 	});
 	const errorMessage = "callback failure";
 
-	beforeEach(async () => {
+	beforeEach("setup", async () => {
 		const configWithFeatureGates = {
 			...testContainerConfig,
 			loaderProps: {
@@ -191,8 +201,8 @@ describeNoCompat("SharedCounter orderSequentially", (getTestObjectProvider) => {
 			},
 		};
 		container = await provider.makeTestContainer(configWithFeatureGates);
-		dataObject = await requestFluidObject<ITestFluidObject>(container, "default");
-		dataStore = await requestFluidObject<ITestFluidObject>(container, "default");
+		dataObject = await getContainerEntryPointBackCompat<ITestFluidObject>(container);
+		dataStore = await getContainerEntryPointBackCompat<ITestFluidObject>(container);
 		sharedCounter = await dataStore.getSharedObject<SharedCounter>(counterId);
 		containerRuntime = dataObject.context.containerRuntime as ContainerRuntime;
 	});
@@ -203,7 +213,7 @@ describeNoCompat("SharedCounter orderSequentially", (getTestObjectProvider) => {
 			{
 				eventName: "fluid:telemetry:Container:ContainerClose",
 				error: "RollbackError: rollback not supported",
-				errorType: ContainerErrorType.dataProcessingError,
+				errorType: ContainerErrorTypes.dataProcessingError,
 			},
 		],
 		async () => {
@@ -219,7 +229,7 @@ describeNoCompat("SharedCounter orderSequentially", (getTestObjectProvider) => {
 
 			assert.notEqual(error, undefined, "No error");
 			assert.ok(error?.message.startsWith("RollbackError:"), "Unexpected error message");
-			assert.equal(containerRuntime.disposed, true);
+			assert.equal(container.closed, true);
 		},
 	);
 });

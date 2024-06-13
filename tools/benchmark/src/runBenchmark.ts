@@ -15,6 +15,9 @@ import {
 import { Stats, getArrayStatistics } from "./ReporterUtilities";
 import { Timer, defaultMinimumTime, timer } from "./timer";
 
+/**
+ * @public
+ */
 export enum Phase {
 	WarmUp,
 	AdjustIterationPerBatch,
@@ -79,6 +82,7 @@ export type JsonCompatible =
 export type Results = { readonly [P in string]: JsonCompatible | undefined };
 
 /**
+ * Provides type narrowing when the provided result is a {@link BenchmarkError}.
  * @public
  */
 export function isResultError(result: BenchmarkResult): result is BenchmarkError {
@@ -93,6 +97,10 @@ export interface BenchmarkError {
 	error: string;
 }
 
+/**
+ * Runs the benchmark.
+ * @public
+ */
 export async function runBenchmark(args: BenchmarkRunningOptions): Promise<BenchmarkData> {
 	if (benchmarkArgumentsIsCustom(args)) {
 		const state = new BenchmarkState(timer, args);
@@ -113,7 +121,7 @@ export async function runBenchmark(args: BenchmarkRunningOptions): Promise<Bench
 	if (isAsync) {
 		data = await runBenchmarkAsync({
 			...options,
-			benchmarkFnAsync: argsBenchmarkFn as any,
+			benchmarkFnAsync: argsBenchmarkFn,
 		});
 	} else {
 		data = runBenchmarkSync({ ...options, benchmarkFn: argsBenchmarkFn });
@@ -142,7 +150,10 @@ class BenchmarkState<T> implements BenchmarkTimer<T> {
 	private readonly startTime: T;
 	private phase: Phase;
 	public iterationsPerBatch: number;
-	public constructor(public readonly timer: Timer<T>, options: BenchmarkTimingOptions) {
+	public constructor(
+		public readonly timer: Timer<T>,
+		options: BenchmarkTimingOptions,
+	) {
 		this.startTime = timer.now();
 		this.samples = [];
 		this.options = {
@@ -204,7 +215,7 @@ class BenchmarkState<T> implements BenchmarkTimer<T> {
 		}
 
 		const stats = getArrayStatistics(this.samples);
-		if (stats.marginOfErrorPercent < 1.0) {
+		if (stats.marginOfErrorPercent < 1) {
 			// Already below 1% margin of error.
 			// Note that this margin of error computation doesn't account for low frequency noise (noise spanning a time scale longer than this test so far)
 			// which can be caused by many factors like CPU frequency changes due to limited boost time or thermals.
@@ -213,7 +224,7 @@ class BenchmarkState<T> implements BenchmarkTimer<T> {
 		}
 
 		// Exit if way too many samples to avoid out of memory.
-		if (this.samples.length > 1000000) {
+		if (this.samples.length > 1_000_000) {
 			// Test failed to converge after many samples.
 			// TODO: produce some warning or error state in this case (and probably the case for hitting max time as well).
 			return false;
@@ -245,7 +256,9 @@ export function runBenchmarkSync(args: BenchmarkRunningOptionsSync): BenchmarkDa
 	const state = new BenchmarkState(timer, args);
 	while (
 		state.recordBatch(doBatch(state.iterationsPerBatch, args.benchmarkFn, args.beforeEachBatch))
-	) {}
+	) {
+		// No-op
+	}
 	return state.computeData();
 }
 
@@ -265,7 +278,9 @@ export async function runBenchmarkAsync(
 				args.beforeEachBatch,
 			),
 		)
-	) {}
+	) {
+		// No-op
+	}
 	return state.computeData();
 }
 

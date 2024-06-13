@@ -3,30 +3,34 @@
  * Licensed under the MIT License.
  */
 
-import { ITelemetryProperties } from "@fluidframework/common-definitions";
-import { getW3CData, validateMessages } from "@fluidframework/driver-base";
+import { ITelemetryBaseProperties } from "@fluidframework/core-interfaces";
+import { getW3CData, validateMessages } from "@fluidframework/driver-base/internal";
 import {
 	IDeltaStorageService,
-	IDocumentDeltaStorageService,
 	IDeltasFetchResult,
+	IDocumentDeltaStorageService,
 	IStream,
-} from "@fluidframework/driver-definitions";
-import { ISequencedDocumentMessage } from "@fluidframework/protocol-definitions";
+	ISequencedDocumentMessage,
+} from "@fluidframework/driver-definitions/internal";
 import {
+	emptyMessageStream,
 	readAndParse,
 	requestOps,
-	emptyMessageStream,
 	streamObserver,
-} from "@fluidframework/driver-utils";
-import {
-	ITelemetryLoggerExt,
-	PerformanceEvent,
-	TelemetryNullLogger,
-} from "@fluidframework/telemetry-utils";
-import { DocumentStorageService } from "./documentStorageService";
-import { RestWrapper } from "./restWrapperBase";
+} from "@fluidframework/driver-utils/internal";
+import { ITelemetryLoggerExt, PerformanceEvent } from "@fluidframework/telemetry-utils/internal";
 
-const MaxBatchDeltas = 5000; // Maximum number of ops we can fetch at a time
+import { DocumentStorageService } from "./documentStorageService.js";
+import { RestWrapper } from "./restWrapperBase.js";
+
+/**
+ * Maximum number of ops we can fetch at a time. This should be kept at 2k, as
+ * server determines whether to try to fallback to long-term storage if the ops range requested is larger than
+ * what they have locally available in short-term storage. So if we request 2k ops, they know it is not a
+ * specific request and they don't fall to long term storage which takes time.
+ * Please coordinate to AFR team if this value need to be changed.
+ */
+const MaxBatchDeltas = 2000;
 
 /**
  * Storage service limited to only being able to fetch documents for a specific document
@@ -38,9 +42,11 @@ export class DocumentDeltaStorageService implements IDocumentDeltaStorageService
 		private readonly deltaStorageService: IDeltaStorageService,
 		private readonly documentStorageService: DocumentStorageService,
 		private readonly logger: ITelemetryLoggerExt,
-	) {}
+	) {
+		this.logtailSha = documentStorageService.logTailSha;
+	}
 
-	private logtailSha: string | undefined = this.documentStorageService.logTailSha;
+	private logtailSha: string | undefined;
 	private snapshotOps: ISequencedDocumentMessage[] | undefined;
 
 	fetchMessages(
@@ -59,7 +65,7 @@ export class DocumentDeltaStorageService implements IDocumentDeltaStorageService
 		const requestCallback = async (
 			from: number,
 			to: number,
-			telemetryProps: ITelemetryProperties,
+			telemetryProps: ITelemetryBaseProperties,
 		) => {
 			this.snapshotOps = this.logtailSha
 				? await readAndParse<ISequencedDocumentMessage[]>(
@@ -73,7 +79,7 @@ export class DocumentDeltaStorageService implements IDocumentDeltaStorageService
 				const messages = this.snapshotOps.filter(
 					(op) => op.sequenceNumber >= from && op.sequenceNumber < to,
 				);
-				validateMessages("snapshotOps", messages, from, this.logger);
+				validateMessages("snapshotOps", messages, from, this.logger, false /* strict */);
 				if (messages.length > 0 && messages[0].sequenceNumber === from) {
 					this.snapshotOps = this.snapshotOps.filter((op) => op.sequenceNumber >= to);
 					opsFromSnapshot += messages.length;
@@ -83,13 +89,13 @@ export class DocumentDeltaStorageService implements IDocumentDeltaStorageService
 			}
 
 			const ops = await this.deltaStorageService.get(this.tenantId, this.id, from, to);
-			validateMessages("storage", ops.messages, from, this.logger);
+			validateMessages("storage", ops.messages, from, this.logger, false /* strict */);
 			opsFromStorage += ops.messages.length;
 			return ops;
 		};
 
 		const stream = requestOps(
-			async (from: number, to: number, telemetryProps: ITelemetryProperties) => {
+			async (from: number, to: number, telemetryProps: ITelemetryBaseProperties) => {
 				const result = await requestCallback(from, to, telemetryProps);
 				// Catch all case, just in case
 				validateMessages("catch all", result.messages, from, this.logger);
@@ -101,7 +107,7 @@ export class DocumentDeltaStorageService implements IDocumentDeltaStorageService
 			fromTotal, // inclusive
 			toTotal, // exclusive
 			MaxBatchDeltas,
-			new TelemetryNullLogger(),
+			this.logger,
 			abortSignal,
 			fetchReason,
 		);
@@ -139,7 +145,7 @@ export class DeltaStorageService implements IDeltaStorageService {
 		const ops = await PerformanceEvent.timedExecAsync(
 			this.logger,
 			{
-				eventName: "getDeltas",
+				eventName: "OpsFetch",
 				from,
 				to,
 			},

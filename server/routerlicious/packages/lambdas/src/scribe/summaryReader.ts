@@ -29,6 +29,7 @@ import { ILatestSummaryState, ISummaryReader } from "./interfaces";
 
 /**
  * Git specific implementation of ISummaryReader
+ * @internal
  */
 export class SummaryReader implements ISummaryReader {
 	private readonly lumberProperties: Record<string, any>;
@@ -269,8 +270,6 @@ export class SummaryReader implements ISummaryReader {
 		return {
 			sequenceNumber: 0,
 			minimumSequenceNumber: 0,
-			// "term" was an experimental feature that is being removed.  The only safe value to use is 1.
-			term: 1,
 		};
 	}
 
@@ -290,7 +289,6 @@ export class SummaryReader implements ISummaryReader {
 			expHash1: "",
 			lastSentMSN: undefined,
 			nackMessages: undefined,
-			successfullyStartedLambdas: [],
 			checkpointTimestamp: undefined,
 		};
 	}

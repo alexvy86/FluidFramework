@@ -4,7 +4,6 @@
  */
 
 import fs from "fs";
-import { URL } from "url";
 
 export let dumpMessages = false;
 export let dumpMessageStats = false;
@@ -35,8 +34,6 @@ export let connectToWebSocket = false;
 
 export let localDataOnly = false;
 
-export let paramSite: string | undefined;
-
 const optionsArray = [
 	["--dump:rawmessage", "dump all messages"],
 	["--dump:snapshotVersion", "dump a list of snapshot version"],
@@ -58,7 +55,7 @@ const optionsArray = [
 	["--local", "Do not connect to storage, use earlier downloaded data. Requires --saveDir."],
 ];
 
-export function printUsage() {
+function printUsage() {
 	console.log("Usage: fluid-fetch [options] URL");
 	console.log("URL: <ODSP URL>|<Routerlicious URL>");
 	console.log("Options:");

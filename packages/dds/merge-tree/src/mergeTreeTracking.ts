@@ -3,12 +3,19 @@
  * Licensed under the MIT License.
  */
 
-import { LocalReferencePosition } from "./localReference";
-import { ISegment } from "./mergeTreeNodes";
-import { SortedSegmentSet } from "./sortedSegmentSet";
+import { LocalReferencePosition } from "./localReference.js";
+import { ISegment } from "./mergeTreeNodes.js";
+// eslint-disable-next-line import/no-deprecated
+import { SortedSegmentSet } from "./sortedSegmentSet.js";
 
+/**
+ * @alpha
+ */
 export type Trackable = ISegment | LocalReferencePosition;
 
+/**
+ * @alpha
+ */
 export interface ITrackingGroup {
 	tracked: readonly Trackable[];
 	size: number;
@@ -17,21 +24,16 @@ export interface ITrackingGroup {
 	unlink(trackable: Trackable): boolean;
 }
 
+/**
+ * @alpha
+ */
 export class TrackingGroup implements ITrackingGroup {
+	// eslint-disable-next-line import/no-deprecated
 	private readonly trackedSet: SortedSegmentSet<Trackable>;
 
 	constructor() {
+		// eslint-disable-next-line import/no-deprecated
 		this.trackedSet = new SortedSegmentSet<Trackable>();
-	}
-
-	/**
-	 * @deprecated - use tracked instead.
-	 * For references positions this will return the underlying segment,
-	 * which may not match the intention
-	 */
-	public get segments(): readonly ISegment[] {
-		// eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-		return this.trackedSet.items.map((v) => (v.isLeaf() ? v : v.getSegment()!));
 	}
 
 	public get tracked(): readonly Trackable[] {
@@ -100,6 +102,10 @@ export class UnorderedTrackingGroup implements ITrackingGroup {
 	}
 }
 
+/**
+ * A collection of {@link ITrackingGroup}.
+ * @alpha
+ */
 export class TrackingGroupCollection {
 	private readonly _trackingGroups: Set<ITrackingGroup>;
 

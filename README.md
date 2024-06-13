@@ -29,11 +29,6 @@ When taking a dependency on a Fluid Framework library, we recommend using a `^` 
 While Fluid Framework libraries may use different ranges with interdependencies between other Fluid Framework libraries,
 library consumers should always prefer `^`.
 
-Note that when depending on a library version of the form 2.0.0-internal.x.y.z, called the Fluid internal version
-scheme, you must use a `>= <` dependency range. Standard `^` and `~` ranges will not work as expected. See the
-[@fluid-tools/version-tools](https://github.com/microsoft/FluidFramework/blob/main/build-tools/packages/version-tools/README.md)
-package for more information including tools to convert between version schemes.
-
 <!-- prettier-ignore-end -->
 
 <!-- AUTO-GENERATED-CONTENT:END -->
@@ -79,11 +74,14 @@ Dependencies between packages in various layers of the system are enforced via a
 [layer-check](./build-tools/packages/build-tools/src/layerCheck). You can view the full list of packages and layers in
 [PACKAGES.md](./PACKAGES.md).
 
+-   Note: to update the contents of `PACKAGES.md` for local package changes, run `pnpm layer-check --md .`.
+
 ## Setup and Building
 
 Install the required tools:
 
 -   [Git](https://git-scm.com/downloads).
+    -   \+ [Git LFS](https://git-lfs.com/)
 -   [Node.js](https://nodejs.org/): install the version noted in in the [.nvmrc file](./.nvmrc).
     See [NodeJs Installation](#NodeJs-Installation) for details.
 
@@ -104,10 +102,17 @@ Run the following to build the client packages:
 
 ```shell
 pnpm install
-npm run build:fast
+npm run build
 ```
 
+You can use the experimental worker mode to get faster build time as well: `npm run build:fast`
+
 See also: [Contributing](#Contributing)
+
+## Build in VSCode
+
+To build Fluid Framework within VSCode, open the Fluid Framework repo folder as a work space and use Ctrl-Shift-B
+to activate the build task. It is the same as running `npm run build` on the command line.
 
 ## NodeJs Installation
 
@@ -146,6 +151,52 @@ If you've _upgraded_ your Mac to Catalina or higher, you may need to follow [the
 
 -   Ensure that you have enabled running Powershell scripts by setting your environment's [Execution Policy](https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.security/set-executionpolicy?view=powershell-7.2).
 
+### Other Build Commands
+
+#### Building our docs
+
+There are a few different areas in which we generate documentation content as a part our overall build.
+
+1. [fluidframework.com]()
+    - We build the contents of our public website from the `docs` directory under the root of this repo.
+      See its [README](./docs/README.md) for more details.
+2. Generated README contents
+    - We leverage a local tool ([markdown-magic](./tools/markdown-magic/README.md)) to generate / embed contents in our various package-level READMEs.
+      This is done as a part of a full build, but it can also be executed in isolation by running `npm run build:readme` from the repo root.
+3. API reports
+    - We leverage [API-Extractor](https://api-extractor.com/) to generate summaries of our package APIs.
+      This is done as a part of a full build, but it can also be executed in isolation by running `npm run build:api` from the repo root.
+
+## Common Workflows and Patterns
+
+This section contains common workflows and patterns to increase inner dev loop efficiency.
+
+### Build
+
+-   `pnpm install` from the root of the repository to install dependencies. This is necessary for new clones or after pulling changes from the main branch.
+-   `pnpm run build:fast` from the root of the repository to perform an incremental build that matches the CI build process. Incremental builds tend to leave extra files laying around, so running a clean is sometimes needed to cleanup ghost tests
+-   `pnpm run build:fast -- <path>` to build only a specific part of the repository.
+-   `pnpm run build` within a package directory to build that package.
+-   `pnpm run build:compile` for cross-package compilation.
+-   `pnpm run format` to format the code.
+
+-   `fluid-build --vscode` to output error message to work with default problem matcher in vscode. If `fluid-build` is not installed, please install it with `npm i -g @fluidframework/build-tools`.
+
+#### Multi package setup
+
+-   `fluid-build -t build <NAME_OF_PACKAGES>` to build a multiple space-separated packages along with all their dependencies. If `fluid-build` is not installed, please install it with `npm i -g @fluidframework/build-tools`.
+
+### Debug
+
+-   You can also use the VSCode JS debug terminal, then run the test as normal.
+
+-   Sometimes, uncommitted changes can cause build failures. Committing changes might be necessary to resolve such issues.
+
+### Troubleshooting
+
+-   `pnpm clean` if random build failures, especially with no changes
+-   `git clean -xdf` to remove extraneous files if debugging becomes slow or hangs.
+
 ## Testing
 
 You can run all of our tests from the root of the repo, or you can run a scoped set of tests by running the `test`
@@ -155,7 +206,8 @@ Note: Some of the tests depend on test collateral that lives in a submodule here
 <https://github.com/microsoft/FluidFrameworkTestData>. You may choose to fetch that collateral into your local
 repository, which is required to run all the tests - otherwise some will be skipped.
 
-First install Git LFS from <https://git-lfs.github.com/>. Then, from the repo root:
+First, ensure you have installed [Git LFS](https://git-lfs.com/).
+Then, from the repo root:
 
 ```shell
 git lfs install
@@ -165,9 +217,23 @@ git submodule update
 
 ### Run the tests
 
+Before running the tests, the project has to be built. Depending on what tests you want to run, execute the following command in the package directory or at the root:
+
 ```shell
 npm run test
 ```
+
+-   To run a single test within a module, add `.only` to `it` or `describe`. To exclude a test, use `.skip`.
+-   You can use `ts-mocha` to quickly run specific test files without needing to make the whole project compile. For more details on test filtering using CLI arguments, refer to the [Mocha documentation](https://mochajs.org/#command-line-usage).
+
+-   Our test setup generally requires building before running the tests.
+-   Incremental builds may leave extra files, which can result in ghost tests. To avoid this, consider running a clean build with the following command:
+
+```shell
+pnpm clean <package>
+```
+
+This removes any leftover files from previous builds, providing a clean testing environment.
 
 ### Include code coverage
 
@@ -206,12 +272,17 @@ _This will use an in-memory implementation of the Fluid server to sync between t
 _This will run the local Fluid server implementation we call "Tinylicious", so you can sync between multiple browser
 instances._
 
-First, start Tinylicious by running these commands from `/server/tinylicious`:
+First, start Tinylicious by running these commands from `/server/routerlicious/`:
 
 ```shell
-npm install
-npm run build
-npm run start
+pnpm install
+```
+
+Then these commands from `/server/routerlicious/packages/tinylicious`:
+
+```shell
+pnpm run build
+pnpm run start
 ```
 
 Then:

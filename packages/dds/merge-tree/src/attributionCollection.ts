@@ -3,33 +3,39 @@
  * Licensed under the MIT License.
  */
 
-import { assert, unreachableCase } from "@fluidframework/common-utils";
+import { assert, unreachableCase } from "@fluidframework/core-utils/internal";
 import {
 	AttributionKey,
-	OpAttributionKey,
 	DetachedAttributionKey,
-} from "@fluidframework/runtime-definitions";
-import { ISegment } from "./mergeTreeNodes";
+	OpAttributionKey,
+} from "@fluidframework/runtime-definitions/internal";
+import { UsageError } from "@fluidframework/telemetry-utils/internal";
+
+import { ISegment } from "./mergeTreeNodes.js";
 
 /**
- * @internal
+ * @alpha
  */
 export interface SequenceOffsets {
 	/**
 	 * Parallel array with posBreakpoints which tracks the seq of insertion.
-	 * Ex: if seqs is [45, 46] and posBreakpoints is [0, 3], the section of the string
+	 *
+	 * @example
+	 *
+	 * If seqs is [45, 46] and posBreakpoints is [0, 3], the section of the string
 	 * between offsets 0 and 3 was inserted at seq 45 and the section of the string between
 	 * 3 and the length of the string was inserted at seq 46.
 	 *
-	 * @remarks - We use null here rather than undefined as round-tripping through JSON converts
+	 * @remarks We use null here rather than undefined as round-tripping through JSON converts
 	 * undefineds to null anyway
 	 */
+	// eslint-disable-next-line @rushstack/no-new-null
 	seqs: (number | AttributionKey | null)[];
 	posBreakpoints: number[];
 }
 
 /**
- * @internal
+ * @alpha
  */
 export interface SerializedAttributionCollection extends SequenceOffsets {
 	channels?: { [name: string]: SequenceOffsets };
@@ -38,22 +44,22 @@ export interface SerializedAttributionCollection extends SequenceOffsets {
 }
 
 /**
- * @internal
+ * @alpha
  */
 export interface IAttributionCollectionSpec<T> {
+	// eslint-disable-next-line @rushstack/no-new-null
 	root: Iterable<{ offset: number; key: T | null }>;
+	// eslint-disable-next-line @rushstack/no-new-null
 	channels?: { [name: string]: Iterable<{ offset: number; key: T | null }> };
 	length: number;
 }
 
 /**
- * @internal
+ * @alpha
  * @sealed
  */
 export interface IAttributionCollectionSerializer {
-	/**
-	 * @internal
-	 */
+	/***/
 	serializeAttributionCollections(
 		segments: Iterable<{
 			attribution?: IAttributionCollection<AttributionKey>;
@@ -63,7 +69,6 @@ export interface IAttributionCollectionSerializer {
 
 	/**
 	 * Populates attribution information on segments using the provided summary.
-	 * @internal
 	 */
 	populateAttributionCollections(
 		segments: Iterable<ISegment>,
@@ -82,6 +87,24 @@ export interface IAttributionCollection<T> {
 	getAtOffset(offset: number, channel?: string): AttributionKey | undefined;
 
 	/**
+	 * Retrieves all the [Offset, Attribution key] pairs for the provided offset range. Note:
+	 * The returned array is sorted by offset.
+	 * The first offset in response could be lower than the startOffset as the Attribution Key for the startOffset
+	 * could start at a lower offset than the startOffset in case where Attribution key offset boundaries don't
+	 * align exactly with startOffset.
+	 * Example: If the Attribution Offsets in the segment is [0, 10, 20, 30, 40] and request is for (startOffset: 5, endOffset: 25),
+	 * then result would be [(offset: 0, key: key1), (offset:10, key: key2), (offset:20, key: key3)].
+	 * @param channel - When specified, gets attribution keys associated with a particular channel.
+	 * @returns - undefined if the provided channel is not found or list of attribution keys along with
+	 * the corresponding offset start boundary.
+	 */
+	getKeysInOffsetRange(
+		startOffset: number,
+		endOffset?: number,
+		channel?: string,
+	): { offset: number; key: AttributionKey }[] | undefined;
+
+	/**
 	 * Total length of all attribution keys in this collection.
 	 */
 	readonly length: number;
@@ -93,17 +116,16 @@ export interface IAttributionCollection<T> {
 	 * the `i`th result's attribution key applies to offsets in the open range between the `i`th offset and the
 	 * `i+1`th offset.
 	 * The last entry's key applies to the open interval from the last entry's offset to this collection's length.
-	 * @internal
 	 */
 	getAll(): IAttributionCollectionSpec<T>;
 
-	/** @internal */
+	/***/
 	splitAt(pos: number): IAttributionCollection<T>;
 
-	/** @internal */
+	/***/
 	append(other: IAttributionCollection<T>): void;
 
-	/** @internal */
+	/***/
 	clone(): IAttributionCollection<T>;
 
 	/**
@@ -112,14 +134,15 @@ export interface IAttributionCollection<T> {
 	 * Updates apply only to the individual channel (i.e. if an attribution policy needs to update the root
 	 * channel and 4 other channels, it should call `.update` 5 times).
 	 * @param channel - Updated collection for that channel.
-	 * @internal
 	 */
-	update(name: string | undefined, channel: IAttributionCollection<T>);
+	update(name: string | undefined, channel: IAttributionCollection<T>): void;
 }
 
 // note: treats null and undefined as equivalent
 export function areEqualAttributionKeys(
+	// eslint-disable-next-line @rushstack/no-new-null
 	a: AttributionKey | null | undefined,
+	// eslint-disable-next-line @rushstack/no-new-null
 	b: AttributionKey | null | undefined,
 ): boolean {
 	if (!a && !b) {
@@ -157,7 +180,11 @@ export class AttributionCollection implements IAttributionCollection<Attribution
 		return Object.entries(this.channels ?? {});
 	}
 
-	public constructor(private _length: number, baseEntry?: AttributionKey | null) {
+	public constructor(
+		private _length: number,
+		// eslint-disable-next-line @rushstack/no-new-null
+		baseEntry?: AttributionKey | null,
+	) {
 		if (baseEntry !== undefined) {
 			this.offsets.push(0);
 			this.keys.push(baseEntry);
@@ -179,6 +206,52 @@ export class AttributionCollection implements IAttributionCollection<Attribution
 		return this.get(this.findIndex(offset));
 	}
 
+	public getKeysInOffsetRange(
+		startOffset: number,
+		endOffset?: number,
+	): { offset: number; key: AttributionKey }[];
+	public getKeysInOffsetRange(
+		startOffset: number,
+		endOffset?: number,
+		channel?: string,
+	): { offset: number; key: AttributionKey }[] | undefined;
+	public getKeysInOffsetRange(
+		startOffset: number,
+		endOffset?: number,
+		channel?: string,
+	): { offset: number; key: AttributionKey }[] | undefined {
+		if (startOffset < 0 || startOffset >= this._length) {
+			throw new UsageError("startOffset should be valid and in range");
+		}
+		if (
+			endOffset !== undefined &&
+			(endOffset < 0 || endOffset >= this._length || startOffset > endOffset)
+		) {
+			throw new UsageError("endOffset should be valid and in range");
+		}
+
+		if (channel !== undefined) {
+			const subCollection = this.channels?.[channel];
+			return subCollection?.getKeysInOffsetRange(startOffset, endOffset);
+		}
+		const result: { offset: number; key: AttributionKey }[] = [];
+		let index = this.findIndex(startOffset);
+		let attributionKey = this.get(index);
+		if (attributionKey !== undefined) {
+			result.push({ offset: this.offsets[index], key: attributionKey });
+		}
+		index++;
+		const endOffsetVal = endOffset ?? Number.MAX_SAFE_INTEGER;
+		while (index < this.offsets.length && endOffsetVal >= this.offsets[index]) {
+			attributionKey = this.get(index);
+			if (attributionKey !== undefined) {
+				result.push({ offset: this.offsets[index], key: attributionKey });
+			}
+			index++;
+		}
+		return result;
+	}
+
 	private findIndex(offset: number): number {
 		// Note: maximum length here is 256 for text segments. Perf testing shows that linear scan beats binary search
 		// for attribution collections with under ~64 entries, and even at maximum size (which would require a maximum
@@ -192,7 +265,7 @@ export class AttributionCollection implements IAttributionCollection<Attribution
 
 	private get(index: number): AttributionKey | undefined {
 		const key = this.keys[index];
-		return key !== null ? key : undefined;
+		return key ?? undefined;
 	}
 
 	public get length(): number {
@@ -252,9 +325,9 @@ export class AttributionCollection implements IAttributionCollection<Attribution
 	}
 
 	public getAll(): IAttributionCollectionSpec<AttributionKey> {
-		const root: IAttributionCollectionSpec<AttributionKey>["root"] = new Array(
-			this.keys.length,
-		);
+		type ExtractGeneric<T> = T extends Iterable<infer Q> ? Q : unknown;
+		const root: ExtractGeneric<IAttributionCollectionSpec<AttributionKey>["root"]>[] =
+			new Array(this.keys.length);
 		for (let i = 0; i < this.keys.length; i++) {
 			root[i] = { offset: this.offsets[i], key: this.keys[i] };
 		}
@@ -276,7 +349,7 @@ export class AttributionCollection implements IAttributionCollection<Attribution
 		copy.keys = this.keys.slice();
 		copy.offsets = this.offsets.slice();
 		if (this.channels !== undefined) {
-			const channelsCopy = {};
+			const channelsCopy: Record<string, AttributionCollection> = {};
 			for (const [key, collection] of this.channelEntries) {
 				channelsCopy[key] = collection.clone();
 			}

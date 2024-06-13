@@ -3,9 +3,9 @@
  * Licensed under the MIT License.
  */
 
-export {
+export type {
 	IContainerRuntime,
 	IContainerRuntimeBaseWithCombinedEvents,
 	IContainerRuntimeEvents,
-	IDataStoreWithBindToContext_Deprecated,
-} from "./containerRuntime";
+	IContainerRuntimeWithResolveHandle_Deprecated,
+} from "./containerRuntime.js";

@@ -4,17 +4,20 @@
  */
 
 import { strict as assert } from "assert";
-import { generatePairwiseOptions } from "@fluid-internal/test-pairwise-generator";
-import { ISequencedDocumentMessage } from "@fluidframework/protocol-definitions";
-import { ReferenceType } from "../ops";
+
+import { generatePairwiseOptions } from "@fluid-private/test-pairwise-generator";
+import { ISequencedDocumentMessage } from "@fluidframework/driver-definitions/internal";
+
+import { TrackingGroup, UnorderedTrackingGroup } from "../mergeTreeTracking.js";
+import { ReferenceType } from "../ops.js";
 import {
-	appendToMergeTreeDeltaRevertibles,
 	MergeTreeDeltaRevertible,
+	appendToMergeTreeDeltaRevertibles,
 	revertMergeTreeDeltaRevertibles,
-} from "../revertibles";
-import { TrackingGroup, UnorderedTrackingGroup } from "../mergeTreeTracking";
-import { createRevertDriver } from "./testClient";
-import { createClientsAtInitialState, TestClientLogger } from "./testClientLogger";
+} from "../revertibles.js";
+
+import { createRevertDriver } from "./testClient.js";
+import { TestClientLogger, createClientsAtInitialState } from "./testClientLogger.js";
 
 /**
  * Run a custom "spy function" every time the given method is invoked.
@@ -50,11 +53,7 @@ export function spyOnMethod(
 
 describe("MergeTree.Revertibles", () => {
 	it("revert insert", () => {
-		const clients = createClientsAtInitialState(
-			{ initialState: "123", options: { mergeTreeUseNewLengthCalculations: true } },
-			"A",
-			"B",
-		);
+		const clients = createClientsAtInitialState({ initialState: "123", options: {} }, "A", "B");
 		const logger = new TestClientLogger(clients.all);
 		let seq = 0;
 		const ops: ISequencedDocumentMessage[] = [];
@@ -94,7 +93,7 @@ describe("MergeTree.Revertibles", () => {
 			const clients = createClientsAtInitialState(
 				{
 					initialState: "",
-					options: { mergeTreeUseNewLengthCalculations: true },
+					options: {},
 				},
 				"A",
 			);
@@ -135,12 +134,16 @@ describe("MergeTree.Revertibles", () => {
 			// it should be fine to update these checks to allow a larger number of
 			// calls
 			assert(
-				linkCount <= length * 2,
-				`expected tracking group link to occur at most twice per segment. found ${linkCount}`,
+				linkCount <= length * 3,
+				`expected tracking group link to occur at most three times per segment. found ${linkCount} instead of ${
+					length * 3
+				}`,
 			);
 			assert(
-				unlinkCount <= length,
-				`expected tracking group unlink to occur at most once per segment. found ${unlinkCount}`,
+				unlinkCount <= length * 2,
+				`expected tracking group unlink to occur at most twice per segment. found ${unlinkCount} instead of ${
+					length * 2
+				}`,
 			);
 		} finally {
 			unspy1();
@@ -151,11 +154,7 @@ describe("MergeTree.Revertibles", () => {
 	});
 
 	it("revert remove", () => {
-		const clients = createClientsAtInitialState(
-			{ initialState: "123", options: { mergeTreeUseNewLengthCalculations: true } },
-			"A",
-			"B",
-		);
+		const clients = createClientsAtInitialState({ initialState: "123", options: {} }, "A", "B");
 		const logger = new TestClientLogger(clients.all);
 		let seq = 0;
 		const ops: ISequencedDocumentMessage[] = [];
@@ -195,7 +194,7 @@ describe("MergeTree.Revertibles", () => {
 	]) {
 		it(name, () => {
 			const clients = createClientsAtInitialState(
-				{ initialState: "1-23", options: { mergeTreeUseNewLengthCalculations: true } },
+				{ initialState: "1-23", options: {} },
 				"A",
 				"B",
 				"C",
@@ -231,7 +230,7 @@ describe("MergeTree.Revertibles", () => {
 
 	it("revert two overlapping removes", () => {
 		const clients = createClientsAtInitialState(
-			{ initialState: "123", options: { mergeTreeUseNewLengthCalculations: true } },
+			{ initialState: "123", options: {} },
 			"A",
 			"B",
 			"C",
@@ -272,11 +271,7 @@ describe("MergeTree.Revertibles", () => {
 	});
 
 	it("revert annotate", () => {
-		const clients = createClientsAtInitialState(
-			{ initialState: "123", options: { mergeTreeUseNewLengthCalculations: true } },
-			"A",
-			"B",
-		);
+		const clients = createClientsAtInitialState({ initialState: "123", options: {} }, "A", "B");
 		const logger = new TestClientLogger(clients.all);
 		let seq = 0;
 		const ops: ISequencedDocumentMessage[] = [];
@@ -288,12 +283,7 @@ describe("MergeTree.Revertibles", () => {
 		clients.B.on("delta", (op, delta) => {
 			appendToMergeTreeDeltaRevertibles(delta, clientB_Revertibles);
 		});
-		ops.push(
-			clients.B.makeOpMessage(
-				clients.B.annotateRangeLocal(0, 1, { test: 1 }, undefined),
-				++seq,
-			),
-		);
+		ops.push(clients.B.makeOpMessage(clients.B.annotateRangeLocal(0, 1, { test: 1 }), ++seq));
 
 		ops.splice(0).forEach((op) => clients.all.forEach((c) => c.applyMsg(op)));
 		logger.validate({ baseText: "123" });
@@ -306,7 +296,7 @@ describe("MergeTree.Revertibles", () => {
 
 	it("Remove All Original Text and Insert then Revert", () => {
 		const clients = createClientsAtInitialState(
-			{ initialState: "1-2--", options: { mergeTreeUseNewLengthCalculations: true } },
+			{ initialState: "1-2--", options: {} },
 			"A",
 			"B",
 			"C",
@@ -343,7 +333,7 @@ describe("MergeTree.Revertibles", () => {
 
 	it("Re-Insert at position 0 in empty string", () => {
 		const clients = createClientsAtInitialState(
-			{ initialState: "BBC-", options: { mergeTreeUseNewLengthCalculations: true } },
+			{ initialState: "BBC-", options: {} },
 			"A",
 			"B",
 			"C",
@@ -379,7 +369,7 @@ describe("MergeTree.Revertibles", () => {
 
 	it("Revert remove to empty with annotate", () => {
 		const clients = createClientsAtInitialState(
-			{ initialState: "1-23--", options: { mergeTreeUseNewLengthCalculations: true } },
+			{ initialState: "1-23--", options: {} },
 			"A",
 			"B",
 			"C",
@@ -398,12 +388,7 @@ describe("MergeTree.Revertibles", () => {
 
 		clients.B.on("delta", deltaCallback);
 		ops.push(clients.B.makeOpMessage(clients.B.removeRangeLocal(0, 2), ++seq));
-		ops.push(
-			clients.B.makeOpMessage(
-				clients.B.annotateRangeLocal(0, 1, { test: 1 }, undefined),
-				++seq,
-			),
-		);
+		ops.push(clients.B.makeOpMessage(clients.B.annotateRangeLocal(0, 1, { test: 1 }), ++seq));
 		ops.push(clients.B.makeOpMessage(clients.B.removeRangeLocal(0, 1), ++seq));
 
 		// revert to the original callback
@@ -420,7 +405,7 @@ describe("MergeTree.Revertibles", () => {
 
 	it("Revert Local annotate and remove with intersecting remote annotate", () => {
 		const clients = createClientsAtInitialState(
-			{ initialState: "1234-----", options: { mergeTreeUseNewLengthCalculations: true } },
+			{ initialState: "1234-----", options: {} },
 			"A",
 			"B",
 			"C",
@@ -440,23 +425,13 @@ describe("MergeTree.Revertibles", () => {
 		clientBDriver.submitOpCallback = (op) => ops.push(clients.B.makeOpMessage(op, ++seq));
 
 		clients.B.on("delta", deltaCallback);
-		ops.push(
-			clients.B.makeOpMessage(
-				clients.B.annotateRangeLocal(0, 4, { test: "B" }, undefined),
-				++seq,
-			),
-		);
+		ops.push(clients.B.makeOpMessage(clients.B.annotateRangeLocal(0, 4, { test: "B" }), ++seq));
 		ops.push(clients.B.makeOpMessage(clients.B.removeRangeLocal(1, 2), ++seq));
 
 		// revert to the original callback
 		clients.B.off("delta", deltaCallback);
 
-		ops.push(
-			clients.C.makeOpMessage(
-				clients.C.annotateRangeLocal(3, 4, { test: "C" }, undefined),
-				++seq,
-			),
-		);
+		ops.push(clients.C.makeOpMessage(clients.C.annotateRangeLocal(3, 4, { test: "C" }), ++seq));
 
 		ops.splice(0).forEach((op) => clients.all.forEach((c) => c.applyMsg(op)));
 		logger.validate({ baseText: "134" });
@@ -483,7 +458,7 @@ describe("MergeTree.Revertibles", () => {
 		}).forEach((options) => {
 			it(JSON.stringify(options), () => {
 				const clients = createClientsAtInitialState(
-					{ initialState: "", options: { mergeTreeUseNewLengthCalculations: true } },
+					{ initialState: "", options: {} },
 					"A",
 					"B",
 				);

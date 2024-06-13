@@ -4,8 +4,8 @@
  */
 
 import { IMigrator } from "@fluid-example/example-utils";
-import { globals } from "../jest.config";
-import { IContainer } from "@fluidframework/container-definitions";
+import { globals } from "../jest.config.cjs";
+import { IContainer } from "@fluidframework/container-definitions/internal";
 
 // Tests disabled -- requires Tinylicious to be running, which our test environment doesn't do.
 describe("inventoryList", () => {
@@ -13,12 +13,13 @@ describe("inventoryList", () => {
 		// Wait for the page to load first before running any tests
 		// so this time isn't attributed to the first test
 		await page.goto(globals.PATH, { waitUntil: "load", timeout: 0 });
+		await page.waitForFunction(() => window["fluidStarted"]);
 	}, 45000);
 
 	describe("Without summarizer connected", () => {
 		beforeEach(async () => {
 			await page.goto(globals.PATH, { waitUntil: "load" });
-			await page.waitFor(() => window["fluidStarted"]);
+			await page.waitForFunction(() => window["fluidStarted"]);
 		});
 
 		it("loads and there's an input", async () => {
@@ -94,7 +95,7 @@ describe("inventoryList", () => {
 	describe("With summarizer connected", () => {
 		beforeEach(async () => {
 			await page.goto(`${globals.PATH}?testMode`, { waitUntil: "load" });
-			await page.waitFor(() => window["fluidStarted"]);
+			await page.waitForFunction(() => window["fluidStarted"]);
 		});
 
 		it("migrates after summarizer has connected", async () => {
@@ -103,6 +104,15 @@ describe("inventoryList", () => {
 				page.waitForSelector("#sbs-left .migration-status"),
 				page.waitForSelector("#sbs-right .migration-status"),
 			]);
+
+			// Force the containers into write mode
+			await expect(page).toClick(
+				"#sbs-right > div:nth-child(1) > table > tbody > tr:nth-child(3) > td > button",
+			);
+			await expect(page).toClick(
+				"#sbs-left > div:nth-child(1) > table > tbody > tr:nth-child(3) > td > button",
+			);
+
 			const leftContainsOne = await page.evaluate(() => {
 				const migrationStatusElements = document.querySelectorAll(".migration-status");
 				return migrationStatusElements[0]?.textContent?.includes("one") === true;

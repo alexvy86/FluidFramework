@@ -4,162 +4,136 @@
  */
 
 import { strict as assert } from "assert";
-import { describeNoCompat, itExpects } from "@fluid-internal/test-version-utils";
-import { IContainer } from "@fluidframework/container-definitions";
+
+import { describeCompat, itExpects } from "@fluid-private/test-version-utils";
+import { IContainer } from "@fluidframework/container-definitions/internal";
 import {
 	ITestContainerConfig,
 	ITestObjectProvider,
 	createSummarizer,
-	mockConfigProvider,
+	createTestConfigProvider,
 	summarizeNow,
-} from "@fluidframework/test-utils";
+} from "@fluidframework/test-utils/internal";
 
-describeNoCompat("Summarizer closes instead of refreshing", (getTestObjectProvider) => {
-	const settings = {};
-	const testContainerConfig: ITestContainerConfig = {
-		runtimeOptions: {
-			summaryOptions: {
-				summaryConfigOverrides: { state: "disabled" },
+// eslint-disable-next-line import/no-internal-modules
+import { reconnectSummarizerToBeElected } from "./gc/gcTestSummaryUtils.js";
+
+describeCompat(
+	"Summarizer closes instead of refreshing",
+	"NoCompat",
+	(getTestObjectProvider, apis) => {
+		const { SharedCounter } = apis.dds;
+
+		const configProvider = createTestConfigProvider();
+		const testContainerConfig: ITestContainerConfig = {
+			runtimeOptions: {
+				summaryOptions: {
+					summaryConfigOverrides: { state: "disabled" },
+				},
 			},
-		},
-		loaderProps: { configProvider: mockConfigProvider(settings) },
-	};
+			loaderProps: { configProvider },
+			registry: [[SharedCounter.getFactory().type, SharedCounter.getFactory()]],
+		};
+		const summarizerContainerConfig: ITestContainerConfig = { loaderProps: { configProvider } };
 
-	let provider: ITestObjectProvider;
-	const createContainer = async (): Promise<IContainer> => {
-		return provider.makeTestContainer(testContainerConfig);
-	};
+		let provider: ITestObjectProvider;
 
-	beforeEach(async () => {
-		provider = getTestObjectProvider({ syncSummarizer: true });
-		settings["Fluid.ContainerRuntime.Test.SummaryStateUpdateMethod"] = "restart";
-		settings["Fluid.ContainerRuntime.Test.CloseSummarizerDelayOverrideMs"] = 100;
-	});
+		const createContainer = async (): Promise<IContainer> => {
+			return provider.makeTestContainer(testContainerConfig);
+		};
 
-	itExpects(
-		"Closes the summarizing client instead of refreshing",
-		[
-			{
-				eventName: "fluid:telemetry:ContainerRuntime:ClosingSummarizerOnSummaryStale",
-				message: "Stopping fetch from storage",
-			},
-		],
-		async () => {
-			const container = await createContainer();
-			const { container: summarizingContainer, summarizer } = await createSummarizer(
-				provider,
-				container,
-				undefined,
-				undefined,
-				mockConfigProvider(settings),
-			);
+		beforeEach("setup", async () => {
+			provider = getTestObjectProvider({ syncSummarizer: true });
+			configProvider.set("Fluid.ContainerRuntime.Test.CloseSummarizerDelayOverrideMs", 100);
+		});
 
-			const summarizeResults = summarizer.summarizeOnDemand({
-				reason: "end-to-end test",
-				refreshLatestAck: true,
-			});
-			await provider.ensureSynchronized();
-			await summarizeResults.receivedSummaryAckOrNack;
-			assert(summarizingContainer.closed, "Unknown acks should close the summarizer");
-			assert(!container.closed, "Original container should not be closed");
-		},
-	);
+		afterEach(() => {
+			configProvider.clear();
+		});
 
-	itExpects(
-		"Closes the summarizing client instead of refreshing with two clients",
-		[
-			{
-				eventName: "fluid:telemetry:ContainerRuntime:ClosingSummarizerOnSummaryStale",
-				message: "Stopping fetch from storage",
-			},
-			{
-				eventName: "fluid:telemetry:SummarizerNode:refreshLatestSummary_cancel",
-				error: "Restarting summarizer instead of refreshing",
-			},
-		],
-		async () => {
-			const container = await createContainer();
-			const { container: summarizingContainer, summarizer } = await createSummarizer(
-				provider,
-				container,
-				undefined,
-				undefined,
-				mockConfigProvider(settings),
-			);
-
-			const { container: summarizingContainer2, summarizer: summarizer2 } =
-				await createSummarizer(
+		itExpects(
+			"Closes the summarizing client instead of refreshing with two clients",
+			[
+				{
+					eventName: "fluid:telemetry:SummarizerNode:refreshLatestSummary_end",
+				},
+				{
+					eventName: "fluid:telemetry:Container:ContainerDispose",
+					category: "generic",
+				},
+			],
+			async () => {
+				const container = await createContainer();
+				const { container: summarizingContainer, summarizer } = await createSummarizer(
 					provider,
 					container,
-					undefined,
-					undefined,
-					mockConfigProvider(settings),
+					summarizerContainerConfig,
 				);
 
-			await summarizeNow(summarizer);
-			await provider.ensureSynchronized();
+				const { container: summarizingContainer2, summarizer: summarizer2 } =
+					await createSummarizer(provider, container, summarizerContainerConfig);
 
-			// This tells the summarizer to process the latest summary ack
-			// This is because the second summarizer is not the elected summarizer and thus the summaryManager does not
-			// tell the summarizer to process acks.
-			await summarizer2.run("test");
+				await summarizeNow(summarizer);
+				await provider.ensureSynchronized();
 
-			assert(summarizingContainer2.closed, "Unknown acks should close the summarizer");
-			assert(!summarizingContainer.closed, "summarizer1 should not be closed");
-			assert(!container.closed, "Original container should not be closed");
-		},
-	);
+				// This tells the summarizer to process the latest summary ack
+				// This is because the second summarizer is not the elected summarizer and thus the summaryManager does not
+				// tell the summarizer to process acks.
+				await summarizer2.run("test");
 
-	itExpects(
-		"Closes the summarizing client instead of refreshing when loading from an older summary",
-		[
-			{
-				eventName: "fluid:telemetry:ContainerRuntime:ClosingSummarizerOnSummaryStale",
-				message: "Stopping fetch from storage",
+				assert(summarizingContainer2.closed, "Unknown acks should close the summarizer");
+				assert(!summarizingContainer.closed, "summarizer1 should not be closed");
+				assert(!container.closed, "Original container should not be closed");
 			},
-			{
-				eventName: "fluid:telemetry:SummarizerNode:refreshLatestSummary_cancel",
-				error: "Restarting summarizer instead of refreshing",
-			},
-		],
-		async () => {
-			const container = await createContainer();
-			const { container: summarizingContainer, summarizer } = await createSummarizer(
-				provider,
-				container,
-				undefined,
-				undefined,
-				mockConfigProvider(settings),
-			);
+		);
 
-			// summary1
-			const { summaryVersion: summaryVersion1 } = await summarizeNow(summarizer);
-
-			await provider.ensureSynchronized();
-			// summary2
-			await summarizeNow(summarizer);
-			summarizer.close();
-			summarizingContainer.close();
-
-			const { container: summarizingContainer2, summarizer: summarizer2 } =
-				await createSummarizer(
+		itExpects(
+			"Closes the summarizing client instead of refreshing when loading from an older summary",
+			[
+				{
+					eventName: "fluid:telemetry:Container:ContainerDispose",
+					category: "generic",
+				},
+			],
+			async () => {
+				const container = await createContainer();
+				const { container: summarizingContainer, summarizer } = await createSummarizer(
 					provider,
 					container,
-					summaryVersion1,
-					undefined,
-					mockConfigProvider(settings),
+					summarizerContainerConfig,
 				);
 
-			await provider.ensureSynchronized();
+				// summary1
+				const { summaryVersion: summaryVersion1 } = await summarizeNow(summarizer);
 
-			// This tells the summarizer to process the latest summary ack
-			// This is because the second summarizer is not the elected summarizer and thus the summaryManager does not
-			// tell the summarizer to process acks.
-			await summarizer2.run("test");
+				// Create a second summarizer. Note that this is done before posting a summary because the server may
+				// delete this summary when a new one is posted.
+				// This summarizer will be used later to generate a summary and validate that it fetches the latest summary.
+				const { container: summarizingContainer2, summarizer: summarizer2 } =
+					await createSummarizer(
+						provider,
+						container,
+						summarizerContainerConfig,
+						summaryVersion1,
+					);
 
-			assert(summarizingContainer2.closed, "Unknown acks should close the summarizer");
-			assert(summarizingContainer.closed, "summarizer1 should be closed");
-			assert(!container.closed, "Original container should not be closed");
-		},
-	);
-});
+				// summary2
+				await summarizeNow(summarizer);
+				summarizer.close();
+				summarizingContainer.close();
+
+				// Reconnect the second summarizer's container so that it is elected as the summarizer client.
+				await reconnectSummarizerToBeElected(summarizingContainer2);
+
+				// This tells the summarizer to process the latest summary ack
+				// This is because the second summarizer is not the elected summarizer and thus the summaryManager does not
+				// tell the summarizer to process acks.
+				await summarizer2.run("test");
+
+				assert(summarizingContainer2.closed, "Unknown acks should close the summarizer");
+				assert(summarizingContainer.closed, "summarizer1 should be closed");
+				assert(!container.closed, "Original container should not be closed");
+			},
+		);
+	},
+);

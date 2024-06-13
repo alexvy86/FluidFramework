@@ -15,16 +15,14 @@
  *
  * @packageDocumentation
  */
-export { IMapMessageLocalMetadata, IValueOpEmitter, SequenceOptions } from "./defaultMapInterfaces";
 export {
-	DeserializeCallback,
-	IIntervalCollectionEvent,
-	IIntervalHelpers,
+	IMapMessageLocalMetadata,
+	IValueOpEmitter,
+	SequenceOptions,
+} from "./intervalCollectionMapInterfaces.js";
+export {
+	IInterval,
 	Interval,
-	IntervalIndex,
-	IIntervalCollection,
-	IntervalLocator,
-	intervalLocatorFromEndpoint,
 	IntervalOpType,
 	IntervalType,
 	ISerializableInterval,
@@ -32,13 +30,34 @@ export {
 	SequenceInterval,
 	SerializedIntervalDelta,
 	IntervalStickiness,
+	IIntervalHelpers,
 	sequenceIntervalHelpers,
+} from "./intervals/index.js";
+export {
+	DeserializeCallback,
+	IIntervalCollectionEvent,
+	IIntervalCollection,
+	IntervalLocator,
+	intervalLocatorFromEndpoint,
+	Side,
+	InteriorSequencePlace,
+	SequencePlace,
+} from "./intervalCollection.js";
+export {
+	IntervalIndex,
+	SequenceIntervalIndexes,
+	IOverlappingIntervalsIndex,
+	createOverlappingIntervalsIndex,
+	createOverlappingSequenceIntervalsIndex,
 	IEndpointInRangeIndex,
 	IStartpointInRangeIndex,
 	createEndpointInRangeIndex,
 	createStartpointInRangeIndex,
-} from "./intervalCollection";
-export { IInterval, IntervalConflictResolver } from "./intervalTree";
+	IIdIntervalIndex,
+	createIdIntervalIndex,
+	IEndpointIndex,
+	createEndpointIndex,
+} from "./intervalIndex/index.js";
 export {
 	appendAddIntervalToRevertibles,
 	appendChangeIntervalToRevertibles,
@@ -49,24 +68,45 @@ export {
 	IntervalRevertible,
 	revertSharedStringRevertibles,
 	SharedStringRevertible,
-} from "./revertibles";
-export { ISharedSegmentSequenceEvents, SharedSegmentSequence } from "./sequence";
+} from "./revertibles.js";
+export {
+	ISharedSegmentSequenceEvents,
+	SharedSegmentSequence,
+	ISharedSegmentSequence,
+} from "./sequence.js";
 export {
 	ISequenceDeltaRange,
 	SequenceDeltaEvent,
 	SequenceEvent,
 	SequenceMaintenanceEvent,
-} from "./sequenceDeltaEvent";
-export { SharedStringFactory } from "./sequenceFactory";
+} from "./sequenceDeltaEvent.js";
+export { SharedString } from "./sequenceFactory.js";
 export {
 	getTextAndMarkers,
 	ISharedString,
-	SharedString,
 	SharedStringSegment,
-} from "./sharedString";
+	SharedStringClass,
+} from "./sharedString.js";
 export {
 	ISharedIntervalCollection,
 	SharedIntervalCollection,
 	SharedIntervalCollectionFactory,
-} from "./sharedIntervalCollection";
-export { IJSONRunSegment, SharedSequence, SubSequence } from "./sharedSequence";
+} from "./sharedIntervalCollection.js";
+export { IJSONRunSegment, SharedSequence, SubSequence } from "./sharedSequence.js";
+
+export {
+	ISegment,
+	Marker,
+	BaseSegment,
+	ReferencePosition,
+	ReferenceType,
+	PropertySet,
+	MapLike,
+	TextSegment,
+	MergeTreeDeltaType,
+	reservedMarkerIdKey,
+	reservedTileLabelsKey,
+	reservedRangeLabelsKey,
+	TrackingGroup,
+	LocalReferencePosition,
+} from "@fluidframework/merge-tree/internal";

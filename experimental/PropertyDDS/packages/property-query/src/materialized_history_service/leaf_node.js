@@ -2,6 +2,7 @@
  * Copyright (c) Microsoft Corporation and contributors. All rights reserved.
  * Licensed under the MIT License.
  */
+
 /**
  * @fileoverview Class that implements the logic for a leaf node of the B-Tree
  */
@@ -273,9 +274,8 @@
 			if (nodeDefinition.deltaCS) {
 				let previousHistoryNodeRef =
 					"hi" + getBaseNodeRef(nodeDefinition.previousNodeRefs[0]).substr(1);
-				let previousHistoryNode = await this._btreeManager._storage.get(
-					previousHistoryNodeRef,
-				);
+				let previousHistoryNode =
+					await this._btreeManager._storage.get(previousHistoryNodeRef);
 				if (!previousHistoryNode) {
 					throw new OperationError(
 						"Missing previous history node",

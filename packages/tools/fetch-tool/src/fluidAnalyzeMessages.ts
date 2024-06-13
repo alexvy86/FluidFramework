@@ -3,20 +3,22 @@
  * Licensed under the MIT License.
  */
 
-import { assert, unreachableCase } from "@fluidframework/common-utils";
 import {
-	ISequencedDocumentMessage,
+	ContainerMessageType,
+	IChunkedOp,
+	unpackRuntimeMessage,
+} from "@fluidframework/container-runtime/internal";
+import { assert, unreachableCase } from "@fluidframework/core-utils/internal";
+import { DataStoreMessageType } from "@fluidframework/datastore/internal";
+import {
+	ISummaryAck,
+	ISummaryNack,
 	ISummaryProposal,
 	MessageType,
 	TreeEntry,
-} from "@fluidframework/protocol-definitions";
-import { IAttachMessage, IEnvelope } from "@fluidframework/runtime-definitions";
-import {
-	IChunkedOp,
-	ContainerMessageType,
-	unpackRuntimeMessage,
-} from "@fluidframework/container-runtime";
-import { DataStoreMessageType } from "@fluidframework/datastore";
+	ISequencedDocumentMessage,
+} from "@fluidframework/driver-definitions/internal";
+import { IAttachMessage, IEnvelope } from "@fluidframework/runtime-definitions/internal";
 
 const noClientName = "No Client";
 const objectTypePrefix = "https://graph.microsoft.com/types/";
@@ -425,7 +427,8 @@ class SummaryAnalyzer implements IMessageAnalyzer {
 			this.lastSummaryOp = message.sequenceNumber;
 		}
 		if (message.type === MessageType.SummaryAck || message.type === MessageType.SummaryNack) {
-			const contents: ISummaryProposal = message.contents.summaryProposal;
+			const contents: ISummaryProposal = (message.contents as ISummaryAck | ISummaryNack)
+				.summaryProposal;
 			const distance = message.sequenceNumber - contents.summarySequenceNumber;
 			if (distance > this.maxResponse) {
 				this.maxResponse = distance;
@@ -548,15 +551,26 @@ function processOp(
 			case ContainerMessageType.BlobAttach: {
 				break;
 			}
+			// The default method to count stats should be used for GC messages.
+			case ContainerMessageType.GC: {
+				break;
+			}
+			case ContainerMessageType.DocumentSchemaChange: {
+				break;
+			}
 			case ContainerMessageType.ChunkedOp: {
 				const chunk = runtimeMessage.contents as IChunkedOp;
-				if (!chunkMap.has(runtimeMessage.clientId)) {
-					chunkMap.set(runtimeMessage.clientId, {
+				// TODO: Verify whether this should be able to handle server-generated ops (with null clientId)
+				// eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
+				if (!chunkMap.has(runtimeMessage.clientId as string)) {
+					// eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
+					chunkMap.set(runtimeMessage.clientId as string, {
 						chunks: new Array<string>(chunk.totalChunks),
 						totalSize: 0,
 					});
 				}
-				const value = chunkMap.get(runtimeMessage.clientId);
+				// eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
+				const value = chunkMap.get(runtimeMessage.clientId as string);
 				assert(value !== undefined, 0x2b8 /* "Chunk should be set in map" */);
 				const chunks = value.chunks;
 				const chunkIndex = chunk.chunkId - 1;
@@ -569,8 +583,8 @@ function processOp(
 					opCount = chunk.totalChunks; // 1 op for each chunk.
 					const patchedMessage = Object.create(runtimeMessage);
 					patchedMessage.contents = chunks.join("");
-					patchedMessage.type = chunk.originalType;
-					type = chunk.originalType;
+					type = (chunk as any).originalType;
+					patchedMessage.type = type;
 					totalMsgSize = value.totalSize;
 					chunkMap.delete(patchedMessage.clientId);
 				} else {
@@ -778,7 +792,9 @@ function processQuorumMessages(
 		}
 	} else {
 		// message.clientId can be null
-		session = sessionsInProgress.get(message.clientId);
+		// TODO: Verify whether this should be able to handle server-generated ops (with null clientId)
+		// eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
+		session = sessionsInProgress.get(message.clientId as string);
 		if (session === undefined) {
 			session = sessionsInProgress.get(noClientName);
 			assert(!!session, 0x1b8 /* "Bad session state for processing quorum messages" */);

@@ -5,26 +5,29 @@
 
 import assert from "assert";
 import os from "os";
-import { compare } from "semver";
+
+import { ITestDriver, OdspEndpoint } from "@fluid-internal/test-driver-definitions";
 import { IRequest } from "@fluidframework/core-interfaces";
-import { IDocumentServiceFactory, IUrlResolver } from "@fluidframework/driver-definitions";
+import { IDocumentServiceFactory, IUrlResolver } from "@fluidframework/driver-definitions/internal";
+import {
+	IPublicClientConfig,
+	getDriveId,
+	getDriveItemByRootFileName,
+} from "@fluidframework/odsp-doclib-utils/internal";
 import type {
-	OdspResourceTokenFetchOptions,
 	HostStoragePolicy,
-} from "@fluidframework/odsp-driver-definitions";
+	IPersistedCache,
+	OdspResourceTokenFetchOptions,
+} from "@fluidframework/odsp-driver-definitions/internal";
 import {
 	OdspTokenConfig,
 	OdspTokenManager,
-	odspTokensCache,
 	getMicrosoftConfiguration,
-} from "@fluidframework/tool-utils";
-import {
-	getDriveId,
-	getDriveItemByRootFileName,
-	IClientConfig,
-} from "@fluidframework/odsp-doclib-utils";
-import { ITestDriver, OdspEndpoint } from "@fluidframework/test-driver-definitions";
-import { OdspDriverApiType, OdspDriverApi } from "./odspDriverApi";
+	odspTokensCache,
+} from "@fluidframework/tool-utils/internal";
+import { compare } from "semver";
+
+import { OdspDriverApi, OdspDriverApiType } from "./odspDriverApi.js";
 
 const passwordTokenConfig = (username, password): OdspTokenConfig => ({
 	type: "password",
@@ -39,7 +42,7 @@ interface IOdspTestLoginInfo {
 	supportsBrowserAuth?: boolean;
 }
 
-type TokenConfig = IOdspTestLoginInfo & IClientConfig;
+type TokenConfig = IOdspTestLoginInfo & IPublicClientConfig;
 
 interface IOdspTestDriverConfig extends TokenConfig {
 	directory: string;
@@ -62,6 +65,9 @@ interface LoginTenants {
 	};
 }
 
+/**
+ * @internal
+ */
 export function assertOdspEndpoint(
 	endpoint: string | undefined,
 ): asserts endpoint is OdspEndpoint | undefined {
@@ -118,6 +124,9 @@ function getCredentials(
 	return creds;
 }
 
+/**
+ * @internal
+ */
 export class OdspTestDriver implements ITestDriver {
 	// Share the tokens and driverId across multiple instance of the test driver
 	private static readonly odspTokenManager = new OdspTokenManager(odspTokensCache);
@@ -257,7 +266,7 @@ export class OdspTestDriver implements ITestDriver {
 
 	private static async getStorageToken(
 		options: OdspResourceTokenFetchOptions & { useBrowserAuth?: boolean },
-		config: IOdspTestLoginInfo & IClientConfig,
+		config: IOdspTestLoginInfo & IPublicClientConfig,
 	) {
 		const host = new URL(options.siteUrl).host;
 
@@ -297,6 +306,7 @@ export class OdspTestDriver implements ITestDriver {
 		return this.api.version;
 	}
 	private readonly testIdToUrl = new Map<string, string>();
+	private cache?: IPersistedCache;
 	private constructor(
 		private readonly config: Readonly<IOdspTestDriverConfig>,
 		private readonly api = OdspDriverApi,
@@ -338,13 +348,20 @@ export class OdspTestDriver implements ITestDriver {
 		return this.testIdToUrl.get(testId)!;
 	}
 
+	public setPersistedCache(cache: IPersistedCache) {
+		this.cache = cache;
+	}
+
 	createDocumentServiceFactory(): IDocumentServiceFactory {
-		return new this.api.OdspDocumentServiceFactory(
+		const documentServiceFactory = new this.api.OdspDocumentServiceFactory(
 			this.getStorageToken.bind(this),
 			this.getPushToken.bind(this),
-			undefined,
+			this.cache,
 			this.config.options,
 		);
+		// Automatically reset the cache after creating the factory
+		this.cache = undefined;
+		return documentServiceFactory;
 	}
 
 	createUrlResolver(): IUrlResolver {

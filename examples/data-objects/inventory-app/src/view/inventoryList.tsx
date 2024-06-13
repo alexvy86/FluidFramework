@@ -3,33 +3,15 @@
  * Licensed under the MIT License.
  */
 
-import * as React from "react";
-import { AllowedUpdateType, ISharedTree } from "@fluid-experimental/tree2";
 import { useTree } from "@fluid-experimental/tree-react-api";
-import { Inventory, RootField, schema } from "../schema";
-import { Counter } from "./counter";
+import * as React from "react";
 
-const schemaPolicy = {
-	schema,
-	initialTree: {
-		parts: [
-			{
-				name: "nut",
-				quantity: 0,
-			},
-			{
-				name: "bolt",
-				quantity: 0,
-			},
-		],
-	},
-	allowedSchemaModifications: AllowedUpdateType.None,
-};
+import { Inventory } from "../schema.js";
 
-export const MainView: React.FC<{ tree: ISharedTree }> = ({ tree }) => {
-	const root: RootField = useTree(tree, schemaPolicy);
-	// TODO: value fields like `root` which always contain exactly one value should have a nicer API for accessing that child, like `.child`.
-	const inventory: Inventory = root[0];
+import { Counter } from "./counter.js";
+
+export const MainView: React.FC<{ root: Inventory }> = ({ root: inventory }) => {
+	useTree(inventory);
 
 	const counters: JSX.Element[] = [];
 
@@ -39,8 +21,8 @@ export const MainView: React.FC<{ tree: ISharedTree }> = ({ tree }) => {
 				key={part.name}
 				title={part.name}
 				count={part.quantity}
-				onDecrement={() => part.quantity--}
-				onIncrement={() => part.quantity++}
+				onDecrement={(): number => part.quantity--}
+				onIncrement={(): number => part.quantity++}
 			></Counter>,
 		);
 	}

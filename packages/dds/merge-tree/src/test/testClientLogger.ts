@@ -4,16 +4,20 @@
  */
 
 import { strict as assert } from "assert";
-import { ISequencedDocumentMessage } from "@fluidframework/protocol-definitions";
-import { LoggingError } from "@fluidframework/telemetry-utils";
-import { UnassignedSequenceNumber } from "../constants";
-import { IMergeTreeOp } from "../ops";
-import { TextSegment } from "../textSegment";
-import { IMergeTreeDeltaOpArgs, MergeTreeMaintenanceType } from "../mergeTreeDeltaCallback";
-import { matchProperties, PropertySet } from "../properties";
-import { depthFirstNodeWalk } from "../mergeTreeNodeWalk";
-import { Marker, seqLTE, toRemovalInfo } from "../mergeTreeNodes";
-import { TestClient } from "./testClient";
+
+import { ISequencedDocumentMessage } from "@fluidframework/driver-definitions/internal";
+import { LoggingError } from "@fluidframework/telemetry-utils/internal";
+
+import { UnassignedSequenceNumber } from "../constants.js";
+import { IMergeTreeOptions } from "../index.js";
+import { IMergeTreeDeltaOpArgs, MergeTreeMaintenanceType } from "../mergeTreeDeltaCallback.js";
+import { depthFirstNodeWalk } from "../mergeTreeNodeWalk.js";
+import { Marker, seqLTE, toRemovalInfo } from "../mergeTreeNodes.js";
+import { IMergeTreeOp } from "../ops.js";
+import { PropertySet, matchProperties } from "../properties.js";
+import { TextSegment } from "../textSegment.js";
+
+import { TestClient } from "./testClient.js";
 
 function getOpString(msg: ISequencedDocumentMessage | undefined) {
 	if (msg === undefined) {
@@ -46,20 +50,25 @@ function matchPropertiesHandleEmpty(a: PropertySet | undefined, b: PropertySet |
 	return matchProperties(a, b) || (arePropsEmpty(a) && arePropsEmpty(b));
 }
 
-type ClientMap = Partial<Record<"A" | "B" | "C" | "D" | "E", TestClient>>;
+type ClientMap<TClientName extends string> = Partial<Record<TClientName, TestClient>>;
 
-export function createClientsAtInitialState<TClients extends ClientMap>(
+export function createClientsAtInitialState<
+	TClients extends ClientMap<TClientName>,
+	TClientName extends string = string & keyof TClients,
+>(
 	opts: {
 		initialState: string;
-		options?: PropertySet;
+		options?: IMergeTreeOptions & PropertySet;
 	},
-	...clientIds: (string & keyof TClients)[]
+	...clientIds: TClientName[]
 ): Record<keyof TClients, TestClient> & { all: TestClient[] } {
 	const setup = (c: TestClient) => {
-		c.insertTextLocal(0, opts.initialState);
-		while (c.getText().includes("-")) {
-			const index = c.getText().indexOf("-");
-			c.removeRangeLocal(index, index + 1);
+		if (opts.initialState.length > 0) {
+			c.insertTextLocal(0, opts.initialState);
+			while (c.getText().includes("-")) {
+				const index = c.getText().indexOf("-");
+				c.removeRangeLocal(index, index + 1);
+			}
 		}
 	};
 	const all: TestClient[] = [];
@@ -114,7 +123,10 @@ export class TestClientLogger {
 		this.disposeCallbacks.length = 0;
 	}
 
-	constructor(private readonly clients: readonly TestClient[], private readonly title?: string) {
+	constructor(
+		private readonly clients: readonly TestClient[],
+		private readonly title?: string,
+	) {
 		const logHeaders: string[] = [];
 		clients.forEach((c, i) => {
 			logHeaders.push("op");

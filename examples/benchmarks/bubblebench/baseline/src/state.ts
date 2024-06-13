@@ -6,17 +6,21 @@
 import {
 	IAppState,
 	IBubble,
-	IClient,
+	SimpleClient,
 	makeBubble,
 	makeClient,
 } from "@fluid-example/bubblebench-common";
 
 export class AppState implements IAppState {
 	public readonly applyEdits = (): void => {};
-	public readonly localClient: IClient;
-	public readonly clients: IClient[];
+	public readonly localClient: SimpleClient;
+	public readonly clients: SimpleClient[];
 
-	constructor(private _width: number, private _height: number, numBubbles: number) {
+	constructor(
+		private _width: number,
+		private _height: number,
+		numBubbles: number,
+	) {
 		this.localClient = makeClient(_width, _height, numBubbles);
 		this.clients = [this.localClient];
 	}

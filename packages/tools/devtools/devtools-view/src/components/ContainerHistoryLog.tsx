@@ -3,28 +3,61 @@
  * Licensed under the MIT License.
  */
 
-import React from "react";
 import {
-	tokens,
+	Table,
 	TableBody,
 	TableCell,
-	TableRow,
-	Table,
 	TableHeader,
 	TableHeaderCell,
+	TableRow,
+	tokens,
 } from "@fluentui/react-components";
 import {
-	Clock12Regular,
-	PlugConnected20Regular,
 	AlertBadgeRegular,
-	PlugDisconnected20Regular,
-	ErrorCircle20Regular,
-	Warning20Regular,
 	Attach20Regular,
+	Clock12Regular,
+	ErrorCircle20Regular,
 	LockClosed20Filled,
+	PlugConnected20Regular,
+	PlugDisconnected20Regular,
+	Warning20Regular,
 } from "@fluentui/react-icons";
-import { ConnectionStateChangeLogEntry } from "@fluid-experimental/devtools-core";
-import { LabelCellLayout } from "./utility-components";
+import { type ConnectionStateChangeLogEntry } from "@fluidframework/devtools-core/internal";
+import React from "react";
+
+import { ThemeContext, ThemeOption } from "../ThemeHelper.js";
+
+import { LabelCellLayout } from "./utility-components/index.js";
+
+/**
+ * Returns the text color based on the current color theme of the devtools.
+ */
+function setThemeStyle(themeName: ThemeOption, state: string): string {
+	if (themeName === ThemeOption.HighContrast) {
+		switch (state) {
+			case "attached": {
+				return "#FFF";
+			}
+			case "closed": {
+				return "#000";
+			}
+			case "connected": {
+				return "#FFF";
+			}
+			case "disconnected": {
+				return "#000";
+			}
+			case "disposed": {
+				return "#000";
+			}
+			default: {
+				console.log("Unknown state type for container!");
+				return "";
+			}
+		}
+	}
+	return "";
+}
 
 /**
  * Represents container state history data which is rendered in {@link ContainerHistoryLog}.
@@ -41,6 +74,7 @@ export interface ContainerHistoryLogProps {
  */
 export function ContainerHistoryLog(props: ContainerHistoryLogProps): React.ReactElement {
 	const { containerHistory } = props;
+	const { themeInfo } = React.useContext(ThemeContext);
 
 	// Columns for rendering container state history.
 	const containerHistoryColumns = [
@@ -50,19 +84,32 @@ export function ContainerHistoryLog(props: ContainerHistoryLogProps): React.Reac
 
 	const getBackgroundColorForState = (state: string): string => {
 		switch (state) {
-			case "attached":
-				return tokens.colorPaletteRoyalBlueBackground2; // blue
-			case "closed":
-				return tokens.colorPaletteRedBorder1; // red
-			case "connected":
-				return tokens.colorPaletteGreenBackground2; // green
-			case "disconnected":
-				return tokens.colorPaletteDarkOrangeBorderActive; // orange
-			case "disposed":
-				return tokens.colorPaletteDarkRedBackground2; // dark red
-			default:
+			case "attached": {
+				// blue
+				return tokens.colorPaletteRoyalBlueBackground2;
+			}
+			case "closed": {
+				// red
+				return tokens.colorPaletteRedBorder1;
+			}
+			case "connected": {
+				// green
+				return tokens.colorPaletteGreenBackground2;
+			}
+			case "disconnected": {
+				// orange
+				return tokens.colorPaletteDarkOrangeBorderActive;
+			}
+			case "disposed": {
+				// dark red
+				return tokens.colorPaletteDarkRedBackground2;
+			}
+			default: {
 				console.log("Unknown state type for container!");
-				return tokens.colorBrandBackgroundPressed; // black
+
+				// black
+				return tokens.colorBrandBackgroundPressed;
+			}
 		}
 	};
 
@@ -98,19 +145,25 @@ export function ContainerHistoryLog(props: ContainerHistoryLogProps): React.Reac
 
 					const getStateIcon = (state: string): React.ReactElement => {
 						switch (state) {
-							case "attached":
+							case "attached": {
 								return <Attach20Regular />;
-							case "closed":
+							}
+							case "closed": {
 								return <LockClosed20Filled />;
-							case "connected":
+							}
+							case "connected": {
 								return <PlugConnected20Regular />;
-							case "disconnected":
+							}
+							case "disconnected": {
 								return <PlugDisconnected20Regular />;
-							case "disposed":
+							}
+							case "disposed": {
 								return <ErrorCircle20Regular />;
-							default:
+							}
+							default: {
 								console.log("Unknown state type for container!");
 								return <Warning20Regular />;
+							}
 						}
 					};
 
@@ -121,12 +174,24 @@ export function ContainerHistoryLog(props: ContainerHistoryLogProps): React.Reac
 								backgroundColor: getBackgroundColorForState(item.newState),
 							}}
 						>
-							<TableCell>
+							<TableCell
+								style={{ color: setThemeStyle(themeInfo.name, item.newState) }}
+							>
 								<LabelCellLayout icon={getStateIcon(item.newState)}>
-									{item.newState}
+									<span
+										style={{
+											color: setThemeStyle(themeInfo.name, item.newState),
+										}}
+									>
+										{item.newState}
+									</span>
 								</LabelCellLayout>
 							</TableCell>
-							<TableCell>{timestampDisplay}</TableCell>
+							<TableCell
+								style={{ color: setThemeStyle(themeInfo.name, item.newState) }}
+							>
+								{timestampDisplay}
+							</TableCell>
 						</TableRow>
 					);
 				})}

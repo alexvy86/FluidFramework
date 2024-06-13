@@ -3,26 +3,33 @@
  * Licensed under the MIT License.
  */
 
-import { ITelemetryProperties } from "@fluidframework/common-definitions";
+import { fromUtf8ToBase64, performance } from "@fluid-internal/client-utils";
+import { ITelemetryBaseProperties } from "@fluidframework/core-interfaces";
+import { assert } from "@fluidframework/core-utils/internal";
+import {
+	GenericNetworkError,
+	NonRetryableError,
+	RateLimiter,
+} from "@fluidframework/driver-utils/internal";
+import {
+	CorrelationIdHeaderName,
+	DriverVersionHeaderName,
+	RestLessClient,
+	getAuthorizationTokenFromCredentials,
+} from "@fluidframework/server-services-client";
 import {
 	ITelemetryLoggerExt,
 	PerformanceEvent,
-	TelemetryLogger,
-} from "@fluidframework/telemetry-utils";
-import { assert, fromUtf8ToBase64, performance } from "@fluidframework/common-utils";
-import { RateLimiter } from "@fluidframework/driver-utils";
-import {
-	getAuthorizationTokenFromCredentials,
-	RestLessClient,
-} from "@fluidframework/server-services-client";
+	numberFromString,
+} from "@fluidframework/telemetry-utils/internal";
 import fetch from "cross-fetch";
-import type { AxiosRequestConfig, AxiosRequestHeaders } from "axios";
 import safeStringify from "json-stringify-safe";
-import { v4 as uuid } from "uuid";
-import { throwR11sNetworkError } from "./errorUtils";
-import { ITokenProvider, ITokenResponse } from "./tokens";
-import { pkgVersion as driverVersion } from "./packageVersion";
-import { QueryStringType, RestWrapper } from "./restWrapperBase";
+
+import type { AxiosRequestConfig, RawAxiosRequestHeaders } from "./axios.cjs";
+import { RouterliciousErrorTypes, throwR11sNetworkError } from "./errorUtils.js";
+import { pkgVersion as driverVersion } from "./packageVersion.js";
+import { QueryStringType, RestWrapper } from "./restWrapperBase.js";
+import { ITokenProvider, ITokenResponse } from "./tokens.js";
 
 type AuthorizationHeaderGetter = (token: ITokenResponse) => string;
 export type TokenFetcher = (refresh?: boolean) => Promise<ITokenResponse>;
@@ -47,14 +54,14 @@ const axiosRequestConfigToFetchRequestConfig = (
 export interface IR11sResponse<T> {
 	content: T;
 	headers: Map<string, string>;
-	propsToLog: ITelemetryProperties;
+	propsToLog: ITelemetryBaseProperties;
 	requestUrl: string;
 }
 
 /**
- * A utility function to create a r11s response without any additional props as we might not have them always.
- * @param content - response which is equivalent to content.
- * @returns - a r11s response without any extra props.
+ * A utility function to create a Routerlicious response without any additional props as we might not have them always.
+ * @param content - Response which is equivalent to content.
+ * @returns A Routerlicious response without any extra props.
  */
 export function createR11sResponseFromContent<T>(content: T): IR11sResponse<T> {
 	return {
@@ -74,6 +81,7 @@ function headersToMap(headers: Headers) {
 }
 
 export function getPropsToLogFromResponse(headers: {
+	// eslint-disable-next-line @rushstack/no-new-null
 	get: (id: string) => string | undefined | null;
 }) {
 	interface LoggingHeader {
@@ -84,12 +92,12 @@ export function getPropsToLogFromResponse(headers: {
 	// We rename headers so that otel doesn't scrub them away. Otel doesn't allow
 	// certain characters in headers including '-'
 	const headersToLog: LoggingHeader[] = [
-		{ headerName: "x-correlation-id", logName: "requestCorrelationId" },
+		{ headerName: CorrelationIdHeaderName, logName: "requestCorrelationId" },
 		{ headerName: "content-encoding", logName: "contentEncoding" },
 		{ headerName: "content-type", logName: "contentType" },
 	];
-	const additionalProps: ITelemetryProperties = {
-		contentsize: TelemetryLogger.numberFromString(headers.get("content-length")),
+	const additionalProps: ITelemetryBaseProperties = {
+		contentsize: numberFromString(headers.get("content-length")),
 	};
 	headersToLog.forEach((header) => {
 		const headerValue = headers.get(header.headerName);
@@ -136,9 +144,24 @@ export class RouterliciousRestWrapper extends RestWrapper {
 			const result = await fetch(...fetchRequestConfig).catch(async (error) => {
 				// Browser Fetch throws a TypeError on network error, `node-fetch` throws a FetchError
 				const isNetworkError = ["TypeError", "FetchError"].includes(error?.name);
-				throwR11sNetworkError(
-					isNetworkError ? `NetworkError: ${error.message}` : safeStringify(error),
-				);
+				const errorMessage = isNetworkError
+					? `NetworkError: ${error.message}`
+					: safeStringify(error);
+				// If a service is temporarily down or a browser resource limit is reached, RestWrapper will throw
+				// a network error with no status code (e.g. err:ERR_CONN_REFUSED or err:ERR_FAILED) and
+				// the error message will start with NetworkError as defined in restWrapper.ts
+				// If there exists a self-signed SSL certificates error, throw a NonRetryableError
+				// TODO: instead of relying on string matching, filter error based on the error code like we do for websocket connections
+				const err = errorMessage.includes("failed, reason: self signed certificate")
+					? new NonRetryableError(errorMessage, RouterliciousErrorTypes.sslCertError, {
+							driverVersion,
+					  })
+					: new GenericNetworkError(
+							errorMessage,
+							errorMessage.startsWith("NetworkError"),
+							{ driverVersion },
+					  );
+				throw err;
 			});
 			return {
 				response: result,
@@ -166,6 +189,7 @@ export class RouterliciousRestWrapper extends RestWrapper {
 			return {
 				content: result,
 				headers,
+				// eslint-disable-next-line @typescript-eslint/no-base-to-string
 				requestUrl: fetchRequestConfig[0].toString(),
 				propsToLog: {
 					...getPropsToLogFromResponse(headers),
@@ -205,21 +229,17 @@ export class RouterliciousRestWrapper extends RestWrapper {
 	}
 
 	private async generateHeaders(
-		requestHeaders?: AxiosRequestHeaders | undefined,
-	): Promise<Record<string, string>> {
+		requestHeaders?: RawAxiosRequestHeaders | undefined,
+	): Promise<RawAxiosRequestHeaders> {
 		const token = await this.getToken();
 		assert(token !== undefined, 0x679 /* token should be present */);
-		const correlationId = requestHeaders?.["x-correlation-id"] ?? uuid();
-
-		return {
+		const headers: RawAxiosRequestHeaders = {
 			...requestHeaders,
-			// TODO: replace header names with CorrelationIdHeaderName and DriverVersionHeaderName from services-client
-			// NOTE: Can correlationId actually be number | true?
-			"x-correlation-id": correlationId as string,
-			"x-driver-version": driverVersion,
+			[DriverVersionHeaderName]: driverVersion,
 			// NOTE: If this.authorizationHeader is undefined, should "Authorization" be removed entirely?
-			"Authorization": this.getAuthorizationHeader(token),
+			Authorization: this.getAuthorizationHeader(token),
 		};
+		return headers;
 	}
 
 	public async getToken(): Promise<ITokenResponse> {
@@ -260,7 +280,7 @@ export class RouterliciousStorageRestWrapper extends RouterliciousRestWrapper {
 		);
 	}
 
-	public static async load(
+	public static load(
 		tenantId: string,
 		tokenFetcher: TokenFetcher,
 		logger: ITelemetryLoggerExt,
@@ -268,7 +288,7 @@ export class RouterliciousStorageRestWrapper extends RouterliciousRestWrapper {
 		useRestLess: boolean,
 		baseurl?: string,
 		initialTokenP?: Promise<ITokenResponse>,
-	): Promise<RouterliciousStorageRestWrapper> {
+	): RouterliciousStorageRestWrapper {
 		const defaultQueryString = {
 			token: `${fromUtf8ToBase64(tenantId)}`,
 		};
@@ -321,14 +341,14 @@ export class RouterliciousOrdererRestWrapper extends RouterliciousRestWrapper {
 		);
 	}
 
-	public static async load(
+	public static load(
 		tokenFetcher: TokenFetcher,
 		logger: ITelemetryLoggerExt,
 		rateLimiter: RateLimiter,
 		useRestLess: boolean,
 		baseurl?: string,
 		initialTokenP?: Promise<ITokenResponse>,
-	): Promise<RouterliciousOrdererRestWrapper> {
+	): RouterliciousOrdererRestWrapper {
 		const getAuthorizationHeader: AuthorizationHeaderGetter = (
 			token: ITokenResponse,
 		): string => {

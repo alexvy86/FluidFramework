@@ -3,27 +3,47 @@
  * Licensed under the MIT License.
  */
 
-import React from "react";
 import {
-	tokens,
+	Table,
 	TableBody,
 	TableCell,
-	TableRow,
-	Table,
 	TableHeader,
-	TableHeaderCell,
+	TableRow,
+	makeStyles,
+	tokens,
 } from "@fluentui/react-components";
 import {
-	DoorArrowLeftRegular,
-	Clock12Regular,
-	Person12Regular,
-	ArrowJoinRegular,
 	ArrowExitRegular,
+	ArrowJoinRegular,
+	Clock12Regular,
+	DoorArrowLeftRegular,
+	Person12Regular,
 } from "@fluentui/react-icons";
+import React from "react";
 
-import { clientIdTooltipText } from "./TooltipTexts";
-import { TransformedAudienceHistoryData } from "./AudienceView";
-import { LabelCellLayout } from "./utility-components";
+import { ThemeOption, useThemeContext } from "../ThemeHelper.js";
+
+import { type TransformedAudienceHistoryData } from "./AudienceView.js";
+import { clientIdTooltipText } from "./TooltipTexts.js";
+import { LabelCellLayout } from "./utility-components/index.js";
+
+const audienceStyles = makeStyles({
+	joined: {
+		backgroundColor: tokens.colorPaletteRoyalBlueBackground2,
+	},
+	left: {
+		backgroundColor: tokens.colorPaletteRedBackground2,
+	},
+	highContrast: {
+		"color": "#FFF",
+		"&:hover": {
+			"color": "#000",
+			"& *": {
+				color: "#000",
+			},
+		},
+	},
+});
 
 /**
  * Represents audience history data filtered to the attributes that will be displayed in the history table.
@@ -38,9 +58,14 @@ export interface AudienceHistoryTableProps {
 
 /**
  * Renders audience history data of user status event, clientId & timestamp.
+ *
+ * @remarks {@link ThemeContext} must be set in order to use this component.
  */
 export function AudienceHistoryTable(props: AudienceHistoryTableProps): React.ReactElement {
 	const { audienceHistoryItems } = props;
+	const { themeInfo } = useThemeContext();
+
+	const style = audienceStyles();
 
 	// Columns for rendering audience history
 	const audienceHistoryColumns = [
@@ -54,7 +79,8 @@ export function AudienceHistoryTable(props: AudienceHistoryTableProps): React.Re
 			<TableHeader>
 				<TableRow>
 					{audienceHistoryColumns.map((column, columnIndex) => (
-						<TableHeaderCell key={columnIndex}>
+						// TODO: Replace TableCell with TableHeaderCell once https://github.com/microsoft/fluentui/issues/31588 is fixed.
+						<TableCell key={columnIndex}>
 							{column.columnKey === "event" && (
 								<LabelCellLayout icon={<DoorArrowLeftRegular />}>
 									{column.label}
@@ -74,20 +100,23 @@ export function AudienceHistoryTable(props: AudienceHistoryTableProps): React.Re
 									{column.label}
 								</LabelCellLayout>
 							)}
-						</TableHeaderCell>
+						</TableCell>
 					))}
 				</TableRow>
 			</TableHeader>
 			<TableBody>
 				{audienceHistoryItems.map((item, itemIndex) => (
 					<TableRow
+						// The list of items here is never reordered, and is strictly appended to,
+						// so using the index as the key here is safe.
 						key={itemIndex}
-						style={{
-							backgroundColor:
-								item.changeKind === "joined"
-									? tokens.colorPaletteRoyalBlueBackground2
-									: tokens.colorPaletteRedBackground2,
-						}}
+						className={
+							themeInfo.name === ThemeOption.HighContrast
+								? style.highContrast
+								: item.changeKind === "joined"
+								? style.joined
+								: style.left
+						}
 					>
 						<TableCell>
 							<LabelCellLayout

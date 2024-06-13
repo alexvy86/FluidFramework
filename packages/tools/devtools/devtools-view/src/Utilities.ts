@@ -2,6 +2,7 @@
  * Copyright (c) Microsoft Corporation and contributors. All rights reserved.
  * Licensed under the MIT License.
  */
+
 import { ConnectionState } from "@fluidframework/container-loader";
 
 /**
@@ -16,15 +17,20 @@ import { ConnectionState } from "@fluidframework/container-loader";
  */
 export function connectionStateToString(connectionState: ConnectionState): string {
 	switch (connectionState) {
-		case ConnectionState.CatchingUp:
+		case ConnectionState.CatchingUp: {
 			return "Catching up";
-		case ConnectionState.Connected:
+		}
+		case ConnectionState.Connected: {
 			return "Connected";
-		case ConnectionState.Disconnected:
+		}
+		case ConnectionState.Disconnected: {
 			return "Disconnected";
-		case ConnectionState.EstablishingConnection:
+		}
+		case ConnectionState.EstablishingConnection: {
 			return "Establishing connection";
-		default:
+		}
+		default: {
 			throw new TypeError(`Unrecognized ConnectionState value: "${connectionState}".`);
+		}
 	}
 }

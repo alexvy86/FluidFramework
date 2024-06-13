@@ -1,0 +1,21 @@
+{
+	"compilerOptions": {
+		"composite": true,
+		"declaration": true,
+		"declarationMap": true,
+		"esModuleInterop": true,
+		"incremental": true,
+		"inlineSources": true,
+		"jsx": "react",
+		"lib": ["ES2022", "DOM", "DOM.Iterable"],
+		"noImplicitAny": false,
+		"noUnusedLocals": true,
+		"pretty": true,
+		"sourceMap": true,
+		"strict": true,
+		"target": "ES2022",
+		"types": [],
+		"exactOptionalPropertyTypes": true,
+		"noUncheckedIndexedAccess": true,
+	},
+}

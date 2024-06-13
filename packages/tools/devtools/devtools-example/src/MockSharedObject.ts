@@ -3,11 +3,14 @@
  * Licensed under the MIT License.
  */
 
-import { TypedEventEmitter } from "@fluidframework/common-utils";
-import { IFluidHandle } from "@fluidframework/core-interfaces";
-import { IChannelAttributes } from "@fluidframework/datastore-definitions";
-import { ISharedObject, ISharedObjectEvents } from "@fluidframework/shared-object-base";
-import { MockHandle } from "@fluidframework/test-runtime-utils";
+import { TypedEventEmitter } from "@fluid-internal/client-utils";
+import type { IFluidHandle } from "@fluidframework/core-interfaces";
+import type { IChannelAttributes } from "@fluidframework/datastore-definitions/internal";
+import type {
+	ISharedObject,
+	ISharedObjectEvents,
+} from "@fluidframework/shared-object-base/internal";
+import { MockHandle } from "@fluidframework/test-runtime-utils/internal";
 
 /**
  * Mocks the necessary subset of {@link ISharedObject} required by this library's tests.

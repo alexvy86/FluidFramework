@@ -6,24 +6,24 @@
 /* eslint-env jest */
 /* eslint-disable no-param-reassign */
 import {
-	PropertyFactory,
-	BaseProperty,
 	ArrayProperty,
+	BaseProperty,
 	MapProperty,
-	SetProperty,
 	NodeProperty,
+	PropertyFactory,
+	SetProperty,
 } from "@fluid-experimental/property-properties";
 
-import { PropertyProxy } from "..";
+import { PropertyProxy } from "../index.js";
 
 import {
-	vector2DTemplate,
-	vector3DTemplate,
-	enumUnoDosTresTemplate,
 	bookDataTemplate,
 	collectionConstants,
+	enumUnoDosTresTemplate,
 	genericTemplate,
-} from "./testSchemas";
+	vector2DTemplate,
+	vector3DTemplate,
+} from "./testSchemas.js";
 
 // --------------------- unit testing ----------------------------------
 
@@ -4004,6 +4004,7 @@ describe("JS-Object-like property accessing ", function () {
 					mapWithJsOutfit.set("firstNumber", 1111);
 					mapWithJsOutfit.set("secondNumber", 2222);
 					mapWithJsOutfit.set("thirdNumber", 3333);
+					// eslint-disable-next-line @typescript-eslint/no-base-to-string
 					expect(testMap.toString()).toEqual(mapWithJsOutfit.toString());
 				});
 
@@ -4250,6 +4251,7 @@ describe("JS-Object-like property accessing ", function () {
 					mapWithJsOutfit.set("firstEntry", { x: 10, y: 20 });
 					mapWithJsOutfit.set("secondEntry", { x: 30, y: 40 });
 					mapWithJsOutfit.set("thirdEntry", { x: 50, y: 60 });
+					// eslint-disable-next-line @typescript-eslint/no-base-to-string
 					expect(testMap.toString()).toEqual(mapWithJsOutfit.toString());
 				});
 
@@ -4705,6 +4707,7 @@ describe("JS-Object-like property accessing ", function () {
 			it("check .toString() functionality", function () {
 				const testSet = state.myTestProperty.myBookSet;
 				const setWithJsOutFit = new Set();
+				// eslint-disable-next-line @typescript-eslint/no-base-to-string
 				expect(testSet.toString()).toEqual(setWithJsOutFit.toString());
 			});
 

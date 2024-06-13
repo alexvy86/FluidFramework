@@ -3,43 +3,37 @@
  * Licensed under the MIT License.
  */
 
-/* eslint-disable unicorn/numeric-separators-style */
-
-import { EventEmitter } from "events";
-
-import { assert } from "@fluidframework/common-utils";
-import { ISequencedDocumentMessage, MessageType } from "@fluidframework/protocol-definitions";
+import { EventEmitter } from "@fluid-internal/client-utils";
+import { assert } from "@fluidframework/core-utils/internal";
 import {
-	IChannelAttributes,
-	IFluidDataStoreRuntime,
-	IChannelStorageService,
-	IChannelFactory,
-} from "@fluidframework/datastore-definitions";
-import { ISummaryTreeWithStats } from "@fluidframework/runtime-definitions";
-import { readAndParse } from "@fluidframework/driver-utils";
+	type IChannelAttributes,
+	type IFluidDataStoreRuntime,
+	type IChannelStorageService,
+} from "@fluidframework/datastore-definitions/internal";
 import {
-	createSingleBlobSummary,
-	IFluidSerializer,
-	SharedObject,
-} from "@fluidframework/shared-object-base";
-import { PactMapFactory } from "./pactMapFactory";
-import { IPactMap, IPactMapEvents } from "./interfaces";
+	MessageType,
+	type ISequencedDocumentMessage,
+} from "@fluidframework/driver-definitions/internal";
+import { readAndParse } from "@fluidframework/driver-utils/internal";
+import { type ISummaryTreeWithStats } from "@fluidframework/runtime-definitions/internal";
+import { type IFluidSerializer } from "@fluidframework/shared-object-base/internal";
+import { SharedObject, createSingleBlobSummary } from "@fluidframework/shared-object-base/internal";
+
+import { type IAcceptedPact, type IPactMap, type IPactMapEvents } from "./interfaces.js";
 
 /**
  * The accepted pact information, if any.
  */
-interface IAcceptedPact<T> {
+interface IAcceptedPactInternal<T> {
 	/**
 	 * The accepted value of the given type or undefined (typically in case of delete).
 	 */
 	value: T | undefined;
 
 	/**
-	 * The sequence number when the value was accepted, which will normally coincide with one of three possibilities:
+	 * The sequence number when the value was accepted, which will normally coincide with one of two possibilities:
 	 * - The sequence number of the "accept" op from the final client we expected signoff from
 	 * - The sequence number of the ClientLeave of the final client we expected signoff from
-	 * - The sequence number of the "set" op, if there were no expected signoffs (i.e. only the submitting client
-	 * was connected when the op was sequenced)
 	 *
 	 * For values set in detached state, it will be 0.
 	 */
@@ -65,9 +59,9 @@ interface IPendingPact<T> {
  * Internal format of the values stored in the PactMap.
  */
 type Pact<T> =
-	| { accepted: IAcceptedPact<T>; pending: undefined }
+	| { accepted: IAcceptedPactInternal<T>; pending: undefined }
 	| { accepted: undefined; pending: IPendingPact<T> }
-	| { accepted: IAcceptedPact<T>; pending: IPendingPact<T> };
+	| { accepted: IAcceptedPactInternal<T>; pending: IPendingPact<T> };
 
 /**
  * PactMap operation formats
@@ -99,85 +93,10 @@ type IPactMapOperation<T> = IPactMapSetOperation<T> | IPactMapAcceptOperation;
 const snapshotFileName = "header";
 
 /**
- * The PactMap distributed data structure provides key/value storage with a cautious conflict resolution strategy.
- * This strategy optimizes for all clients being aware of the change prior to considering the value as accepted.
- *
- * It is still experimental and under development.  Please do try it out, but expect breaking changes in the future.
- *
- * @remarks
- * ### Creation
- *
- * To create a `PactMap`, call the static create method:
- *
- * ```typescript
- * const pactMap = PactMap.create(this.runtime, id);
- * ```
- *
- * ### Usage
- *
- * Setting and reading values is somewhat similar to a `SharedMap`.  However, because the acceptance strategy
- * cannot be resolved until other clients have witnessed the set, the new value will only be reflected in the data
- * after the consensus is reached.
- *
- * ```typescript
- * pactMap.on("pending", (key: string) => {
- *     console.log(pactMap.getPending(key));
- * });
- * pactMap.on("accepted", (key: string) => {
- *     console.log(pactMap.get(key));
- * });
- * pactMap.set("myKey", "myValue");
- *
- * // Reading from the pact map prior to the async operation's completion will still return the old value.
- * console.log(pactMap.get("myKey"));
- * ```
- *
- * The acceptance process has two stages.  When an op indicating a client's attempt to set a value is sequenced,
- * we first verify that it was set with knowledge of the most recently accepted value (consensus-like FWW).  If it
- * meets this bar, then the value is "pending".  During this time, clients may observe the pending value and act
- * upon it, but should be aware that not all other clients may have witnessed the value yet.  Once all clients
- * that were connected at the time of the value being set have explicitly acknowledged the new value, the value
- * becomes "accepted".  Once the value is accepted, it once again becomes possible to set the value, again with
- * consensus-like FWW resolution.
- *
- * Since all connected clients must explicitly accept the new value, it is important that all connected clients
- * have the PactMap loaded, including e.g. the summarizing client.  Otherwise, those clients who have not loaded
- * the PactMap will not be responding to proposals and delay their acceptance (until they disconnect, which implicitly
- * removes them from consideration).  The easiest way to ensure all clients load the PactMap is to instantiate it
- * as part of instantiating the IRuntime for the container (containerHasInitialized if using Aqueduct).
- *
- * ### Eventing
- *
- * `PactMap` is an `EventEmitter`, and will emit events when a new value is accepted for a key.
- *
- * ```typescript
- * pactMap.on("accept", (key: string) => {
- *     console.log(`New value was accepted for key: ${ key }, value: ${ pactMap.get(key) }`);
- * });
- * ```
+ * {@inheritDoc PactMap}
  */
-export class PactMap<T = unknown> extends SharedObject<IPactMapEvents> implements IPactMap<T> {
-	/**
-	 * Create a new PactMap
-	 *
-	 * @param runtime - data store runtime the new PactMap belongs to
-	 * @param id - optional name of the PactMap
-	 * @returns newly created PactMap (but not attached yet)
-	 */
-	public static create(runtime: IFluidDataStoreRuntime, id?: string): PactMap {
-		return runtime.createChannel(id, PactMapFactory.Type) as PactMap;
-	}
-
-	/**
-	 * Get a factory for PactMap to register with the data store.
-	 *
-	 * @returns a factory that creates and loads PactMaps
-	 */
-	public static getFactory(): IChannelFactory {
-		return new PactMapFactory();
-	}
-
-	private readonly values: Map<string, Pact<T>> = new Map();
+export class PactMapClass<T = unknown> extends SharedObject<IPactMapEvents> implements IPactMap<T> {
+	private readonly values = new Map<string, Pact<T>>();
 
 	private readonly incomingOp: EventEmitter = new EventEmitter();
 
@@ -206,6 +125,22 @@ export class PactMap<T = unknown> extends SharedObject<IPactMapEvents> implement
 	 */
 	public get(key: string): T | undefined {
 		return this.values.get(key)?.accepted?.value;
+	}
+
+	/**
+	 * {@inheritDoc IPactMap.getWithDetails}
+	 */
+	public getWithDetails(key: string): IAcceptedPact<T> | undefined {
+		// Note: We return type `IAcceptedPact` instead of `IAcceptedPactInternal` since we may want to diverge
+		// the interfaces in the future.
+		const acceptedPact = this.values.get(key)?.accepted;
+		if (acceptedPact === undefined) {
+			return undefined;
+		}
+		return {
+			value: acceptedPact.value,
+			acceptedSequenceNumber: acceptedPact.sequenceNumber,
+		};
 	}
 
 	/**
@@ -247,7 +182,7 @@ export class PactMap<T = unknown> extends SharedObject<IPactMapEvents> implement
 			type: "set",
 			key,
 			value,
-			refSeq: this.runtime.deltaManager.lastSequenceNumber,
+			refSeq: this.deltaManager.lastSequenceNumber,
 		};
 
 		this.submitLocalMessage(setOp);
@@ -377,11 +312,12 @@ export class PactMap<T = unknown> extends SharedObject<IPactMapEvents> implement
 
 				if (pending.expectedSignoffs.length === 0) {
 					// The pending value has settled
+					const clientLeaveSequenceNumber = this.deltaManager.lastSequenceNumber;
 					this.values.set(key, {
 						accepted: {
 							value: pending.value,
 							// The sequence number of the ClientLeave message.
-							sequenceNumber: this.runtime.deltaManager.lastSequenceNumber,
+							sequenceNumber: clientLeaveSequenceNumber,
 						},
 						pending: undefined,
 					});
@@ -395,26 +331,14 @@ export class PactMap<T = unknown> extends SharedObject<IPactMapEvents> implement
 	 * Create a summary for the PactMap
 	 *
 	 * @returns the summary of the current state of the PactMap
-	 * @internal
 	 */
 	protected summarizeCore(serializer: IFluidSerializer): ISummaryTreeWithStats {
 		const allEntries = [...this.values.entries()];
-		// Filter out items that are ineffectual
-		const summaryEntries = allEntries.filter(([, pact]) => {
-			return (
-				// Items have an effect if they are still pending, have a real value, or some client may try to
-				// reference state before the value was accepted.  Otherwise they can be dropped.
-				pact.pending !== undefined ||
-				pact.accepted.value !== undefined ||
-				pact.accepted.sequenceNumber > this.runtime.deltaManager.minimumSequenceNumber
-			);
-		});
-		return createSingleBlobSummary(snapshotFileName, JSON.stringify(summaryEntries));
+		return createSingleBlobSummary(snapshotFileName, JSON.stringify(allEntries));
 	}
 
 	/**
 	 * {@inheritDoc @fluidframework/shared-object-base#SharedObject.loadCore}
-	 * @internal
 	 */
 	protected async loadCore(storage: IChannelStorageService): Promise<void> {
 		const content = await readAndParse<[string, Pact<T>][]>(storage, snapshotFileName);
@@ -425,19 +349,16 @@ export class PactMap<T = unknown> extends SharedObject<IPactMapEvents> implement
 
 	/**
 	 * {@inheritDoc @fluidframework/shared-object-base#SharedObjectCore.initializeLocalCore}
-	 * @internal
 	 */
 	protected initializeLocalCore(): void {}
 
 	/**
 	 * {@inheritDoc @fluidframework/shared-object-base#SharedObjectCore.onDisconnect}
-	 * @internal
 	 */
 	protected onDisconnect(): void {}
 
 	/**
 	 * {@inheritDoc @fluidframework/shared-object-base#SharedObjectCore.reSubmitCore}
-	 * @internal
 	 */
 	protected reSubmitCore(content: unknown, localOpMetadata: unknown): void {
 		const pactMapOp = content as IPactMapOperation<T>;
@@ -469,18 +390,18 @@ export class PactMap<T = unknown> extends SharedObject<IPactMapEvents> implement
 	 * @param local - whether the message was sent by the local client
 	 * @param localOpMetadata - For local client messages, this is the metadata that was submitted with the message.
 	 * For messages from a remote client, this will be undefined.
-	 * @internal
 	 */
 	protected processCore(
 		message: ISequencedDocumentMessage,
 		local: boolean,
 		localOpMetadata: unknown,
 	): void {
+		// eslint-disable-next-line @typescript-eslint/no-unsafe-enum-comparison
 		if (message.type === MessageType.Operation) {
 			const op = message.contents as IPactMapOperation<T>;
 
 			switch (op.type) {
-				case "set":
+				case "set": {
 					this.incomingOp.emit(
 						"set",
 						op.key,
@@ -489,8 +410,9 @@ export class PactMap<T = unknown> extends SharedObject<IPactMapEvents> implement
 						message.sequenceNumber,
 					);
 					break;
+				}
 
-				case "accept":
+				case "accept": {
 					this.incomingOp.emit(
 						"accept",
 						op.key,
@@ -498,14 +420,16 @@ export class PactMap<T = unknown> extends SharedObject<IPactMapEvents> implement
 						message.sequenceNumber,
 					);
 					break;
+				}
 
-				default:
+				default: {
 					throw new Error("Unknown operation");
+				}
 			}
 		}
 	}
 
-	public applyStashedOp(): void {
+	protected applyStashedOp(): void {
 		throw new Error("not implemented");
 	}
 }

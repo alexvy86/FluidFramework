@@ -10,13 +10,14 @@ import {
 	IWebServer,
 	IWebServerFactory,
 	IRunner,
-	ITokenRevocationManager,
+	IRevokedTokenChecker,
 	IStorageNameRetriever,
+	IDocumentManager,
 } from "@fluidframework/server-services-core";
 import { Provider } from "nconf";
 import * as winston from "winston";
 import { Lumberjack } from "@fluidframework/server-services-telemetry";
-import { ICache, ITenantService } from "./services";
+import { ICache, IDenyList, ITenantService } from "./services";
 import * as app from "./app";
 
 export class HistorianRunner implements IRunner {
@@ -31,9 +32,11 @@ export class HistorianRunner implements IRunner {
 		private readonly storageNameRetriever: IStorageNameRetriever,
 		public readonly restTenantThrottlers: Map<string, IThrottler>,
 		public readonly restClusterThrottlers: Map<string, IThrottler>,
+		private readonly documentManager: IDocumentManager,
 		private readonly cache?: ICache,
 		private readonly asyncLocalStorage?: AsyncLocalStorage<string>,
-		private readonly tokenRevocationManager?: ITokenRevocationManager,
+		private readonly revokedTokenChecker?: IRevokedTokenChecker,
+		private readonly denyList?: IDenyList,
 	) {}
 
 	// eslint-disable-next-line @typescript-eslint/promise-function-async
@@ -46,9 +49,11 @@ export class HistorianRunner implements IRunner {
 			this.storageNameRetriever,
 			this.restTenantThrottlers,
 			this.restClusterThrottlers,
+			this.documentManager,
 			this.cache,
 			this.asyncLocalStorage,
-			this.tokenRevocationManager,
+			this.revokedTokenChecker,
+			this.denyList,
 		);
 		historian.set("port", this.port);
 
@@ -60,27 +65,20 @@ export class HistorianRunner implements IRunner {
 		httpServer.on("error", (error) => this.onError(error));
 		httpServer.on("listening", () => this.onListening());
 
-		// Token revocation
-		if (this.tokenRevocationManager) {
-			this.tokenRevocationManager.start().catch((error) => {
-				this.runningDeferred.reject(error);
-			});
-		}
-
 		return this.runningDeferred.promise;
 	}
 
 	// eslint-disable-next-line @typescript-eslint/promise-function-async
 	public stop(): Promise<void> {
 		// Close the underlying server and then resolve the runner once closed
-		this.server.close().then(
-			() => {
+		this.server
+			.close()
+			.then(() => {
 				this.runningDeferred.resolve();
-			},
-			(error) => {
+			})
+			.catch((error) => {
 				this.runningDeferred.reject(error);
-			},
-		);
+			});
 
 		return this.runningDeferred.promise;
 	}

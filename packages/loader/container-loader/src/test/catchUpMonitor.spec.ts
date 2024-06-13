@@ -4,15 +4,20 @@
  */
 
 import { strict as assert } from "assert";
-import { IDeltaManager, IDeltaManagerEvents } from "@fluidframework/container-definitions";
-import { TypedEventEmitter } from "@fluidframework/common-utils";
-import { CatchUpMonitor } from "../catchUpMonitor";
+
+import { TypedEventEmitter } from "@fluid-internal/client-utils";
+import { IDeltaManager, IDeltaManagerEvents } from "@fluidframework/container-definitions/internal";
+
+import { CatchUpMonitor } from "../catchUpMonitor.js";
 
 class MockDeltaManagerForCatchingUp
 	extends TypedEventEmitter<IDeltaManagerEvents>
 	implements Pick<IDeltaManager<any, any>, "lastSequenceNumber" | "lastKnownSeqNumber">
 {
-	constructor(public lastSequenceNumber: number = 5, public lastKnownSeqNumber: number = 10) {
+	constructor(
+		public lastSequenceNumber: number = 5,
+		public lastKnownSeqNumber: number = 10,
+	) {
 		super();
 	}
 

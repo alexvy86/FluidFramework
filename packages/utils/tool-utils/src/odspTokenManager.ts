@@ -3,44 +3,43 @@
  * Licensed under the MIT License.
  */
 
-import { unreachableCase } from "@fluidframework/common-utils";
+import { unreachableCase } from "@fluidframework/core-utils/internal";
 import {
+	IPublicClientConfig,
 	IOdspTokens,
-	IClientConfig,
+	TokenRequestCredentials,
 	fetchTokens,
-	refreshTokens,
+	getLoginPageUrl,
 	getOdspScope,
 	pushScope,
-	getLoginPageUrl,
-	TokenRequestCredentials,
-} from "@fluidframework/odsp-doclib-utils";
-import jwtDecode from "jwt-decode";
+	refreshTokens,
+} from "@fluidframework/odsp-doclib-utils/internal";
 import { Mutex } from "async-mutex";
-import { debug } from "./debug";
-import { IAsyncCache, loadRC, saveRC, lockRC } from "./fluidToolRC";
-import { serverListenAndHandle, endResponse } from "./httpHelpers";
+import { jwtDecode } from "jwt-decode";
+
+import { debug } from "./debug.js";
+import { IAsyncCache, loadRC, lockRC, saveRC } from "./fluidToolRC.js";
+import { endResponse, serverListenAndHandle } from "./httpHelpers.js";
 
 const odspAuthRedirectPort = 7000;
 const odspAuthRedirectOrigin = `http://localhost:${odspAuthRedirectPort}`;
 const odspAuthRedirectUri = new URL("/auth/callback", odspAuthRedirectOrigin).href;
 
-export const getMicrosoftConfiguration = (): IClientConfig => ({
+/**
+ * @internal
+ */
+export const getMicrosoftConfiguration = (): IPublicClientConfig => ({
 	get clientId() {
 		if (!process.env.login__microsoft__clientId) {
 			throw new Error("Client ID environment variable not set: login__microsoft__clientId.");
 		}
 		return process.env.login__microsoft__clientId;
 	},
-	get clientSecret() {
-		if (!process.env.login__microsoft__secret) {
-			throw new Error(
-				"Client Secret environment variable not set: login__microsoft__secret.",
-			);
-		}
-		return process.env.login__microsoft__secret;
-	},
 });
 
+/**
+ * @internal
+ */
 export type OdspTokenConfig =
 	| {
 			type: "password";
@@ -53,6 +52,9 @@ export type OdspTokenConfig =
 			redirectUriCallback?: (tokens: IOdspTokens) => Promise<string>;
 	  };
 
+/**
+ * @internal
+ */
 export interface IOdspTokenManagerCacheKey {
 	readonly isPush: boolean;
 	readonly userOrServer: string;
@@ -73,6 +75,9 @@ const cacheKeyToString = (key: IOdspTokenManagerCacheKey) => {
 	return `${key.userOrServer}${key.isPush ? "[Push]" : ""}`;
 };
 
+/**
+ * @internal
+ */
 export class OdspTokenManager {
 	private readonly storageCache = new Map<string, IOdspTokens>();
 	private readonly pushCache = new Map<string, IOdspTokens>();
@@ -96,21 +101,23 @@ export class OdspTokenManager {
 
 	public async getOdspTokens(
 		server: string,
-		clientConfig: IClientConfig,
+		clientConfig: IPublicClientConfig,
 		tokenConfig: OdspTokenConfig,
 		forceRefresh = false,
 		forceReauth = false,
 	): Promise<IOdspTokens> {
+		debug("Getting odsp tokens");
 		return this.getTokens(false, server, clientConfig, tokenConfig, forceRefresh, forceReauth);
 	}
 
 	public async getPushTokens(
 		server: string,
-		clientConfig: IClientConfig,
+		clientConfig: IPublicClientConfig,
 		tokenConfig: OdspTokenConfig,
 		forceRefresh = false,
 		forceReauth = false,
 	): Promise<IOdspTokens> {
+		debug("Getting push tokens");
 		return this.getTokens(true, server, clientConfig, tokenConfig, forceRefresh, forceReauth);
 	}
 
@@ -144,7 +151,7 @@ export class OdspTokenManager {
 	private async getTokens(
 		isPush: boolean,
 		server: string,
-		clientConfig: IClientConfig,
+		clientConfig: IPublicClientConfig,
 		tokenConfig: OdspTokenConfig,
 		forceRefresh: boolean,
 		forceReauth: boolean,
@@ -186,7 +193,7 @@ export class OdspTokenManager {
 	private async getTokensCore(
 		isPush: boolean,
 		server: string,
-		clientConfig: IClientConfig,
+		clientConfig: IPublicClientConfig,
 		tokenConfig: OdspTokenConfig,
 		forceRefresh,
 		forceReauth,
@@ -249,7 +256,7 @@ export class OdspTokenManager {
 	private async acquireTokensWithPassword(
 		server: string,
 		scope: string,
-		clientConfig: IClientConfig,
+		clientConfig: IPublicClientConfig,
 		username: string,
 		password: string,
 	): Promise<IOdspTokens> {
@@ -264,7 +271,7 @@ export class OdspTokenManager {
 	private async acquireTokensViaBrowserLogin(
 		loginPageUrl: string,
 		server: string,
-		clientConfig: IClientConfig,
+		clientConfig: IPublicClientConfig,
 		scope: string,
 		navigator: (url: string) => void,
 		redirectUriCallback?: (tokens: IOdspTokens) => Promise<string>,
@@ -329,6 +336,9 @@ async function loadAndPatchRC() {
 	return rc;
 }
 
+/**
+ * @internal
+ */
 export const odspTokensCache: IAsyncCache<IOdspTokenManagerCacheKey, IOdspTokens> = {
 	async get(key: IOdspTokenManagerCacheKey): Promise<IOdspTokens | undefined> {
 		const rc = await loadAndPatchRC();

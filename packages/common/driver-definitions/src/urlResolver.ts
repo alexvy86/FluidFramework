@@ -2,14 +2,13 @@
  * Copyright (c) Microsoft Corporation and contributors. All rights reserved.
  * Licensed under the MIT License.
  */
-import { IRequest } from "@fluidframework/core-interfaces";
 
-export type IResolvedUrl = IFluidResolvedUrl;
+import type { IRequest } from "@fluidframework/core-interfaces";
 
 /**
- * @deprecated Use IResolvedUrl instead.
+ * @alpha
  */
-export interface IFluidResolvedUrl {
+export interface IResolvedUrl {
 	type: "fluid";
 	/**
 	 * The id of the container this resolved url is for.
@@ -22,6 +21,7 @@ export interface IFluidResolvedUrl {
 
 /**
  * Container package info handed off to resolver.
+ * @alpha
  */
 export interface IContainerPackageInfo {
 	/**
@@ -30,6 +30,9 @@ export interface IContainerPackageInfo {
 	name: string;
 }
 
+/**
+ * @alpha
+ */
 export interface IUrlResolver {
 	// Like DNS should be able to cache resolution requests. Then possibly just have a token provider go and do stuff?
 	// the expiration of it could be relative to the lifetime of the token? Requests after need to refresh?
@@ -53,6 +56,7 @@ export interface IUrlResolver {
 /**
  * Information that can be returned by a lightweight, seperately exported driver function. Used to preanalyze a URL
  * for driver compatibility and preload information.
+ * @alpha
  */
 export interface DriverPreCheckInfo {
 	/**
@@ -69,6 +73,7 @@ export interface DriverPreCheckInfo {
 
 /**
  * Additional key in the loader request header
+ * @alpha
  */
 export enum DriverHeader {
 	// Key to indicate whether the request for summarizer
@@ -77,6 +82,9 @@ export enum DriverHeader {
 	createNew = "createNew",
 }
 
+/**
+ * @internal
+ */
 export interface IDriverHeader {
 	[DriverHeader.summarizingClient]: boolean;
 	// TODO: Use something other than `any`.
@@ -85,6 +93,11 @@ export interface IDriverHeader {
 }
 
 declare module "@fluidframework/core-interfaces" {
+	/**
+	 * Interface to represent headers to include in the container or data store load request.
+	 * For example, caller can use this to pass on various loader options in the container
+	 * load request.
+	 */
 	// eslint-disable-next-line @typescript-eslint/no-empty-interface
 	export interface IRequestHeader extends Partial<IDriverHeader> {}
 }

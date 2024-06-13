@@ -4,10 +4,12 @@
  */
 
 import { strict as assert } from "assert";
-import { IFluidHandle } from "@fluidframework/core-interfaces";
-import { BlobTreeEntry } from "@fluidframework/driver-utils";
-import { ISummaryBlob, ITree } from "@fluidframework/protocol-definitions";
-import { IGCTestProvider, runGCTests } from "@fluid-internal/test-dds-utils";
+
+import { IGCTestProvider, runGCTests } from "@fluid-private/test-dds-utils";
+import type { IFluidHandleInternal } from "@fluidframework/core-interfaces/internal";
+import { ISummaryBlob } from "@fluidframework/driver-definitions";
+import { ITree } from "@fluidframework/driver-definitions/internal";
+import { BlobTreeEntry } from "@fluidframework/driver-utils/internal";
 import {
 	MockContainerRuntimeFactory,
 	MockContainerRuntimeFactoryForReconnection,
@@ -15,27 +17,29 @@ import {
 	MockEmptyDeltaConnection,
 	MockFluidDataStoreRuntime,
 	MockStorage,
-} from "@fluidframework/test-runtime-utils";
-import { ConsensusRegisterCollectionFactory } from "../consensusRegisterCollectionFactory";
-import { IConsensusRegisterCollection } from "../interfaces";
+} from "@fluidframework/test-runtime-utils/internal";
+
+import type { ConsensusRegisterCollection } from "../consensusRegisterCollection.js";
+import { ConsensusRegisterCollectionFactory } from "../consensusRegisterCollectionFactory.js";
+import { IConsensusRegisterCollection } from "../interfaces.js";
 
 function createConnectedCollection(id: string, runtimeFactory: MockContainerRuntimeFactory) {
 	const dataStoreRuntime = new MockFluidDataStoreRuntime();
-	const containerRuntime = runtimeFactory.createContainerRuntime(dataStoreRuntime);
+	runtimeFactory.createContainerRuntime(dataStoreRuntime);
 	const services = {
-		deltaConnection: containerRuntime.createDeltaConnection(),
+		deltaConnection: dataStoreRuntime.createDeltaConnection(),
 		objectStorage: new MockStorage(),
 	};
 
 	const crcFactory = new ConsensusRegisterCollectionFactory();
-	const collection = crcFactory.create(dataStoreRuntime, id);
+	const collection = crcFactory.create(dataStoreRuntime, id) as ConsensusRegisterCollection<any>;
 	collection.connect(services);
 	return collection;
 }
 
 function createLocalCollection(id: string) {
 	const factory = new ConsensusRegisterCollectionFactory();
-	return factory.create(new MockFluidDataStoreRuntime(), id);
+	return factory.create(new MockFluidDataStoreRuntime(), id) as ConsensusRegisterCollection<any>;
 }
 
 function createCollectionForReconnection(
@@ -45,7 +49,7 @@ function createCollectionForReconnection(
 	const dataStoreRuntime = new MockFluidDataStoreRuntime();
 	const containerRuntime = runtimeFactory.createContainerRuntime(dataStoreRuntime);
 	const services = {
-		deltaConnection: containerRuntime.createDeltaConnection(),
+		deltaConnection: dataStoreRuntime.createDeltaConnection(),
 		objectStorage: new MockStorage(),
 	};
 
@@ -58,7 +62,7 @@ function createCollectionForReconnection(
 describe("ConsensusRegisterCollection", () => {
 	describe("Single connected client", () => {
 		const collectionId = "consensus-register-collection";
-		let crc: IConsensusRegisterCollection;
+		let crc: ConsensusRegisterCollection<any>;
 		let containerRuntimeFactory: MockContainerRuntimeFactory;
 
 		beforeEach(() => {
@@ -240,7 +244,7 @@ describe("ConsensusRegisterCollection", () => {
 			beforeEach(() => {
 				containerRuntimeFactory = new MockContainerRuntimeFactoryForReconnection();
 				const response1 = createCollectionForReconnection(
-					"colllection1",
+					"collection1",
 					containerRuntimeFactory,
 				);
 				testCollection1 = response1.collection;
@@ -310,7 +314,7 @@ describe("ConsensusRegisterCollection", () => {
 				const winner = await writeP;
 				assert.equal(winner, true, "Write was not successful");
 
-				// Verify that the remote register collection recieved the write.
+				// Verify that the remote register collection received the write.
 				assert.equal(receivedKey, testKey, "The remote client did not receive the key");
 				assert.equal(
 					receivedValue,
@@ -333,7 +337,7 @@ describe("ConsensusRegisterCollection", () => {
 	});
 
 	describe("Garbage Collection", () => {
-		class GCRegistedCollectionProvider implements IGCTestProvider {
+		class GCRegisteredCollectionProvider implements IGCTestProvider {
 			private subCollectionCount = 0;
 			private _expectedRoutes: string[] = [];
 			private readonly collection1: IConsensusRegisterCollection;
@@ -376,7 +380,9 @@ describe("ConsensusRegisterCollection", () => {
 
 			public async deleteOutboundRoutes() {
 				const subCollectionId = `subCollection-${this.subCollectionCount}`;
-				const deletedHandle = this.collection1.read(subCollectionId) as IFluidHandle;
+				const deletedHandle = this.collection1.read(
+					subCollectionId,
+				) as IFluidHandleInternal;
 				assert(deletedHandle, "Route must be added before deleting");
 
 				// Delete the last handle that was added.
@@ -406,6 +412,6 @@ describe("ConsensusRegisterCollection", () => {
 			}
 		}
 
-		runGCTests(GCRegistedCollectionProvider);
+		runGCTests(GCRegisteredCollectionProvider);
 	});
 });

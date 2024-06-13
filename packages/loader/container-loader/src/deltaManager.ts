@@ -3,59 +3,62 @@
  * Licensed under the MIT License.
  */
 
-import { default as AbortController } from "abort-controller";
-import { v4 as uuid } from "uuid";
+import { ICriticalContainerError } from "@fluidframework/container-definitions";
 import {
-	IEventProvider,
-	ITelemetryProperties,
-	ITelemetryErrorEvent,
-} from "@fluidframework/common-definitions";
-import {
-	IDeltaHandlerStrategy,
 	IDeltaManager,
 	IDeltaManagerEvents,
 	IDeltaQueue,
-	ICriticalContainerError,
-	IThrottlingWarning,
-	IConnectionDetailsInternal,
-} from "@fluidframework/container-definitions";
-import { assert, TypedEventEmitter } from "@fluidframework/common-utils";
+} from "@fluidframework/container-definitions/internal";
 import {
-	normalizeError,
-	logIfFalse,
-	safeRaiseEvent,
-	isFluidError,
-	ITelemetryLoggerExt,
-} from "@fluidframework/telemetry-utils";
+	IEventProvider,
+	type ITelemetryBaseEvent,
+	ITelemetryBaseProperties,
+} from "@fluidframework/core-interfaces";
+import { IThrottlingWarning } from "@fluidframework/core-interfaces/internal";
+import { assert } from "@fluidframework/core-utils/internal";
+import { ConnectionMode } from "@fluidframework/driver-definitions";
 import {
 	IDocumentDeltaStorageService,
 	IDocumentService,
-	DriverErrorType,
-	IAnyDriverError,
-} from "@fluidframework/driver-definitions";
-import {
+	DriverErrorTypes,
 	IDocumentMessage,
+	MessageType,
 	ISequencedDocumentMessage,
 	ISignalMessage,
-	MessageType,
-	ConnectionMode,
-} from "@fluidframework/protocol-definitions";
-import { NonRetryableError, isRuntimeMessage, MessageType2 } from "@fluidframework/driver-utils";
+} from "@fluidframework/driver-definitions/internal";
 import {
-	ThrottlingWarning,
+	MessageType2,
+	NonRetryableError,
+	isRuntimeMessage,
+} from "@fluidframework/driver-utils/internal";
+import {
+	type ITelemetryErrorEventExt,
+	type ITelemetryGenericEventExt,
+	ITelemetryLoggerExt,
 	DataCorruptionError,
-	extractSafePropertiesFromMessage,
 	DataProcessingError,
 	UsageError,
-} from "@fluidframework/container-utils";
-import { IConnectionManagerFactoryArgs, IConnectionManager } from "./contracts";
-import { DeltaQueue } from "./deltaQueue";
-import { OnlyValidTermValue } from "./protocol";
+	extractSafePropertiesFromMessage,
+	isFluidError,
+	normalizeError,
+	safeRaiseEvent,
+	EventEmitterWithErrorHandling,
+} from "@fluidframework/telemetry-utils/internal";
+import { v4 as uuid } from "uuid";
+
+import {
+	IConnectionDetailsInternal,
+	IConnectionManager,
+	IConnectionManagerFactoryArgs,
+	IConnectionStateChangeReason,
+} from "./contracts.js";
+import { DeltaQueue } from "./deltaQueue.js";
+import { ThrottlingWarning } from "./error.js";
 
 export interface IConnectionArgs {
 	mode?: ConnectionMode;
 	fetchOpsFromStorage?: boolean;
-	reason: string;
+	reason: IConnectionStateChangeReason;
 }
 
 /**
@@ -66,8 +69,33 @@ export interface IDeltaManagerInternalEvents extends IDeltaManagerEvents {
 	(event: "throttled", listener: (error: IThrottlingWarning) => void);
 	(event: "closed" | "disposed", listener: (error?: ICriticalContainerError) => void);
 	(event: "connect", listener: (details: IConnectionDetailsInternal, opsBehind?: number) => void);
-	(event: "establishingConnection", listener: (reason: string) => void);
-	(event: "cancelEstablishingConnection", listener: (reason: string) => void);
+	(event: "establishingConnection", listener: (reason: IConnectionStateChangeReason) => void);
+	(
+		event: "cancelEstablishingConnection",
+		listener: (reason: IConnectionStateChangeReason) => void,
+	);
+}
+
+/**
+ * Batching makes assumptions about what might be on the metadata. This interface codifies those assumptions, but does not validate them.
+ */
+interface IBatchMetadata {
+	batch?: boolean;
+}
+
+/**
+ * Interface used to define a strategy for handling incoming delta messages
+ */
+export interface IDeltaHandlerStrategy {
+	/**
+	 * Processes the message.
+	 */
+	process: (message: ISequencedDocumentMessage) => void;
+
+	/**
+	 * Processes the signal.
+	 */
+	processSignal: (message: ISignalMessage) => void;
 }
 
 /**
@@ -90,11 +118,34 @@ function isClientMessage(message: ISequencedDocumentMessage | IDocumentMessage):
 }
 
 /**
+ * Like assert, but logs only if the condition is false, rather than throwing
+ * @param condition - The condition to attest too
+ * @param logger - The logger to log with
+ * @param event - The string or event to log
+ * @returns The outcome of the condition
+ */
+function logIfFalse(
+	condition: boolean,
+	logger: ITelemetryLoggerExt,
+	event: string | ITelemetryGenericEventExt,
+): condition is true {
+	if (condition) {
+		return true;
+	}
+	const newEvent: ITelemetryBaseEvent =
+		typeof event === "string"
+			? { eventName: event, category: "error" }
+			: { category: "error", ...event };
+	logger.send(newEvent);
+	return false;
+}
+
+/**
  * Manages the flow of both inbound and outbound messages. This class ensures that shared objects receive delta
  * messages in order regardless of possible network conditions or timings causing out of order delivery.
  */
 export class DeltaManager<TConnectionManager extends IConnectionManager>
-	extends TypedEventEmitter<IDeltaManagerInternalEvents>
+	extends EventEmitterWithErrorHandling<IDeltaManagerInternalEvents>
 	implements
 		IDeltaManager<ISequencedDocumentMessage, IDocumentMessage>,
 		IEventProvider<IDeltaManagerInternalEvents>
@@ -276,8 +327,8 @@ export class DeltaManager<TConnectionManager extends IConnectionManager>
 		return message.clientSequenceNumber;
 	}
 
-	public submitSignal(content: any) {
-		return this.connectionManager.submitSignal(content);
+	public submitSignal(content: string, targetClientId?: string) {
+		return this.connectionManager.submitSignal(content, targetClientId);
 	}
 
 	public flush() {
@@ -293,13 +344,16 @@ export class DeltaManager<TConnectionManager extends IConnectionManager>
 
 		if (batch.length === 1) {
 			assert(
-				batch[0].metadata?.batch === undefined,
+				(batch[0].metadata as IBatchMetadata)?.batch === undefined,
 				0x3c9 /* no batch markup on single message */,
 			);
 		} else {
-			assert(batch[0].metadata?.batch === true, 0x3ca /* no start batch markup */);
 			assert(
-				batch[batch.length - 1].metadata?.batch === false,
+				(batch[0].metadata as IBatchMetadata)?.batch === true,
+				0x3ca /* no start batch markup */,
+			);
+			assert(
+				(batch[batch.length - 1].metadata as IBatchMetadata)?.batch === false,
 				0x3cb /* no end batch markup */,
 			);
 		}
@@ -309,10 +363,11 @@ export class DeltaManager<TConnectionManager extends IConnectionManager>
 		assert(this.messageBuffer.length === 0, 0x3cc /* reentrancy */);
 	}
 
-	public get connectionProps(): ITelemetryProperties {
+	public get connectionProps(): ITelemetryBaseProperties {
 		return {
 			sequenceNumber: this.lastSequenceNumber,
 			opsSize: this.opsSize > 0 ? this.opsSize : undefined,
+			deltaManagerState: this._disposed ? "disposed" : this._closed ? "closed" : "open",
 			...this.connectionManager.connectionProps,
 		};
 	}
@@ -323,11 +378,11 @@ export class DeltaManager<TConnectionManager extends IConnectionManager>
 	 * we stop processing ops that results in no processing join op and thus moving to connected state)
 	 * @param event - Event to log.
 	 */
-	public logConnectionIssue(event: ITelemetryErrorEvent) {
+	public logConnectionIssue(event: ITelemetryErrorEventExt) {
 		assert(this.connectionManager.connected, 0x238 /* "called only in connected state" */);
 
 		const pendingSorted = this.pending.sort((a, b) => a.sequenceNumber - b.sequenceNumber);
-		this.logger.sendErrorEvent({
+		this.logger.sendTelemetryEvent({
 			...event,
 			// This directly tells us if fetching ops is in flight, and thus likely the reason of
 			// stalled op processing
@@ -352,7 +407,16 @@ export class DeltaManager<TConnectionManager extends IConnectionManager>
 		private readonly _active: () => boolean,
 		createConnectionManager: (props: IConnectionManagerFactoryArgs) => TConnectionManager,
 	) {
-		super();
+		super((name, error) => {
+			this.logger.sendErrorEvent(
+				{
+					eventName: "DeltaManagerEventHandlerException",
+					name: typeof name === "string" ? name : undefined,
+				},
+				error,
+			);
+			this.close(normalizeError(error));
+		});
 		const props: IConnectionManagerFactoryArgs = {
 			incomingOpHandler: (messages: ISequencedDocumentMessage[], reason: string) => {
 				try {
@@ -362,19 +426,29 @@ export class DeltaManager<TConnectionManager extends IConnectionManager>
 					this.close(normalizeError(error));
 				}
 			},
-			signalHandler: (message: ISignalMessage) => this._inboundSignal.push(message),
+			signalHandler: (signals: ISignalMessage[]) => {
+				for (const signal of signals) {
+					this._inboundSignal.push(signal);
+				}
+			},
 			reconnectionDelayHandler: (delayMs: number, error: unknown) =>
 				this.emitDelayInfo(this.deltaStreamDelayId, delayMs, error),
 			closeHandler: (error: any) => this.close(error),
-			disconnectHandler: (reason: string, error?: IAnyDriverError) =>
-				this.disconnectHandler(reason, error),
+			disconnectHandler: (reason: IConnectionStateChangeReason) =>
+				this.disconnectHandler(reason),
 			connectHandler: (connection: IConnectionDetailsInternal) =>
 				this.connectHandler(connection),
 			pongHandler: (latency: number) => this.emit("pong", latency),
-			readonlyChangeHandler: (readonly?: boolean) =>
-				safeRaiseEvent(this, this.logger, "readonly", readonly),
-			establishConnectionHandler: (reason: string) => this.establishingConnection(reason),
-			cancelConnectionHandler: (reason: string) => this.cancelEstablishingConnection(reason),
+			readonlyChangeHandler: (
+				readonly?: boolean,
+				readonlyConnectionReason?: IConnectionStateChangeReason,
+			) => {
+				safeRaiseEvent(this, this.logger, "readonly", readonly, readonlyConnectionReason);
+			},
+			establishConnectionHandler: (reason: IConnectionStateChangeReason) =>
+				this.establishingConnection(reason),
+			cancelConnectionHandler: (reason: IConnectionStateChangeReason) =>
+				this.cancelEstablishingConnection(reason),
 		};
 
 		this.connectionManager = createConnectionManager(props);
@@ -414,11 +488,11 @@ export class DeltaManager<TConnectionManager extends IConnectionManager>
 		// - inbound & inboundSignal are resumed in attachOpHandler() when we have handler setup
 	}
 
-	private cancelEstablishingConnection(reason: string) {
+	private cancelEstablishingConnection(reason: IConnectionStateChangeReason) {
 		this.emit("cancelEstablishingConnection", reason);
 	}
 
-	private establishingConnection(reason: string) {
+	private establishingConnection(reason: IConnectionStateChangeReason) {
 		this.emit("establishingConnection", reason);
 	}
 
@@ -473,18 +547,22 @@ export class DeltaManager<TConnectionManager extends IConnectionManager>
 
 	/**
 	 * Sets the sequence number from which inbound messages should be returned
+	 * @param snapshotSequenceNumber - The sequence number of the snapshot at which the document loaded from.
+	 * @param lastProcessedSequenceNumber - The last processed sequence number, for offline, it should be greater than the sequence number.
+	 * Setting lastProcessedSequenceNumber allows the DeltaManager to skip downloading and processing ops that have already been processed.
 	 */
 	public async attachOpHandler(
 		minSequenceNumber: number,
-		sequenceNumber: number,
+		snapshotSequenceNumber: number,
 		handler: IDeltaHandlerStrategy,
 		prefetchType: "cached" | "all" | "none" = "none",
+		lastProcessedSequenceNumber: number = snapshotSequenceNumber,
 	) {
-		this.initSequenceNumber = sequenceNumber;
-		this.lastProcessedSequenceNumber = sequenceNumber;
+		this.initSequenceNumber = snapshotSequenceNumber;
+		this.lastProcessedSequenceNumber = lastProcessedSequenceNumber;
 		this.minSequenceNumber = minSequenceNumber;
-		this.lastQueuedSequenceNumber = sequenceNumber;
-		this.lastObservedSeqNumber = sequenceNumber;
+		this.lastQueuedSequenceNumber = lastProcessedSequenceNumber;
+		this.lastObservedSeqNumber = lastProcessedSequenceNumber;
 
 		// We will use same check in other places to make sure all the seq number above are set properly.
 		assert(
@@ -552,7 +630,7 @@ export class DeltaManager<TConnectionManager extends IConnectionManager>
 		// on the wire, we might be always behind.
 		// See comment at the end of "connect" handler
 		if (fetchOpsFromStorage) {
-			this.fetchMissingDeltas(args.reason);
+			this.fetchMissingDeltas(args.reason.text);
 		}
 
 		this.connectionManager.connect(args.reason, args.mode);
@@ -617,7 +695,7 @@ export class DeltaManager<TConnectionManager extends IConnectionManager>
 			// This is useless for known ranges (to is defined) as it means request is over either way.
 			// And it will cancel unbound request too early, not allowing us to learn where the end of the file is.
 			if (!opsFromFetch && cancelFetch(op)) {
-				controller.abort();
+				controller.abort("DeltaManager getDeltas fetch cancelled");
 				this._inbound.off("push", opListener);
 			}
 		};
@@ -625,7 +703,8 @@ export class DeltaManager<TConnectionManager extends IConnectionManager>
 		try {
 			this._inbound.on("push", opListener);
 			assert(this.closeAbortController.signal.onabort === null, 0x1e8 /* "reentrancy" */);
-			this.closeAbortController.signal.onabort = () => controller.abort();
+			this.closeAbortController.signal.onabort = () =>
+				controller.abort(this.closeAbortController.signal.reason);
 
 			const stream = this.deltaStorage.fetchMessages(
 				from, // inclusive
@@ -649,6 +728,13 @@ export class DeltaManager<TConnectionManager extends IConnectionManager>
 				}
 			}
 		} finally {
+			if (controller.signal.aborted) {
+				this.logger.sendTelemetryEvent({
+					eventName: "DeltaManager_GetDeltasAborted",
+					fetchReason,
+					reason: controller.signal.reason,
+				});
+			}
 			this.closeAbortController.signal.onabort = null;
 			this._inbound.off("push", opListener);
 			assert(!opsFromFetch, 0x289 /* "logic error" */);
@@ -703,7 +789,7 @@ export class DeltaManager<TConnectionManager extends IConnectionManager>
 	}
 
 	private clearQueues() {
-		this.closeAbortController.abort();
+		this.closeAbortController.abort("DeltaManager is closed");
 
 		this._inbound.clear();
 		this._inboundSignal.clear();
@@ -724,9 +810,9 @@ export class DeltaManager<TConnectionManager extends IConnectionManager>
 		}
 	}
 
-	private disconnectHandler(reason: string, error?: IAnyDriverError) {
+	private disconnectHandler(reason: IConnectionStateChangeReason) {
 		this.messageBuffer.length = 0;
-		this.emit("disconnect", reason, error);
+		this.emit("disconnect", reason.text, reason.error);
 	}
 
 	/**
@@ -886,7 +972,7 @@ export class DeltaManager<TConnectionManager extends IConnectionManager>
 							// pre-0.58 error message: twoMessagesWithSameSeqNumAndDifferentPayload
 							"Found two messages with the same sequenceNumber but different payloads. Likely to be a " +
 								"service issue",
-							DriverErrorType.fileOverwrittenInStorage,
+							DriverErrorTypes.fileOverwrittenInStorage,
 							{
 								clientId: this.connectionManager.clientId,
 								sequenceNumber: message.sequenceNumber,
@@ -1001,11 +1087,6 @@ export class DeltaManager<TConnectionManager extends IConnectionManager>
 			this.lastProcessedSequenceNumber <= this.lastObservedSeqNumber,
 			0x267 /* "lastObservedSeqNumber should be updated first" */,
 		);
-
-		// Back-compat for older server with no term
-		if (message.term === undefined) {
-			message.term = OnlyValidTermValue;
-		}
 
 		if (this.handler === undefined) {
 			throw new Error("Attempted to process an inbound message without a handler attached");

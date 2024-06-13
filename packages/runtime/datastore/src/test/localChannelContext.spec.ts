@@ -4,21 +4,25 @@
  */
 
 import { strict as assert } from "assert";
-import { IFluidDataStoreContext } from "@fluidframework/runtime-definitions";
+
+import { IChannel } from "@fluidframework/datastore-definitions/internal";
+import { ISnapshotTree } from "@fluidframework/driver-definitions/internal";
+import { IFluidDataStoreContext } from "@fluidframework/runtime-definitions/internal";
 import {
 	MockFluidDataStoreContext,
 	validateAssertionError,
-} from "@fluidframework/test-runtime-utils";
-import { ISnapshotTree } from "@fluidframework/protocol-definitions";
-import { IChannel } from "@fluidframework/datastore-definitions";
-import { FluidDataStoreRuntime, ISharedObjectRegistry } from "../dataStoreRuntime";
-import { LocalChannelContext, RehydratedLocalChannelContext } from "../localChannelContext";
+} from "@fluidframework/test-runtime-utils/internal";
+
+import { FluidDataStoreRuntime, ISharedObjectRegistry } from "../dataStoreRuntime.js";
+import { LocalChannelContext, RehydratedLocalChannelContext } from "../localChannelContext.js";
 
 describe("LocalChannelContext Tests", () => {
 	let dataStoreContext: MockFluidDataStoreContext;
 	let sharedObjectRegistry: ISharedObjectRegistry;
 	const loadRuntime = (context: IFluidDataStoreContext, registry: ISharedObjectRegistry) =>
-		new FluidDataStoreRuntime(context, registry, /* existing */ false);
+		new FluidDataStoreRuntime(context, registry, /* existing */ false, async () => ({
+			myProp: "myValue",
+		}));
 
 	beforeEach(() => {
 		dataStoreContext = new MockFluidDataStoreContext();
@@ -27,7 +31,7 @@ describe("LocalChannelContext Tests", () => {
 				return {
 					type,
 					attributes: { type, snapshotFormatVersion: "0" },
-					create: () => ({} as any as IChannel),
+					create: () => ({}) as any as IChannel,
 					load: async () => Promise.resolve({} as any as IChannel),
 				};
 			},
@@ -39,20 +43,17 @@ describe("LocalChannelContext Tests", () => {
 		const dataStoreRuntime = loadRuntime(dataStoreContext, sharedObjectRegistry);
 		const codeBlock = () =>
 			new LocalChannelContext(
-				invalidId,
-				sharedObjectRegistry,
-				"SomeType",
+				{ id: invalidId } as any as IChannel,
 				dataStoreRuntime,
 				dataStoreContext,
 				dataStoreContext.storage,
-				dataStoreContext.logger,
+				dataStoreContext.baseLogger,
 				() => {},
 				(s: string) => {},
-				(s) => {},
 			);
 		assert.throws(
 			codeBlock,
-			(e) => validateAssertionError(e, "Channel context ID cannot contain slashes"),
+			(e: Error) => validateAssertionError(e, "Channel context ID cannot contain slashes"),
 			"Expected exception was not thrown",
 		);
 	});
@@ -67,15 +68,14 @@ describe("LocalChannelContext Tests", () => {
 				dataStoreRuntime,
 				dataStoreContext,
 				dataStoreContext.storage,
-				dataStoreContext.logger,
+				dataStoreContext.baseLogger,
 				(content, localOpMetadata) => {},
 				(s: string) => {},
-				(s, o) => {},
 				null as unknown as ISnapshotTree,
 			);
 		assert.throws(
 			codeBlock,
-			(e) => validateAssertionError(e, "Channel context ID cannot contain slashes"),
+			(e: Error) => validateAssertionError(e, "Channel context ID cannot contain slashes"),
 			"Expected exception was not thrown",
 		);
 	});

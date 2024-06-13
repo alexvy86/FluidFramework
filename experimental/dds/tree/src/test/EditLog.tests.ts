@@ -4,13 +4,15 @@
  */
 
 import { strict as assert } from 'assert';
+
+import { validateAssertionError } from '@fluidframework/test-runtime-utils/internal';
 import { expect } from 'chai';
-import { validateAssertionError } from '@fluidframework/test-runtime-utils';
-import { EditLog, separateEditAndId } from '../EditLog';
-import { EditId } from '../Identifiers';
-import { assertNotUndefined } from '../Common';
-import { Edit } from '../persisted-types';
-import { newEdit } from '../EditUtilities';
+
+import { assertNotUndefined } from '../Common.js';
+import { EditLog, separateEditAndId } from '../EditLog.js';
+import { newEdit } from '../EditUtilities.js';
+import { EditId } from '../Identifiers.js';
+import { Edit } from '../persisted-types/index.js';
 
 type DummyChange = never;
 
@@ -157,7 +159,7 @@ describe('EditLog', () => {
 					sequenceNumber: 44,
 					referenceSequenceNumber: 43,
 				}),
-			(e) => validateAssertionError(e, /min number/)
+			(e: Error) => validateAssertionError(e, /min number/)
 		);
 	});
 
@@ -168,7 +170,7 @@ describe('EditLog', () => {
 		log.addLocalEdit(edit1);
 		assert.throws(
 			() => log.addSequencedEdit(edit1, { sequenceNumber: 1, referenceSequenceNumber: 0 }),
-			(e) => validateAssertionError(e, /ordering/)
+			(e: Error) => validateAssertionError(e, /ordering/)
 		);
 	});
 
@@ -195,7 +197,7 @@ describe('EditLog', () => {
 		log.addSequencedEdit(edit0, { sequenceNumber: 1, referenceSequenceNumber: 0 });
 		assert.throws(
 			() => log.addSequencedEdit(edit0, { sequenceNumber: 1, referenceSequenceNumber: 0 }),
-			(e) => validateAssertionError(e, /Duplicate/)
+			(e: Error) => validateAssertionError(e, /Duplicate/)
 		);
 	});
 

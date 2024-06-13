@@ -2,31 +2,33 @@
  * Copyright (c) Microsoft Corporation and contributors. All rights reserved.
  * Licensed under the MIT License.
  */
+
 /**
  * @fileoverview Helper functions and classes to work with array ChangeSets
  */
+import { constants, ConsoleUtils } from "@fluid-experimental/property-common";
 import { copy as cloneDeep } from "fastest-json-copy";
-import isNumber from "lodash/isNumber";
-import isString from "lodash/isString";
-import isEqual from "lodash/isEqual";
+import isEqual from "lodash/isEqual.js";
+import isNumber from "lodash/isNumber.js";
+import isString from "lodash/isString.js";
 
 // @ts-ignore
-import { ConsoleUtils, constants } from "@fluid-experimental/property-common";
-import { ApplyChangeSetOptions, ConflictInfo, SerializedChangeSet } from "../changeset";
-import { TypeIdHelper } from "../helpers/typeidHelper";
+import { ApplyChangeSetOptions, ConflictInfo, SerializedChangeSet } from "../changeset.js";
+import { TypeIdHelper } from "../helpers/typeidHelper.js";
+
 import {
 	ArrayChangeSetIterator,
-	arrayInsertList,
-	arrayModifyList,
-	arrayRemoveList,
 	GenericOperation,
 	InsertOperation,
 	ModifyOperation,
-	NoneNOPOperation,
 	NOPOperation,
+	NoneNOPOperation,
 	RemoveOperation,
-} from "./arrayChangesetIterator";
-import { ConflictType } from "./changesetConflictTypes";
+	arrayInsertList,
+	arrayModifyList,
+	arrayRemoveList,
+} from "./arrayChangesetIterator.js";
+import { ConflictType } from "./changesetConflictTypes.js";
 
 const { MSG } = constants;
 const { isPrimitiveType } = TypeIdHelper;
@@ -390,7 +392,7 @@ const _copyOperation = function (
  * overlapping range or
  * (partial) A or B
  */
-// eslint-disable-next-line complexity
+
 const splitOverlapping = function (
 	io_rangeA: OperationRangeInsert | OperationRangeRemove,
 	io_rangeB: OperationRangeInsert | OperationRangeRemove,
@@ -1379,7 +1381,12 @@ const handleRebaseCombinations = function (
 						opB.operation[2] = opA.operation[1].slice();
 					}
 				}
-				if (opB.type === ArrayChangeSetIterator.types.REMOVE && opB.operation[1] > 0) {
+				// WARNING: 'operation[1]' is 'string | number | genericArray'.  The cast to 'number'
+				//          preserves the JavaScript coercion behavior, which was permitted prior to TS5.
+				if (
+					opB.type === ArrayChangeSetIterator.types.REMOVE &&
+					(opB.operation[1] as number) > 0
+				) {
 					delete opA._absoluteBegin;
 					delete opB.offset;
 					let conflict = {

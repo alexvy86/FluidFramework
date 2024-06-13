@@ -3,8 +3,10 @@
  * Licensed under the MIT License.
  */
 
-import { EventEmitter } from "events";
+import events_pkg from "events_pkg";
+const { EventEmitter } = events_pkg;
 import * as util from "util";
+import { Lumberjack } from "@fluidframework/server-services-telemetry";
 import {
 	IConsumer,
 	IPartition,
@@ -20,6 +22,7 @@ const defaultReconnectDelay = 5000;
 
 /**
  * Kafka consumer using the kafka-node library
+ * @internal
  */
 export class KafkaNodeConsumer implements IConsumer {
 	private client: kafka.KafkaClient;
@@ -38,8 +41,9 @@ export class KafkaNodeConsumer implements IConsumer {
 		private readonly reconnectDelay: number = defaultReconnectDelay,
 	) {
 		clientOptions.clientId = clientId;
-		// eslint-disable-next-line @typescript-eslint/no-floating-promises
-		this.connect();
+		this.connect().catch((err) => {
+			Lumberjack.error("Error connecting to kafka", undefined, err);
+		});
 		if (zookeeperEndpoint) {
 			this.zookeeper = new ZookeeperClient(zookeeperEndpoint);
 		}
@@ -130,8 +134,9 @@ export class KafkaNodeConsumer implements IConsumer {
 			this.events.emit("error", error);
 
 			setTimeout(() => {
-				// eslint-disable-next-line @typescript-eslint/no-floating-promises
-				this.connect();
+				this.connect().catch((err) => {
+					Lumberjack.error("Error retrying connecting to kafka", undefined, err);
+				});
 			}, this.reconnectDelay);
 
 			return;

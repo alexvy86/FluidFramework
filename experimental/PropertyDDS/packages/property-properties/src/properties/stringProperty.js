@@ -2,6 +2,7 @@
  * Copyright (c) Microsoft Corporation and contributors. All rights reserved.
  * Licensed under the MIT License.
  */
+
 /**
  * @fileoverview Definition of the StringProperty class
  */
@@ -10,6 +11,7 @@ const { ChangeSet } = require("@fluid-experimental/property-changeset");
 const { MSG } = require("@fluid-experimental/property-common").constants;
 const { ConsoleUtils } = require("@fluid-experimental/property-common");
 const _ = require("lodash");
+
 const { ArrayProperty } = require("./arrayProperty");
 const { BaseProperty } = require("./baseProperty");
 const { ValueArrayProperty } = require("./valueArrayProperty");
@@ -55,6 +57,7 @@ var STRING_PROPERTY_SET_PROPERTY_VALUE_STATE_FLAGS = [
 
 /**
  * A primitive property for a string value.
+ * @internal
  */
 export class StringProperty extends ValueArrayProperty {
 	/**
@@ -348,7 +351,7 @@ export class StringProperty extends ValueArrayProperty {
 	/**
 	 * See {@link StringProperty.setValues}
 	 * @param {string} in_values - The new values
-	 * @param {Bool} in_initial - Whether we are setting default/initial values or if the function is called directly
+	 * @param {boolean} in_initial - Whether we are setting default/initial values or if the function is called directly
 	 * with the values to set.
 	 */
 	_setValues(in_values, in_initial) {
@@ -364,6 +367,7 @@ export class StringProperty extends ValueArrayProperty {
 	}
 
 	/**
+	 * @return { never }
 	 * @throws always - cannot call .getValues on a string. Use .getValue() instead
 	 */
 	getValues() {
@@ -507,7 +511,7 @@ export class StringProperty extends ValueArrayProperty {
 	/**
 	 * Return a JSON representation of the property.
 	 * @returns {object} A JSON representation of the property.
-	 * @private
+	 * @protected
 	 */
 	_toJson() {
 		return {
@@ -563,7 +567,7 @@ export class StringProperty extends ValueArrayProperty {
 	 * For StringProperty, insert and insertRange work the same, except that .insert
 	 * checks that in_value is a string and .insertRange will accept an array of strings.
 	 * @param {number} in_position - Target index
-	 * @param {string | array<string>} in_value - value to be inserted
+	 * @param {string | Array<string>} in_value - value to be inserted
 	 * @throws If in_position is smaller than zero, larger than the length of the string or not a number
 	 */
 	insertRange(in_position, in_value) {

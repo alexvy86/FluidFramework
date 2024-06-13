@@ -40,6 +40,7 @@ export {
 	IDocument,
 	ICheckpoint,
 	IDocumentDetails,
+	IDocumentStaticProperties,
 	IDocumentStorage,
 	IScribe,
 } from "./document";
@@ -129,6 +130,8 @@ export {
 	ITaskMessageSender,
 } from "./taskMessages";
 export {
+	EncryptionKeyVersion,
+	IEncryptedTenantKeys,
 	ITenant,
 	ITenantConfig,
 	ITenantConfigManager,
@@ -148,10 +151,14 @@ export {
 	ThrottlingError,
 } from "./throttler";
 export { TokenGenerator } from "./token";
-export { clientConnectivityStorageId, IUsageData, signalUsageStorageId } from "./usageData";
+export {
+	clientConnectivityStorageId,
+	IUsageData,
+	signalUsageStorageId,
+	httpUsageStorageId,
+} from "./usageData";
 export { IZookeeperClient, ZookeeperClientConstructor } from "./zookeeper";
 export {
-	IWebSocketTracker,
 	ITokenRevocationManager,
 	IRevokedTokenChecker,
 	ITokenRevocationResponse,
@@ -160,3 +167,6 @@ export {
 	TokenRevokedError,
 	createCompositeTokenId,
 } from "./tokenRevocationManager";
+export { IServiceMessageResourceManager } from "./serviceMessage";
+export { IClusterDrainingChecker } from "./clusterDraining";
+export { IWebSocketTracker } from "./webSocketTracker";

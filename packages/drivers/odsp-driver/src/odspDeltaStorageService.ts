@@ -3,22 +3,24 @@
  * Licensed under the MIT License.
  */
 
-import { default as AbortController } from "abort-controller";
-import { v4 as uuid } from "uuid";
-import { ITelemetryProperties } from "@fluidframework/common-definitions";
-import { validateMessages } from "@fluidframework/driver-base";
-import { ITelemetryLoggerExt, PerformanceEvent } from "@fluidframework/telemetry-utils";
-import { assert } from "@fluidframework/common-utils";
-import { ISequencedDocumentMessage } from "@fluidframework/protocol-definitions";
-import { InstrumentedStorageTokenFetcher } from "@fluidframework/odsp-driver-definitions";
+import { ITelemetryBaseProperties } from "@fluidframework/core-interfaces";
+import { assert } from "@fluidframework/core-utils/internal";
+import { validateMessages } from "@fluidframework/driver-base/internal";
 import {
 	IDeltasFetchResult,
 	IDocumentDeltaStorageService,
-} from "@fluidframework/driver-definitions";
-import { requestOps, streamObserver } from "@fluidframework/driver-utils";
-import { IDeltaStorageGetResponse, ISequencedDeltaOpMessage } from "./contracts";
-import { EpochTracker } from "./epochTracker";
-import { getWithRetryForTokenRefresh } from "./odspUtils";
+	type IStream,
+	ISequencedDocumentMessage,
+} from "@fluidframework/driver-definitions/internal";
+import { requestOps, streamObserver } from "@fluidframework/driver-utils/internal";
+import { InstrumentedStorageTokenFetcher } from "@fluidframework/odsp-driver-definitions/internal";
+import { ITelemetryLoggerExt, PerformanceEvent } from "@fluidframework/telemetry-utils/internal";
+import { v4 as uuid } from "uuid";
+
+import { IDeltaStorageGetResponse, ISequencedDeltaOpMessage } from "./contracts.js";
+import { EpochTracker } from "./epochTracker.js";
+import { OdspDocumentStorageService } from "./odspDocumentStorageManager.js";
+import { getWithRetryForTokenRefresh } from "./odspUtils.js";
 
 /**
  * Provides access to the underlying delta storage on the server for sharepoint driver.
@@ -42,7 +44,7 @@ export class OdspDeltaStorageService {
 	public async get(
 		from: number,
 		to: number,
-		telemetryProps: ITelemetryProperties,
+		telemetryProps: ITelemetryBaseProperties,
 		scenarioName?: string,
 	): Promise<IDeltasFetchResult> {
 		return getWithRetryForTokenRefresh(async (options) => {
@@ -69,7 +71,7 @@ export class OdspDeltaStorageService {
 
 					postBody += `_post: 1\r\n`;
 					postBody += `\r\n--${formBoundary}--`;
-					const headers: { [index: string]: any } = {
+					const headers: { [index: string]: string } = {
 						"Content-Type": `multipart/form-data;boundary=${formBoundary}`,
 					};
 
@@ -105,7 +107,6 @@ export class OdspDeltaStorageService {
 							: (deltaStorageResponse.value as ISequencedDocumentMessage[]);
 
 					event.end({
-						headers: Object.keys(headers).length !== 0 ? true : undefined,
 						length: messages.length,
 						...response.propsToLog,
 					});
@@ -118,7 +119,7 @@ export class OdspDeltaStorageService {
 		});
 	}
 
-	public buildUrl(from: number, to: number) {
+	public buildUrl(from: number, to: number): string {
 		const filter = encodeURIComponent(
 			`sequenceNumber ge ${from} and sequenceNumber le ${to - 1}`,
 		);
@@ -128,7 +129,7 @@ export class OdspDeltaStorageService {
 }
 
 export class OdspDeltaStorageWithCache implements IDocumentDeltaStorageService {
-	private firstCacheMiss = Number.MAX_SAFE_INTEGER;
+	private useCacheForOps = true;
 
 	public constructor(
 		private snapshotOps: ISequencedDocumentMessage[] | undefined,
@@ -138,7 +139,7 @@ export class OdspDeltaStorageWithCache implements IDocumentDeltaStorageService {
 		private readonly getFromStorage: (
 			from: number,
 			to: number,
-			telemetryProps: ITelemetryProperties,
+			telemetryProps: ITelemetryBaseProperties,
 			fetchReason?: string,
 		) => Promise<IDeltasFetchResult>,
 		private readonly getCached: (
@@ -147,6 +148,7 @@ export class OdspDeltaStorageWithCache implements IDocumentDeltaStorageService {
 		) => Promise<ISequencedDocumentMessage[]>,
 		private readonly requestFromSocket: (from: number, to: number) => void,
 		private readonly opsReceived: (ops: ISequencedDocumentMessage[]) => void,
+		private readonly storageManagerGetter: () => OdspDocumentStorageService | undefined,
 	) {}
 
 	public fetchMessages(
@@ -155,13 +157,17 @@ export class OdspDeltaStorageWithCache implements IDocumentDeltaStorageService {
 		abortSignal?: AbortSignal,
 		cachedOnly?: boolean,
 		fetchReason?: string,
-	) {
+	): IStream<ISequencedDocumentMessage[]> {
 		// We do not control what's in the cache. Current API assumes that fetchMessages() keeps banging on
 		// storage / cache until it gets ops it needs. This would result in deadlock if fixed range is asked from
 		// cache and it's not there.
 		// Better implementation would be to return only what we have in cache, but that also breaks API
 		assert(!cachedOnly || toTotal === undefined, 0x1e3);
 
+		// Don't use cache for ops is snapshot is fetched from network or if it was not fetched at all.
+		this.useCacheForOps =
+			this.useCacheForOps &&
+			this.storageManagerGetter()?.isFirstSnapshotFromNetwork === false;
 		let opsFromSnapshot = 0;
 		let opsFromCache = 0;
 		let opsFromStorage = 0;
@@ -169,9 +175,9 @@ export class OdspDeltaStorageWithCache implements IDocumentDeltaStorageService {
 		const requestCallback = async (
 			from: number,
 			to: number,
-			telemetryProps: ITelemetryProperties,
-		) => {
-			if (this.snapshotOps !== undefined && this.snapshotOps.length !== 0) {
+			telemetryProps: ITelemetryBaseProperties,
+		): Promise<IDeltasFetchResult> => {
+			if (this.snapshotOps !== undefined && this.snapshotOps.length > 0) {
 				const messages = this.snapshotOps.filter(
 					(op) => op.sequenceNumber >= from && op.sequenceNumber < to,
 				);
@@ -188,18 +194,20 @@ export class OdspDeltaStorageWithCache implements IDocumentDeltaStorageService {
 			this.requestFromSocket(from, to);
 
 			// Cache in normal flow is continuous. Once there is a miss, stop consulting cache.
-			// This saves a bit of processing time
-			if (from < this.firstCacheMiss) {
+			// This saves a bit of processing time.
+			if (this.useCacheForOps) {
 				const messagesFromCache = await this.getCached(from, to);
 				validateMessages("cached", messagesFromCache, from, this.logger);
-				if (messagesFromCache.length !== 0) {
+				// Set the firstCacheMiss as true in case we didn't get all the ops.
+				// This will save an extra cache read on "DocumentOpen" or "PostDocumentOpen".
+				this.useCacheForOps = from + messagesFromCache.length >= to;
+				if (messagesFromCache.length > 0) {
 					opsFromCache += messagesFromCache.length;
 					return {
 						messages: messagesFromCache,
 						partialResult: true,
 					};
 				}
-				this.firstCacheMiss = Math.min(this.firstCacheMiss, from);
 			}
 
 			if (cachedOnly) {
@@ -214,7 +222,7 @@ export class OdspDeltaStorageWithCache implements IDocumentDeltaStorageService {
 		};
 
 		const stream = requestOps(
-			async (from: number, to: number, telemetryProps: ITelemetryProperties) => {
+			async (from: number, to: number, telemetryProps: ITelemetryBaseProperties) => {
 				const result = await requestCallback(from, to, telemetryProps);
 				// Catch all case, just in case
 				validateMessages("catch all", result.messages, from, this.logger);
@@ -238,6 +246,7 @@ export class OdspDeltaStorageWithCache implements IDocumentDeltaStorageService {
 					opsFromSnapshot,
 					opsFromCache,
 					opsFromStorage,
+					reason: fetchReason,
 				});
 			}
 		});

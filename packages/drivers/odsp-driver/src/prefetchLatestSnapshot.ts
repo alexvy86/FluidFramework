@@ -3,34 +3,39 @@
  * Licensed under the MIT License.
  */
 
-import { default as AbortController } from "abort-controller";
-import { ITelemetryBaseLogger } from "@fluidframework/common-definitions";
-import { assert, Deferred, performance } from "@fluidframework/common-utils";
-import { IResolvedUrl } from "@fluidframework/driver-definitions";
+import { performance } from "@fluid-internal/client-utils";
+import { ITelemetryBaseLogger } from "@fluidframework/core-interfaces";
+import { assert, Deferred } from "@fluidframework/core-utils/internal";
+import { IResolvedUrl } from "@fluidframework/driver-definitions/internal";
 import {
 	IOdspResolvedUrl,
+	IOdspUrlParts,
 	IPersistedCache,
 	ISnapshotOptions,
 	OdspResourceTokenFetchOptions,
 	TokenFetcher,
-	IOdspUrlParts,
 	getKeyForCacheEntry,
-} from "@fluidframework/odsp-driver-definitions";
-import { ChildLogger, PerformanceEvent } from "@fluidframework/telemetry-utils";
+} from "@fluidframework/odsp-driver-definitions/internal";
+import {
+	PerformanceEvent,
+	createChildMonitoringContext,
+} from "@fluidframework/telemetry-utils/internal";
+
+import { IVersionedValueWithEpoch } from "./contracts.js";
+import {
+	ISnapshotRequestAndResponseOptions,
+	SnapshotFormatSupportType,
+	downloadSnapshot,
+	fetchSnapshotWithRedeem,
+} from "./fetchSnapshot.js";
+import { IPrefetchSnapshotContents } from "./odspCache.js";
+import { OdspDocumentServiceFactory } from "./odspDocumentServiceFactory.js";
 import {
 	createCacheSnapshotKey,
 	createOdspLogger,
 	getOdspResolvedUrl,
-	toInstrumentedOdspTokenFetcher,
-} from "./odspUtils";
-import {
-	downloadSnapshot,
-	fetchSnapshotWithRedeem,
-	SnapshotFormatSupportType,
-} from "./fetchSnapshot";
-import { IVersionedValueWithEpoch } from "./contracts";
-import { IPrefetchSnapshotContents } from "./odspCache";
-import { OdspDocumentServiceFactory } from "./odspDocumentServiceFactory";
+	toInstrumentedOdspStorageTokenFetcher,
+} from "./odspUtils.js";
 
 /**
  * Function to prefetch the snapshot and cached it in the persistant cache, so that when the container is loaded
@@ -51,7 +56,8 @@ import { OdspDocumentServiceFactory } from "./odspDocumentServiceFactory";
  * @param snapshotFormatFetchType - Snapshot format to fetch.
  * @param odspDocumentServiceFactory - factory to access the non persistent cache and store the prefetch promise.
  *
- * @returns - True if the snapshot is cached, false otherwise.
+ * @returns `true` if the snapshot is cached, `false` otherwise.
+ * @alpha
  */
 export async function prefetchLatestSnapshot(
 	resolvedUrl: IResolvedUrl,
@@ -65,7 +71,14 @@ export async function prefetchLatestSnapshot(
 	snapshotFormatFetchType?: SnapshotFormatSupportType,
 	odspDocumentServiceFactory?: OdspDocumentServiceFactory,
 ): Promise<boolean> {
-	const odspLogger = createOdspLogger(ChildLogger.create(logger, "PrefetchSnapshot"));
+	const mc = createChildMonitoringContext({ logger, namespace: "PrefetchSnapshot" });
+	const odspLogger = createOdspLogger(mc.logger);
+	const useGroupIdsForSnapshotFetch = mc.config.getBoolean(
+		"Fluid.Container.UseLoadingGroupIdForSnapshotFetch2",
+	);
+	// For prefetch, we just want to fetch the ungrouped data and want to use the new API if the
+	// feature gate is set, so provide an empty array.
+	const loadingGroupIds = useGroupIdsForSnapshotFetch ? [] : undefined;
 	const odspResolvedUrl = getOdspResolvedUrl(resolvedUrl);
 
 	const resolvedUrlData: IOdspUrlParts = {
@@ -73,23 +86,23 @@ export async function prefetchLatestSnapshot(
 		driveId: odspResolvedUrl.driveId,
 		itemId: odspResolvedUrl.itemId,
 	};
-	const storageTokenFetcher = toInstrumentedOdspTokenFetcher(
+	const storageTokenFetcher = toInstrumentedOdspStorageTokenFetcher(
 		odspLogger,
 		resolvedUrlData,
 		getStorageToken,
-		true /* throwOnNullToken */,
 	);
 
 	const snapshotDownloader = async (
 		finalOdspResolvedUrl: IOdspResolvedUrl,
 		storageToken: string,
+		loadingGroupId: string[] | undefined,
 		snapshotOptions: ISnapshotOptions | undefined,
 		controller?: AbortController,
-	) => {
+	): Promise<ISnapshotRequestAndResponseOptions> => {
 		return downloadSnapshot(
 			finalOdspResolvedUrl,
 			storageToken,
-			odspLogger,
+			loadingGroupId,
 			snapshotOptions,
 			undefined,
 			controller,
@@ -98,12 +111,13 @@ export async function prefetchLatestSnapshot(
 	const snapshotKey = createCacheSnapshotKey(odspResolvedUrl);
 	let cacheP: Promise<void> | undefined;
 	let snapshotEpoch: string | undefined;
-	const putInCache = async (valueWithEpoch: IVersionedValueWithEpoch) => {
+	const putInCache = async (valueWithEpoch: IVersionedValueWithEpoch): Promise<void> => {
 		snapshotEpoch = valueWithEpoch.fluidEpoch;
 		cacheP = persistedCache.put(snapshotKey, valueWithEpoch);
 		return cacheP;
 	};
-	const removeEntries = async () => persistedCache.removeEntries(snapshotKey.file);
+
+	const removeEntries = async (): Promise<void> => persistedCache.removeEntries(snapshotKey.file);
 	return PerformanceEvent.timedExecAsync(
 		odspLogger,
 		{ eventName: "PrefetchLatestSnapshot" },
@@ -127,6 +141,7 @@ export async function prefetchLatestSnapshot(
 				snapshotDownloader,
 				putInCache,
 				removeEntries,
+				loadingGroupIds,
 				enableRedeemFallback,
 			)
 				.then(async (value) => {
@@ -141,15 +156,24 @@ export async function prefetchLatestSnapshot(
 					});
 					assert(cacheP !== undefined, 0x1e7 /* "caching was not performed!" */);
 					await cacheP;
+					// Schedule it to remove from cache after 5s.
+					// 1. While it's in snapshotNonPersistentCache: Load flow will use this value and will not attempt
+					// to fetch snapshot from network again. That's the best from perf POV, but cache will not be
+					// updated if we keep it in this cache, thus we want to eventually remove snapshot from this cache.
+					// 2. After it's removed from snapshotNonPersistentCache: snapshot is present in persistent cache,
+					// so we sill still use it (in accordance with cache policy controlled by host). But load flow will
+					// also fetch snapshot (in parallel) from storage and update cache. This is fine long term,
+					// but is an extra cost (unneeded network call). However since it is 5s older, new network call
+					// will update the snapshot in cache.
+					setTimeout(() => {
+						snapshotNonPersistentCache?.remove(nonPersistentCacheKey);
+					}, 5000);
 				})
-				.catch((err) => {
-					snapshotContentsWithEpochP.reject(err);
-					throw err;
-				})
-				.finally(() => {
-					// Remove it from the non persistent cache once it is cached in the persistent cache or an error
-					// occured.
+				.catch((error) => {
+					// Remove it from the non persistent cache if an error occured.
 					snapshotNonPersistentCache?.remove(nonPersistentCacheKey);
+					snapshotContentsWithEpochP.reject(error);
+					throw error;
 				});
 			return true;
 		},

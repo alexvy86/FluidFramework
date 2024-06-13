@@ -2,34 +2,37 @@
  * Copyright (c) Microsoft Corporation and contributors. All rights reserved.
  * Licensed under the MIT License.
  */
+
 import {
-	ApiCallSignature,
-	ApiClass,
-	ApiConstructSignature,
-	ApiConstructor,
-	ApiEntryPoint,
-	ApiEnum,
-	ApiEnumMember,
-	ApiFunction,
-	ApiIndexSignature,
-	ApiInterface,
-	ApiItem,
-	ApiMethod,
-	ApiMethodSignature,
-	ApiModel,
-	ApiNamespace,
-	ApiPropertyItem,
-	ApiTypeAlias,
-	ApiVariable,
+	type ApiCallSignature,
+	type ApiClass,
+	type ApiConstructSignature,
+	type ApiConstructor,
+	type ApiEntryPoint,
+	type ApiEnum,
+	type ApiEnumMember,
+	type ApiFunction,
+	type ApiIndexSignature,
+	type ApiInterface,
+	type ApiItem,
+	type ApiMethod,
+	type ApiMethodSignature,
+	type ApiModel,
+	type ApiNamespace,
+	type ApiPropertyItem,
+	type ApiTypeAlias,
+	type ApiVariable,
 } from "@microsoft/api-extractor-model";
 
-import { SectionNode } from "../../documentation-domain";
-import * as DefaultTransformationImplementations from "../default-implementations";
-import { ApiItemTransformationConfiguration } from "./Configuration";
+import { type SectionNode } from "../../documentation-domain/index.js";
+import * as DefaultTransformationImplementations from "../default-implementations/index.js";
+import { type ApiItemTransformationConfiguration } from "./Configuration.js";
 
 /**
  * Signature for a function which generates one or more {@link SectionNode}s describing an
  * API item that potentially has child items to be rendered as content under it.
+ *
+ * @public
  */
 export type TransformApiItemWithChildren<TApiItem extends ApiItem> = (
 	apiItem: TApiItem,
@@ -40,6 +43,8 @@ export type TransformApiItemWithChildren<TApiItem extends ApiItem> = (
 /**
  * Signature for a function which generates one or more {@link SectionNode}s describing an
  * API item that *does not* have child items to be rendered.
+ *
+ * @public
  */
 export type TransformApiItemWithoutChildren<TApiItem extends ApiItem> = (
 	apiItem: TApiItem,
@@ -47,21 +52,30 @@ export type TransformApiItemWithoutChildren<TApiItem extends ApiItem> = (
 ) => SectionNode[];
 
 /**
- * Signature for a function which generates information about an API item with inner content injected
- * into the same section.
- */
-export type CreateChildContentSections = (
-	apiItem: ApiItem,
-	childSections: SectionNode[] | undefined,
-	config: Required<ApiItemTransformationConfiguration>,
-) => SectionNode[];
-
-/**
  * Transformations for generating {@link DocumentationNode} trees from different kinds of API content.
  *
  * @remarks For any transformation not explicitly configured, a default will be used.
+ *
+ * @public
  */
 export interface ApiItemTransformationOptions {
+	/**
+	 * Generates the default layout used by all default API item transformations.
+	 *
+	 * @remarks
+	 *
+	 * Can be used to uniformly control the default content layout for all API item kinds.
+	 *
+	 * API item kind-specific details are passed in, and can be displayed as desired.
+	 *
+	 * @returns The list of {@link SectionNode}s that comprise the top-level section body for the API item.
+	 */
+	createDefaultLayout?: (
+		apiItem: ApiItem,
+		childSections: SectionNode[] | undefined,
+		config: Required<ApiItemTransformationConfiguration>,
+	) => SectionNode[];
+
 	/**
 	 * Transformation to generate a {@link SectionNode} for a `Call Signature`.
 	 */
@@ -149,18 +163,6 @@ export interface ApiItemTransformationOptions {
 	 * Transformation to generate a {@link SectionNode} for an `Variable`.
 	 */
 	transformApiVariable?: TransformApiItemWithoutChildren<ApiVariable>;
-
-	/**
-	 * Shared transformation logic for generating child content sections within a section describing an API item
-	 * that potentially has child elements (see {@link TransformApiItemWithChildren}).
-	 *
-	 * @remarks
-	 *
-	 * This method is used by the default transformation implementatios.
-	 * This can be used to adjust the layout of the child sections for API item kinds that have
-	 * without having to provide new transformation overrides for all of those content types.
-	 */
-	createChildContentSections?: CreateChildContentSections;
 }
 
 /**
@@ -183,7 +185,7 @@ const defaultApiItemTransformationOptions: Required<ApiItemTransformationOptions
 	transformApiProperty: DefaultTransformationImplementations.transformApiItemWithoutChildren,
 	transformApiTypeAlias: DefaultTransformationImplementations.transformApiItemWithoutChildren,
 	transformApiVariable: DefaultTransformationImplementations.transformApiItemWithoutChildren,
-	createChildContentSections: DefaultTransformationImplementations.createSectionWithChildContent,
+	createDefaultLayout: DefaultTransformationImplementations.createDefaultLayout,
 };
 
 /**

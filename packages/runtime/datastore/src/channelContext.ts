@@ -3,30 +3,36 @@
  * Licensed under the MIT License.
  */
 
-import { ITelemetryLoggerExt, TelemetryDataTag } from "@fluidframework/telemetry-utils";
-import { IFluidHandle } from "@fluidframework/core-interfaces";
 import {
 	IChannel,
 	IChannelAttributes,
 	IChannelFactory,
 	IFluidDataStoreRuntime,
-} from "@fluidframework/datastore-definitions";
-import { IDocumentStorageService } from "@fluidframework/driver-definitions";
-import { ISequencedDocumentMessage, ISnapshotTree } from "@fluidframework/protocol-definitions";
+} from "@fluidframework/datastore-definitions/internal";
 import {
-	IGarbageCollectionData,
+	IDocumentStorageService,
+	ISnapshotTree,
+	ISequencedDocumentMessage,
+} from "@fluidframework/driver-definitions/internal";
+import { readAndParse } from "@fluidframework/driver-utils/internal";
+import {
 	IExperimentalIncrementalSummaryContext,
-	ISummarizeResult,
 	ISummaryTreeWithStats,
 	ITelemetryContext,
+	IGarbageCollectionData,
 	IFluidDataStoreContext,
-} from "@fluidframework/runtime-definitions";
-import { addBlobToSummary } from "@fluidframework/runtime-utils";
-import { DataCorruptionError } from "@fluidframework/container-utils";
-import { readAndParse } from "@fluidframework/driver-utils";
-import { ChannelStorageService } from "./channelStorageService";
-import { ChannelDeltaConnection } from "./channelDeltaConnection";
-import { ISharedObjectRegistry } from "./dataStoreRuntime";
+	ISummarizeResult,
+} from "@fluidframework/runtime-definitions/internal";
+import { addBlobToSummary } from "@fluidframework/runtime-utils/internal";
+import {
+	ITelemetryLoggerExt,
+	DataCorruptionError,
+	tagCodeArtifacts,
+} from "@fluidframework/telemetry-utils/internal";
+
+import { ChannelDeltaConnection } from "./channelDeltaConnection.js";
+import { ChannelStorageService } from "./channelStorageService.js";
+import { ISharedObjectRegistry } from "./dataStoreRuntime.js";
 
 export const attributesBlobKey = ".attributes";
 
@@ -74,7 +80,7 @@ export function createChannelServiceEndpoints(
 	connected: boolean,
 	submitFn: (content: any, localOpMetadata: unknown) => void,
 	dirtyFn: () => void,
-	addedGCOutboundReferenceFn: (srcHandle: IFluidHandle, outboundHandle: IFluidHandle) => void,
+	isAttachedAndVisible: () => boolean,
 	storageService: IDocumentStorageService,
 	logger: ITelemetryLoggerExt,
 	tree?: ISnapshotTree,
@@ -84,7 +90,7 @@ export function createChannelServiceEndpoints(
 		connected,
 		(message, localOpMetadata) => submitFn(message, localOpMetadata),
 		dirtyFn,
-		addedGCOutboundReferenceFn,
+		isAttachedAndVisible,
 	);
 	const objectStorage = new ChannelStorageService(tree, storageService, logger, extraBlobs);
 
@@ -94,6 +100,7 @@ export function createChannelServiceEndpoints(
 	};
 }
 
+/** Used to get the channel's summary for the DDS or DataStore attach op */
 export function summarizeChannel(
 	channel: IChannel,
 	fullTree: boolean = false,
@@ -147,34 +154,27 @@ export async function loadChannelFactoryAndAttributes(
 	// messages.
 	const channelFactoryType = attributes ? attributes.type : attachMessageType;
 	if (channelFactoryType === undefined) {
-		throw new DataCorruptionError("channelTypeNotAvailable", {
-			channelId: {
-				value: channelId,
-				tag: TelemetryDataTag.CodeArtifact,
-			},
-			dataStoreId: {
-				value: dataStoreContext.id,
-				tag: TelemetryDataTag.CodeArtifact,
-			},
-			dataStorePackagePath: dataStoreContext.packagePath.join("/"),
-			channelFactoryType: attachMessageType,
-		});
+		throw new DataCorruptionError(
+			"channelTypeNotAvailable",
+			tagCodeArtifacts({
+				channelId,
+				dataStoreId: dataStoreContext.id,
+				dataStorePackagePath: dataStoreContext.packagePath.join("/"),
+				channelFactoryType,
+			}),
+		);
 	}
 	const factory = registry.get(channelFactoryType);
 	if (factory === undefined) {
-		// TODO: dataStoreId may require a different tag from PackageData #7488
-		throw new DataCorruptionError("channelFactoryNotRegisteredForGivenType", {
-			channelId: {
-				value: channelId,
-				tag: TelemetryDataTag.CodeArtifact,
-			},
-			dataStoreId: {
-				value: dataStoreContext.id,
-				tag: TelemetryDataTag.CodeArtifact,
-			},
-			dataStorePackagePath: dataStoreContext.packagePath.join("/"),
-			channelFactoryType,
-		});
+		throw new DataCorruptionError(
+			"channelFactoryNotRegisteredForGivenType",
+			tagCodeArtifacts({
+				channelId,
+				dataStoreId: dataStoreContext.id,
+				dataStorePackagePath: dataStoreContext.packagePath.join("/"),
+				channelFactoryType,
+			}),
+		);
 	}
 	// This is a backward compatibility case where the attach message doesn't include attributes. Get the attributes
 	// from the factory.
@@ -197,15 +197,11 @@ export async function loadChannel(
 	) {
 		logger.sendTelemetryEvent({
 			eventName: "ChannelAttributesVersionMismatch",
-			channelType: { value: attributes.type, tag: TelemetryDataTag.CodeArtifact },
-			channelSnapshotVersion: {
-				value: `${attributes.snapshotFormatVersion}@${attributes.packageVersion}`,
-				tag: TelemetryDataTag.CodeArtifact,
-			},
-			channelCodeVersion: {
-				value: `${factory.attributes.snapshotFormatVersion}@${factory.attributes.packageVersion}`,
-				tag: TelemetryDataTag.CodeArtifact,
-			},
+			...tagCodeArtifacts({
+				channelType: attributes.type,
+				channelSnapshotVersion: `${attributes.snapshotFormatVersion}@${attributes.packageVersion}`,
+				channelCodeVersion: `${factory.attributes.snapshotFormatVersion}@${factory.attributes.packageVersion}`,
+			}),
 		});
 	}
 

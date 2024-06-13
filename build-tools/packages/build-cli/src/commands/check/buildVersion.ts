@@ -2,18 +2,20 @@
  * Copyright (c) Microsoft Corporation and contributors. All rights reserved.
  * Licensed under the MIT License.
  */
-import { Flags } from "@oclif/core";
-import { Package } from "@fluidframework/build-tools";
-import path from "node:path";
 
-import { PackageCommand } from "../../BasePackageCommand";
+import path from "node:path";
+import { Package } from "@fluidframework/build-tools";
+import { Flags } from "@oclif/core";
+
+import { PackageCommand } from "../../BasePackageCommand.js";
 
 export default class CheckBuildVersionCommand extends PackageCommand<
 	typeof CheckBuildVersionCommand
 > {
-	static description = `Checks that all packages have the same version set in package.json. The packages checked can be filtered by standard criteria. THIS COMMAND IS INTENDED FOR USE IN FLUID FRAMEWORK CI PIPELINES ONLY.`;
+	static readonly description =
+		`Checks that all packages have the same version set in package.json. The packages checked can be filtered by standard criteria. THIS COMMAND IS INTENDED FOR USE IN FLUID FRAMEWORK CI PIPELINES ONLY.`;
 
-	static flags = {
+	static readonly flags = {
 		version: Flags.string({
 			description: "The version against which to check all the packages.",
 			exclusive: ["path"],
@@ -29,7 +31,9 @@ export default class CheckBuildVersionCommand extends PackageCommand<
 			default: false,
 		}),
 		...PackageCommand.flags,
-	};
+	} as const;
+
+	protected defaultSelection = undefined;
 
 	private versionToCheck: string | undefined;
 
@@ -47,8 +51,7 @@ export default class CheckBuildVersionCommand extends PackageCommand<
 	}
 
 	private readonly invalidVersions: Package[] = [];
-	protected async processPackage(directory: string): Promise<void> {
-		const pkg = new Package(path.join(directory, "package.json"), "none");
+	protected async processPackage(pkg: Package): Promise<void> {
 		if (pkg.version !== this.versionToCheck) {
 			this.invalidVersions.push(pkg);
 		}

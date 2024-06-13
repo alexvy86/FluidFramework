@@ -5,26 +5,29 @@
 
 // eslint-disable-next-line import/no-nodejs-modules
 import assert from "assert";
-import { EventEmitter } from "events";
+
+import { EventEmitter } from "@fluid-example/example-utils";
+import { MergeTreeMaintenanceType } from "@fluidframework/merge-tree/internal";
 import {
 	ISegment,
-	ReferencePosition,
-	MergeTreeMaintenanceType,
 	LocalReferencePosition,
-} from "@fluidframework/merge-tree";
-import { SequenceEvent } from "@fluidframework/sequence";
+	ReferencePosition,
+	SequenceEvent,
+} from "@fluidframework/sequence/internal";
+
 import { FlowDocument } from "../document/index.js";
 import {
-	clamp,
 	Dom,
+	TagName,
+	clamp,
 	done,
 	emptyObject,
 	getSegmentRange,
 	hasTagName,
 	isTextNode,
-	TagName,
 } from "../util/index.js";
 import { extractRef, updateRef } from "../util/localref.js";
+
 import { debug } from "./debug.js";
 import { BootstrapFormatter, Formatter, IFormatterState, RootFormatter } from "./formatter.js";
 
@@ -298,6 +301,7 @@ export class Layout extends EventEmitter {
 			"  pushFormat(%o,pos=%d,%s,start=%d,end=%d,depth=%d)",
 			formatter,
 			this.position,
+			// eslint-disable-next-line @typescript-eslint/no-base-to-string
 			segment.toString(),
 			this.startOffset,
 			this.endOffset,

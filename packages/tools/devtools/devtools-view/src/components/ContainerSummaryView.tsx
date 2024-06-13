@@ -4,48 +4,54 @@
  */
 
 import {
-	Button,
 	Badge,
+	Button,
+	InfoLabel,
+	Table,
+	TableBody,
+	TableCell,
+	TableCellLayout,
+	type TableColumnDefinition,
+	type TableColumnSizingOptions,
+	TableRow,
 	createTableColumn,
 	makeStyles,
 	shorthands,
-	Table,
-	TableRow,
-	TableCell,
-	TableCellLayout,
-	TableColumnDefinition,
-	TableColumnSizingOptions,
-	useTableFeatures,
 	useTableColumnSizing_unstable,
+	useTableFeatures,
 } from "@fluentui/react-components";
-import { InfoLabel } from "@fluentui/react-components/unstable";
 import {
+	Delete20Regular,
 	PlugConnected20Regular,
 	PlugDisconnected20Regular,
-	Delete20Regular,
 } from "@fluentui/react-icons";
-import React from "react";
-
+import { AttachState } from "@fluidframework/container-definitions";
+import { ConnectionState } from "@fluidframework/container-loader";
 import {
 	CloseContainer,
 	ConnectContainer,
 	ContainerStateChange,
-	ContainerStateMetadata,
+	type ContainerStateMetadata,
 	DisconnectContainer,
 	GetContainerState,
+	type HasContainerKey,
+	type IMessageRelay,
+	type ISourcedDevtoolsMessage,
+	type InboundHandlers,
 	handleIncomingMessage,
-	HasContainerKey,
-	IMessageRelay,
-	InboundHandlers,
-	ISourcedDevtoolsMessage,
-} from "@fluid-experimental/devtools-core";
-import { AttachState } from "@fluidframework/container-definitions";
-import { ConnectionState } from "@fluidframework/container-loader";
+} from "@fluidframework/devtools-core/internal";
+import React from "react";
 
-import { connectionStateToString } from "../Utilities";
-import { useMessageRelay } from "../MessageRelayContext";
-import { Waiting } from "./Waiting";
-import { clientIdTooltipText, containerStatusTooltipText, userIdTooltipText } from "./TooltipTexts";
+import { useMessageRelay } from "../MessageRelayContext.js";
+import { useLogger } from "../TelemetryUtils.js";
+import { connectionStateToString } from "../Utilities.js";
+
+import {
+	clientIdTooltipText,
+	containerStatusTooltipText,
+	userIdTooltipText,
+} from "./TooltipTexts.js";
+import { Waiting } from "./Waiting.js";
 
 /**
  * {@link ContainerSummaryView} input props.
@@ -105,6 +111,8 @@ interface DataRowProps {
 
 /**
  * Displays a row with basic stats about the Container.
+ *
+ * @remarks {@link DataRowProps.value} will be wrapped in a <TableCell /> so it shouldn't have one itself.
  */
 function DataRow(props: DataRowProps): React.ReactElement {
 	const { label, infoTooltipContent, value, columnProps } = props;
@@ -132,42 +140,43 @@ function DataRow(props: DataRowProps): React.ReactElement {
 
 function containerStatusValueCell(statusComponents: string[]): React.ReactElement {
 	return (
-		<TableCell>
-			<TableCellLayout
-				media={((): JSX.Element => {
-					switch (statusComponents[0]) {
-						case AttachState.Attaching:
-							return (
-								<Badge shape="rounded" color="warning">
-									{statusComponents[0]}
-								</Badge>
-							);
-						case AttachState.Detached:
-							return (
-								<Badge shape="rounded" color="danger">
-									{statusComponents[0]}
-								</Badge>
-							);
-						default:
-							return (
-								<Badge shape="rounded" color="success">
-									{statusComponents[0]}
-								</Badge>
-							);
+		<TableCellLayout
+			media={((): JSX.Element => {
+				switch (statusComponents[0]) {
+					case AttachState.Attaching: {
+						return (
+							<Badge shape="rounded" color="warning">
+								{statusComponents[0]}
+							</Badge>
+						);
 					}
-				})()}
-			>
-				{statusComponents[1] === "Connected" ? (
-					<Badge shape="rounded" color="success">
-						{statusComponents[1]}
-					</Badge>
-				) : (
-					<Badge shape="rounded" color="danger">
-						{statusComponents[1]}
-					</Badge>
-				)}
-			</TableCellLayout>
-		</TableCell>
+					case AttachState.Detached: {
+						return (
+							<Badge shape="rounded" color="danger">
+								{statusComponents[0]}
+							</Badge>
+						);
+					}
+					default: {
+						return (
+							<Badge shape="rounded" color="success">
+								{statusComponents[0]}
+							</Badge>
+						);
+					}
+				}
+			})()}
+		>
+			{statusComponents[1] === "Connected" ? (
+				<Badge shape="rounded" color="success">
+					{statusComponents[1]}
+				</Badge>
+			) : (
+				<Badge shape="rounded" color="danger">
+					{statusComponents[1]}
+				</Badge>
+			)}
+		</TableCellLayout>
 	);
 }
 
@@ -191,6 +200,7 @@ export function ContainerSummaryView(props: ContainerSummaryViewProps): React.Re
 	const { containerKey } = props;
 	const items: Item[] = [];
 	const messageRelay: IMessageRelay = useMessageRelay();
+	const usageLogger = useLogger();
 
 	const styles = useContainerSummaryViewStyles();
 
@@ -259,6 +269,7 @@ export function ContainerSummaryView(props: ContainerSummaryViewProps): React.Re
 				containerKey,
 			}),
 		);
+		usageLogger?.sendTelemetryEvent({ eventName: "ConnectContainerButtonClicked" });
 	}
 
 	function forceDisconnect(): void {
@@ -268,6 +279,7 @@ export function ContainerSummaryView(props: ContainerSummaryViewProps): React.Re
 				/* TODO: Specify devtools reason here once it is supported */
 			}),
 		);
+		usageLogger?.sendTelemetryEvent({ eventName: "DisconnectContainerButtonClicked" });
 	}
 
 	function closeContainer(): void {
@@ -277,6 +289,7 @@ export function ContainerSummaryView(props: ContainerSummaryViewProps): React.Re
 				/* TODO: Specify devtools reason here once it is supported */
 			}),
 		);
+		usageLogger?.sendTelemetryEvent({ eventName: "CloseContainerButtonClicked" });
 	}
 
 	// Build up status string
@@ -304,24 +317,26 @@ export function ContainerSummaryView(props: ContainerSummaryViewProps): React.Re
 			</div>
 			<div>
 				<Table size="extra-small" ref={tableRef}>
-					<DataRow
-						label="Status"
-						infoTooltipContent={containerStatusTooltipText}
-						value={containerStatusValueCell(statusComponents)}
-						columnProps={columnSizing_unstable}
-					/>
-					<DataRow
-						label="Client ID"
-						infoTooltipContent={clientIdTooltipText}
-						value={containerState.clientId}
-						columnProps={columnSizing_unstable}
-					/>
-					<DataRow
-						label="User ID"
-						infoTooltipContent={userIdTooltipText}
-						value={containerState.userId}
-						columnProps={columnSizing_unstable}
-					/>
+					<TableBody>
+						<DataRow
+							label="Status"
+							infoTooltipContent={containerStatusTooltipText}
+							value={containerStatusValueCell(statusComponents)}
+							columnProps={columnSizing_unstable}
+						/>
+						<DataRow
+							label="Client ID"
+							infoTooltipContent={clientIdTooltipText}
+							value={containerState.clientId}
+							columnProps={columnSizing_unstable}
+						/>
+						<DataRow
+							label="User ID"
+							infoTooltipContent={userIdTooltipText}
+							value={containerState.userId}
+							columnProps={columnSizing_unstable}
+						/>
+					</TableBody>
 				</Table>
 			</div>
 			<div className={styles.actions}>
@@ -329,7 +344,7 @@ export function ContainerSummaryView(props: ContainerSummaryViewProps): React.Re
 					isContainerConnected={
 						containerState.connectionState === ConnectionState.Connected
 					}
-					isContainerClosed={containerState.closed}
+					containerState={containerState}
 					tryConnect={tryConnect}
 					forceDisconnect={forceDisconnect}
 					closeContainer={closeContainer}
@@ -375,13 +390,12 @@ const useActionBarStyles = makeStyles({
 
 interface ActionsBarProps extends IContainerActions {
 	isContainerConnected: boolean;
-	isContainerClosed: boolean;
+	containerState: ContainerStateMetadata;
 }
 
 function ActionsBar(props: ActionsBarProps): React.ReactElement {
-	const { isContainerConnected, isContainerClosed, tryConnect, forceDisconnect, closeContainer } =
+	const { isContainerConnected, containerState, tryConnect, forceDisconnect, closeContainer } =
 		props;
-
 	const styles = useActionBarStyles();
 
 	const changeConnectionStateButton = isContainerConnected ? (
@@ -389,7 +403,7 @@ function ActionsBar(props: ActionsBarProps): React.ReactElement {
 			size="small"
 			icon={<PlugDisconnected20Regular />}
 			onClick={forceDisconnect}
-			disabled={forceDisconnect === undefined || isContainerClosed}
+			disabled={forceDisconnect === undefined || containerState.closed}
 		>
 			Disconnect Container
 		</Button>
@@ -398,7 +412,11 @@ function ActionsBar(props: ActionsBarProps): React.ReactElement {
 			size="small"
 			icon={<PlugConnected20Regular />}
 			onClick={tryConnect}
-			disabled={tryConnect === undefined || isContainerClosed}
+			disabled={
+				tryConnect === undefined ||
+				containerState.closed ||
+				containerState.attachState === AttachState.Detached
+			}
 		>
 			Connect Container
 		</Button>
@@ -409,7 +427,11 @@ function ActionsBar(props: ActionsBarProps): React.ReactElement {
 			size="small"
 			icon={<Delete20Regular />}
 			onClick={closeContainer}
-			disabled={closeContainer === undefined || isContainerClosed}
+			disabled={
+				closeContainer === undefined ||
+				containerState.closed ||
+				containerState.attachState === AttachState.Detached
+			}
 		>
 			Close Container
 		</Button>

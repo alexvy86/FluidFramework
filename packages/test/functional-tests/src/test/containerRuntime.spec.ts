@@ -4,29 +4,28 @@
  */
 
 import { strict as assert } from "assert";
-import { EventEmitter } from "events";
-import {
-	MockDocumentDeltaConnection,
-	MockDocumentService,
-} from "@fluid-internal/test-loader-utils";
-import { DebugLogger } from "@fluidframework/telemetry-utils";
-import {
-	IClient,
-	ISequencedDocumentMessage,
-	ISequencedDocumentSystemMessage,
-	MessageType,
-} from "@fluidframework/protocol-definitions";
+
+import { MockDocumentDeltaConnection, MockDocumentService } from "@fluid-private/test-loader-utils";
 // eslint-disable-next-line import/no-internal-modules
-import { DeltaManager } from "@fluidframework/container-loader/dist/deltaManager";
+import { ConnectionManager } from "@fluidframework/container-loader/internal/test/connectionManager";
 // eslint-disable-next-line import/no-internal-modules
-import { IConnectionManagerFactoryArgs } from "@fluidframework/container-loader/dist/contracts";
+import { IConnectionManagerFactoryArgs } from "@fluidframework/container-loader/internal/test/contracts";
 // eslint-disable-next-line import/no-internal-modules
-import { ConnectionManager } from "@fluidframework/container-loader/dist/connectionManager";
+import { DeltaManager } from "@fluidframework/container-loader/internal/test/deltaManager";
+// eslint-disable-next-line import/no-internal-modules
+import { DeltaScheduler } from "@fluidframework/container-runtime/internal/test/deltaScheduler";
 // ADO:1981
 // eslint-disable-next-line import/no-internal-modules
-import { ScheduleManager } from "@fluidframework/container-runtime/dist/scheduleManager";
-// eslint-disable-next-line import/no-internal-modules
-import { DeltaScheduler } from "@fluidframework/container-runtime/dist/deltaScheduler";
+import { ScheduleManager } from "@fluidframework/container-runtime/internal/test/scheduleManager";
+import { IClient } from "@fluidframework/driver-definitions";
+import {
+	ISequencedDocumentSystemMessage,
+	MessageType,
+	ISequencedDocumentMessage,
+} from "@fluidframework/driver-definitions/internal";
+import { createChildLogger } from "@fluidframework/telemetry-utils/internal";
+import events_pkg from "events_pkg";
+const { EventEmitter } = events_pkg;
 
 describe("Container Runtime", () => {
 	/**
@@ -46,7 +45,7 @@ describe("Container Runtime", () => {
 		const startDeltaManager = async (): Promise<void> =>
 			new Promise((resolve) => {
 				deltaManager.on("connect", resolve);
-				deltaManager.connect({ reason: "test" });
+				deltaManager.connect({ reason: { text: "test" } });
 			});
 
 		// Function to yield control in the Javascript event loop.
@@ -101,7 +100,7 @@ describe("Container Runtime", () => {
 
 			deltaManager = new DeltaManager<ConnectionManager>(
 				() => service,
-				DebugLogger.create("fluid:testDeltaManager"),
+				createChildLogger({ namespace: "fluid:testDeltaManager" }),
 				() => false,
 				(props: IConnectionManagerFactoryArgs) =>
 					new ConnectionManager(
@@ -109,7 +108,7 @@ describe("Container Runtime", () => {
 						() => false,
 						client as IClient,
 						false,
-						DebugLogger.create("fluid:testConnectionManager"),
+						createChildLogger({ namespace: "fluid:testConnectionManager" }),
 						props,
 					),
 			);
@@ -119,7 +118,7 @@ describe("Container Runtime", () => {
 				deltaManager,
 				emitter,
 				() => "test-client", // clientId,
-				DebugLogger.create("fluid:testScheduleManager"),
+				createChildLogger({ namespace: "fluid:testScheduleManager" }),
 			);
 
 			emitter.on("batchBegin", () => {
@@ -304,7 +303,7 @@ describe("Container Runtime", () => {
 
 			const deltaManager2 = new DeltaManager<ConnectionManager>(
 				() => service2,
-				DebugLogger.create("fluid:testDeltaManager"),
+				createChildLogger({ namespace: "fluid:testDeltaManager" }),
 				() => true,
 				(props: IConnectionManagerFactoryArgs) =>
 					new ConnectionManager(
@@ -312,7 +311,7 @@ describe("Container Runtime", () => {
 						() => false,
 						client as IClient,
 						true,
-						DebugLogger.create("fluid:testConnectionManager"),
+						createChildLogger({ namespace: "fluid:testConnectionManager" }),
 						props,
 					),
 			);
@@ -325,7 +324,7 @@ describe("Container Runtime", () => {
 			});
 			await new Promise((resolve) => {
 				deltaManager2.on("connect", resolve);
-				deltaManager2.connect({ reason: "test" });
+				deltaManager2.connect({ reason: { text: "test" } });
 			});
 
 			assert.strictEqual(
@@ -340,7 +339,6 @@ describe("Container Runtime", () => {
 				minimumSequenceNumber: 0,
 				sequenceNumber: seq++,
 				type: MessageType.ClientLeave,
-				term: 1,
 				clientSequenceNumber: 1,
 				referenceSequenceNumber: 1,
 				contents: "",

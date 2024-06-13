@@ -2,25 +2,26 @@
  * Copyright (c) Microsoft Corporation and contributors. All rights reserved.
  * Licensed under the MIT License.
  */
-import React from "react";
-import { Spinner } from "@fluentui/react-components";
 
+import { Spinner } from "@fluentui/react-components";
 import {
 	DataVisualization,
+	type FluidObjectNode,
 	GetDataVisualization,
-	ISourcedDevtoolsMessage,
-	InboundHandlers,
+	type HasContainerKey,
+	type HasFluidObjectId,
+	type ISourcedDevtoolsMessage,
+	type InboundHandlers,
 	handleIncomingMessage,
-	HasContainerKey,
-	HasFluidObjectId,
-	FluidObjectNode,
-} from "@fluid-experimental/devtools-core";
+} from "@fluidframework/devtools-core/internal";
+import React from "react";
 
-import { useMessageRelay } from "../../MessageRelayContext";
-import { HasLabel } from "./CommonInterfaces";
-import { TreeDataView } from "./TreeDataView";
-import { TreeItem } from "./TreeItem";
-import { TreeHeader } from "./TreeHeader";
+import { useMessageRelay } from "../../MessageRelayContext.js";
+
+import { type HasLabel } from "./CommonInterfaces.js";
+import { TreeDataView } from "./TreeDataView.js";
+import { TreeHeader } from "./TreeHeader.js";
+import { TreeItem } from "./TreeItem.js";
 
 const loggingContext = "EXTENSION(HandleView)";
 
@@ -85,7 +86,7 @@ export function FluidHandleView(props: FluidHandleViewProps): React.ReactElement
 	if (visualTree === undefined) {
 		const header = <TreeHeader label={label} inlineValue={<Spinner size="tiny" />} />;
 		return <TreeItem header={header} />;
+	} else {
+		return <TreeDataView containerKey={containerKey} label={label} node={visualTree} />;
 	}
-
-	return <TreeDataView containerKey={containerKey} label={label} node={visualTree} />;
 }

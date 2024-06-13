@@ -2,32 +2,32 @@
  * Copyright (c) Microsoft Corporation and contributors. All rights reserved.
  * Licensed under the MIT License.
  */
+
 /**
  * @fileoverview Serialized representation of the changes in a repository
  */
 
-import isObject from "lodash/isObject";
-import isString from "lodash/isString";
+import { constants, ConsoleUtils, joinPaths } from "@fluid-experimental/property-common";
 import { copy as cloneDeep } from "fastest-json-copy";
-import isEmpty from "lodash/isEmpty";
-import extend from "lodash/extend";
-import each from "lodash/each";
+import each from "lodash/each.js";
+import extend from "lodash/extend.js";
+import isEmpty from "lodash/isEmpty.js";
+import isObject from "lodash/isObject.js";
+import isString from "lodash/isString.js";
 
 // @ts-ignore
-import { ConsoleUtils, joinPaths, constants } from "@fluid-experimental/property-common";
 
-import { TypeIdHelper } from "./helpers/typeidHelper";
-import { ChangeSetArrayFunctions } from "./changeset_operations/array";
-
-import { ArrayChangeSetIterator } from "./changeset_operations/arrayChangesetIterator";
-import { ConflictType } from "./changeset_operations/changesetConflictTypes";
+import { ChangeSetArrayFunctions } from "./changeset_operations/array.js";
+import { ArrayChangeSetIterator } from "./changeset_operations/arrayChangesetIterator.js";
+import { ConflictType } from "./changeset_operations/changesetConflictTypes.js";
 // Add the indexed collection functions into the prototype of the ChangeSet
-import { ChangeSetIndexedCollectionFunctions } from "./changeset_operations/indexedCollection";
-import { isEmptyChangeSet } from "./changeset_operations/isEmptyChangeset";
-import { isReservedKeyword } from "./isReservedKeyword";
-import { Utils } from "./utils";
-import { TemplateValidator } from "./templateValidator";
-import { ArrayIteratorOperationTypes } from "./changeset_operations/operationTypes";
+import { ChangeSetIndexedCollectionFunctions } from "./changeset_operations/indexedCollection.js";
+import { isEmptyChangeSet } from "./changeset_operations/isEmptyChangeset.js";
+import { ArrayIteratorOperationTypes } from "./changeset_operations/operationTypes.js";
+import { TypeIdHelper } from "./helpers/typeidHelper.js";
+import { isReservedKeyword } from "./isReservedKeyword.js";
+import { TemplateValidator } from "./templateValidator.js";
+import { Utils } from "./utils.js";
 
 const { PROPERTY_PATH_DELIMITER, MSG } = constants;
 
@@ -51,6 +51,7 @@ export interface RebaseChangeSetOptions extends ApplyChangeSetOptions {
 
 /**
  * The plain serialization data structure used to encode a ChangeSet.
+ * @internal
  */
 export type SerializedChangeSet = any; // @TODO Maybe we should add full type for the ChangeSet
 export type ChangeSetType = any;
@@ -71,6 +72,7 @@ export interface ConflictInfo {
  * The ChangeSet represents an operation to be done (or that was done) on the data. It encapsulate one or
  * many addition/insertion and deletion of properties. The ChangeSetObject also provides functionality
  * to merge and swap change sets.
+ * @internal
  */
 export class ChangeSet {
 	static ConflictType = ConflictType;
@@ -272,18 +274,15 @@ export class ChangeSet {
 		if (io_baseChanges[in_baseKey] && io_baseChanges[in_baseKey].hasOwnProperty("value")) {
 			io_baseChanges[in_baseKey].value = newValue;
 		} else {
-			if (
+			io_baseChanges[in_baseKey] =
 				io_baseChanges[in_baseKey] === undefined &&
 				in_appliedValue &&
 				in_appliedValue.hasOwnProperty("oldValue")
-			) {
-				io_baseChanges[in_baseKey] = {
-					value: newValue,
-					oldValue: in_appliedValue.oldValue,
-				};
-			} else {
-				io_baseChanges[in_baseKey] = newValue;
-			}
+					? {
+							value: newValue,
+							oldValue: in_appliedValue.oldValue,
+					  }
+					: newValue;
 		}
 	}
 
@@ -336,18 +335,15 @@ export class ChangeSet {
 				oldValue = in_baseChanges[in_changedKey].oldValue;
 				// we need to convert the format to allow the application of the changes
 				// since _performApplyAfterOnPropertyArray only understands insert/modify/remove commands
-				if (
+				in_baseChanges[in_changedKey] =
 					in_baseChanges[in_changedKey] &&
 					in_baseChanges[in_changedKey].hasOwnProperty("value")
-				) {
-					in_baseChanges[in_changedKey] = {
-						insert: [[0, in_baseChanges[in_changedKey].value]],
-					};
-				} else {
-					in_baseChanges[in_changedKey] = {
-						insert: [[0, in_baseChanges[in_changedKey]]],
-					};
-				}
+						? {
+								insert: [[0, in_baseChanges[in_changedKey].value]],
+						  }
+						: {
+								insert: [[0, in_baseChanges[in_changedKey]]],
+						  };
 				baseIsSetChange = true;
 			}
 			let appliedChanges = in_appliedPropertyChanges[in_changedKey];
@@ -357,14 +353,13 @@ export class ChangeSet {
 
 			if (splitTypeid.typeid === "String" && isString(appliedChanges)) {
 				// we've got a 'set' command and just overwrite the changes
-				if (baseIsSetChange && oldValue !== undefined) {
-					in_baseChanges[in_changedKey] = {
-						value: appliedChanges,
-						oldValue,
-					};
-				} else {
-					in_baseChanges[in_changedKey] = appliedChanges;
-				}
+				in_baseChanges[in_changedKey] =
+					baseIsSetChange && oldValue !== undefined
+						? {
+								value: appliedChanges,
+								oldValue,
+						  }
+						: appliedChanges;
 			} else {
 				// we have incremental changes (or a standard array)
 				this._performApplyAfterOnPropertyArray(
@@ -379,14 +374,13 @@ export class ChangeSet {
 					newValue = isEmpty(in_baseChanges[in_changedKey])
 						? ""
 						: in_baseChanges[in_changedKey].insert[0][1];
-					if (oldValue !== undefined) {
-						in_baseChanges[in_changedKey] = {
-							value: newValue,
-							oldValue,
-						};
-					} else {
-						in_baseChanges[in_changedKey] = newValue;
-					}
+					in_baseChanges[in_changedKey] =
+						oldValue !== undefined
+							? {
+									value: newValue,
+									oldValue,
+							  }
+							: newValue;
 				}
 			}
 

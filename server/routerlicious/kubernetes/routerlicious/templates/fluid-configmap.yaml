@@ -19,6 +19,21 @@ data:
             "timestamp": false,
             "label": "winston"
         },
+        "config": {
+            "configDumpEnabled": {{ .Values.config.configDumpEnabled }},
+            "secretNamesToRedactInConfigDump": [
+                {{- $lastIndex := sub (len .Values.config.secretNamesToRedactInConfigDump) 1}}
+                {{- range $i, $secret := .Values.config.secretNamesToRedactInConfigDump }}
+                {{ toJson . }}{{- if ne $i $lastIndex -}}, {{ end }}
+                {{- end }}
+            ]
+        },
+        "lumberjack": {
+            "options": {
+                "enableGlobalTelemetryContext": {{ .Values.lumberjack.options.enableGlobalTelemetryContext }},
+                "enableSanitization": {{ .Values.lumberjack.options.enableSanitization }}
+            }
+        },
         "mongo": {
             "operationsDbEndpoint": "{{ .Values.mongodb.operationsDbEndpoint }}",
             "globalDbEndpoint": "{{ .Values.mongodb.globalDbEndpoint }}",
@@ -54,7 +69,12 @@ data:
                 "rdkafkaConsumeTimeout": 5,
                 "rdkafkaMaxConsumerCommitRetries": 10
             },
-            "customRestartOnKafkaErrorCodes": {{ .Values.kafka.customRestartOnKafkaErrorCodes }}
+            "customRestartOnKafkaErrorCodes": [
+                {{- $lastIndex := sub (len .Values.kafka.customRestartOnKafkaErrorCodes) 1}}
+                {{- range $i, $tenant := .Values.kafka.customRestartOnKafkaErrorCodes }}
+                {{ toJson . }}{{- if ne $i $lastIndex -}}, {{ end }}
+                {{- end }}
+            ]
         },
         "zookeeper": {
             "endpoint": "{{ .Values.zookeeper.url }}"
@@ -65,31 +85,31 @@ data:
         },
         "checkpoints": {
             "localCheckpointEnabled": {{ .Values.checkpoints.localCheckpointEnabled }},
-            "kafkaCheckpointOnReprocessingOp": {{ .Values.checkpoints.kafkaCheckpointOnReprocessingOp }},
-            },
+            "checkpointsTTLInSeconds": {{ .Values.checkpoints.checkpointsTTLInSeconds }},
+            "kafkaCheckpointOnReprocessingOp": {{ .Values.checkpoints.kafkaCheckpointOnReprocessingOp }}
+        },
+        "apiCounters": {
+            "fetchTenantKeyMetricMs": 60000,
+            "riddlerStorageRequestMetricMs": 60000
+        },
         "alfred": {
             "kafkaClientId": "{{ template "alfred.fullname" . }}",
             "maxMessageSize": "16KB",
-            "maxNumberOfClientsPerDocument": {{ .Values.alfred.maxNumberOfClientsPerDocument }},
             "numberOfMessagesPerTrace": {{ .Values.alfred.numberOfMessagesPerTrace }},
             "sessionStickinessDurationMs": {{ .Values.alfred.sessionStickinessDurationMs }},
-            "enableConnectionCountLogging": {{ .Values.alfred.enableConnectionCountLogging }},
+            "ignoreEphemeralFlag": {{ .Values.alfred.ignoreEphemeralFlag }},
             "throttling": {
                 "restCallsPerTenant": {
                     "generalRestCall": {{ toJson .Values.alfred.throttling.restCallsPerTenant.generalRestCall }},
                     "createDoc": {{ toJson .Values.alfred.throttling.restCallsPerTenant.createDoc }},
                     "getDeltas": {{ toJson .Values.alfred.throttling.restCallsPerTenant.getDeltas }},
-                    "getSession": {{ toJson .Values.alfred.throttling.restCallsPerTenant.getSession }}}
+                    "getSession": {{ toJson .Values.alfred.throttling.restCallsPerTenant.getSession }}
                 },
                 "restCallsPerCluster": {
                     "createDoc": {{ toJson .Values.alfred.throttling.restCallsPerCluster.createDoc }},
                     "getDeltas": {{ toJson .Values.alfred.throttling.restCallsPerCluster.getDeltas }},
-                    "getSession": {{ toJson .Values.alfred.throttling.restCallsPerCluster.getSession }}}
-                },
-                "socketConnectionsPerTenant": {{ toJson .Values.alfred.throttling.socketConnectionsPerTenant }},
-                "socketConnectionsPerCluster": {{ toJson .Values.alfred.throttling.socketConnectionsPerCluster }},
-                "submitOps": {{ toJson .Values.alfred.throttling.submitOps }},
-                "submitSignal": {{ toJson .Values.alfred.throttling.submitSignal }}}
+                    "getSession": {{ toJson .Values.alfred.throttling.restCallsPerCluster.getSession }}
+                }
             },
             "topic": "{{ .Values.kafka.topics.rawdeltas }}",
             "bucket": "snapshots",
@@ -101,13 +121,35 @@ data:
                 {{ toJson . }}{{- if ne $i $lastIndex -}}, {{ end }}
                 {{- end }}
             ],
-            "socketIoAdapter" : {
-                "enableCustomSocketIoAdapter": {{ .Values.alfred.socketIoAdapter.enableCustomSocketIoAdapter }},
-                "shouldDisableDefaultNamespace": {{ .Values.alfred.socketIoAdapter.shouldDisableDefaultNamespace }}
-            },
             "enforceServerGeneratedDocumentId": {{ .Values.alfred.enforceServerGeneratedDocumentId }},
+            "getDeltasRequestMaxOpsRange": {{ .Values.alfred.getDeltasRequestMaxOpsRange }}
+        },
+        "nexus": {
+            "kafkaClientId": "{{ template "nexus.fullname" . }}",
+            "maxMessageSize": "16KB",
+            "maxNumberOfClientsPerDocument": {{ .Values.nexus.maxNumberOfClientsPerDocument }},
+            "numberOfMessagesPerTrace": {{ .Values.nexus.numberOfMessagesPerTrace }},
+            "throttling": {
+                "socketConnectionsPerTenant": {{ toJson .Values.nexus.throttling.socketConnectionsPerTenant }},
+                "socketConnectionsPerCluster": {{ toJson .Values.nexus.throttling.socketConnectionsPerCluster }},
+                "submitOps": {{ toJson .Values.nexus.throttling.submitOps }},
+                "submitSignal": {{ toJson .Values.nexus.throttling.submitSignal }}
+            },
+            "topic": "{{ .Values.kafka.topics.rawdeltas }}",
+            "bucket": "snapshots",
+            "key": "{{ .Values.nexus.key }}",
+            "tenants": [
+                {{- $lastIndex := sub (len .Values.nexus.tenants) 1}}
+                {{- range $i, $tenant := .Values.nexus.tenants }}
+                {{ toJson . }}{{- if ne $i $lastIndex -}}, {{ end }}
+                {{- end }}
+            ],
+            "socketIoAdapter" : {
+                "enableCustomSocketIoAdapter": {{ .Values.nexus.socketIoAdapter.enableCustomSocketIoAdapter }},
+                "shouldDisableDefaultNamespace": {{ .Values.nexus.socketIoAdapter.shouldDisableDefaultNamespace }}
+            },
             "socketIo" : {
-                "perMessageDeflate": {{ .Values.alfred.socketIo.perMessageDeflate}}
+                "perMessageDeflate": {{ .Values.nexus.socketIo.perMessageDeflate}}
             }
         },
         "client": {
@@ -129,7 +171,8 @@ data:
             "groupId": "{{ template "deli.fullname" . }}",
             "checkpointBatchSize": 10,
             "checkpointTimeIntervalMsec": 1000,
-            "restartOnCheckpointFailure": {{ .Values.deli.restartOnCheckpointFailure }}
+            "restartOnCheckpointFailure": {{ .Values.deli.restartOnCheckpointFailure }},
+            "enableEphemeralContainerSummaryCleanup": {{ .Values.deli.enableEphemeralContainerSummaryCleanup }}
         },
         "scribe": {
             "kafkaClientId": "{{ template "scribe.fullname" . }}",
@@ -142,11 +185,15 @@ data:
             "getDeltasViaAlfred": {{ .Values.scribe.getDeltasViaAlfred }},
             "verifyLastOpPersistence": {{ .Values.scribe.verifyLastOpPersistence }},
             "restartOnCheckpointFailure": {{ .Values.scribe.restartOnCheckpointFailure }},
-            "disableTransientTenantFiltering": {{ .Values.scribe.disableTransientTenantFiltering }}
+            "disableTransientTenantFiltering": {{ .Values.scribe.disableTransientTenantFiltering }},
+            "maxLogtailLength": {{ .Values.scribe.maxLogtailLength }},
+            "scrubUserDataInGlobalCheckpoints": {{ .Values.scribe.scrubUserDataInGlobalCheckpoints }},
+            "scrubUserDataInLocalCheckpoints": {{ .Values.scribe.scrubUserDataInLocalCheckpoints }},
+            "scrubUserDataInSummaries": {{ .Values.scribe.scrubUserDataInSummaries }}
         },
         "system": {
             "httpServer": {
-                "connectionTimeout": {{ .Values.system.httpServer.connectionTimeout }}
+                "connectionTimeoutMs": {{ .Values.system.httpServer.connectionTimeoutMs }}
             },
             "topics": {
                 "send": "{{ .Values.kafka.topics.deltas }}"
@@ -154,10 +201,12 @@ data:
         },
         "usage": {
             "clientConnectivityCountingEnabled": "{{ .Values.usage.clientConnectivityCountingEnabled }}",
-            "signalUsageCountingEnabled": {{ .Values.usage.signalUsageCountingEnabled }}
+            "signalUsageCountingEnabled": {{ .Values.usage.signalUsageCountingEnabled }},
+            "httpUsageCountingEnabled": {{ .Values.usage.httpUsageCountingEnabled }}
         },
         "shared": {
-            "transientTenants": {{ toJson .Values.shared.transientTenants }}
+            "transientTenants": {{ toJson .Values.shared.transientTenants }},
+            "runnerServerCloseTimeoutMs": {{ .Values.shared.runnerServerCloseTimeoutMs }}
         },
         "auth": {
             "endpoint": "http://{{ template "riddler.fullname" . }}",
@@ -184,13 +233,9 @@ data:
             "groupId": "{{ template "scriptorium.fullname" . }}",
             "checkpointBatchSize": 1,
             "checkpointTimeIntervalMsec": 1000,
-            "restartOnCheckpointFailure": {{ .Values.scriptorium.restartOnCheckpointFailure }}
-        },
-        "paparazzi": {
-            "queue": "paparazziQueue"
-        },
-        "rabbitmq": {
-            "connectionString": "{{ .Values.rabbitmq.connectionString }}"
+            "restartOnCheckpointFailure": {{ .Values.scriptorium.restartOnCheckpointFailure }},
+            "logSavedOpsTimeIntervalMs": {{ .Values.scriptorium.logSavedOpsTimeIntervalMs }},
+            "opsCountTelemetryEnabled": {{ .Values.scriptorium.opsCountTelemetryEnabled }}
         },
         "riddler": {
             "port": 5000
