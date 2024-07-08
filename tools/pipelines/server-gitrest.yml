@@ -113,6 +113,5 @@ extends:
     tagName: gitrest
     lint: true
     pack: true
-    enableDockerImagePull: false
     checks:
     - prettier
