@@ -28,7 +28,7 @@ import {
 	type ImplicitAllowedTypes,
 	type TreeNodeFromImplicitAllowedTypes,
 } from "./schemaTypes.js";
-import type { TreeNode, TreeChangeEvents } from "./types.js";
+import type { TreeNode, TreeChangeEvents, ArrayNodeChangeEvents, ObjectNodeChangeEvents, MapNodeChangeEvents } from "./types.js";
 import {
 	booleanSchema,
 	handleSchema,
@@ -39,6 +39,9 @@ import {
 import { isFluidHandle } from "@fluidframework/runtime-utils/internal";
 import { UsageError } from "@fluidframework/telemetry-utils/internal";
 import type { Off } from "../events/index.js";
+import type { TreeArrayNode } from "./arrayNode.js";
+import type { TreeMapNode } from "./mapNode.js";
+import type { TreeObjectNode } from "./objectNode.js";
 
 /**
  * Provides various functions for analyzing {@link TreeNode}s.
@@ -99,6 +102,51 @@ export interface TreeNodeApi {
 		node: TreeNode,
 		eventName: K,
 		listener: TreeChangeEvents[K],
+	): () => void;
+
+	/**
+	 * Register an event listener on an array node. This is a specialized version of {@link on} for array nodes, with
+	 * listener payload types specific to them.
+	 * @param node - The node whose events should be subscribed to.
+	 * @param eventName - Which event to subscribe to.
+	 * @param listener - The callback to trigger for the event. The tree can be read during the callback, but it is invalid to modify the tree during this callback.
+	 * @returns A callback function which will deregister the event.
+	 * This callback should be called only once.
+	 */
+	on<K extends keyof ArrayNodeChangeEvents>(
+		node: TreeArrayNode,
+		eventName: K,
+		listener: ArrayNodeChangeEvents[K],
+	): () => void;
+
+	/**
+	 * Register an event listener on an object node. This is a specialized version of {@link on} for object nodes, with
+	 * listener payload types specific to them.
+	 * @param node - The node whose events should be subscribed to.
+	 * @param eventName - Which event to subscribe to.
+	 * @param listener - The callback to trigger for the event. The tree can be read during the callback, but it is invalid to modify the tree during this callback.
+	 * @returns A callback function which will deregister the event.
+	 * This callback should be called only once.
+	 */
+	on<K extends keyof ObjectNodeChangeEvents>(
+		node: TreeObjectNode,
+		eventName: K,
+		listener: ObjectNodeChangeEvents[K],
+	): () => void;
+
+	/**
+	 * Register an event listener on an map node. This is a specialized version of {@link on} for map nodes, with
+	 * listener payload types specific to them.
+	 * @param node - The node whose events should be subscribed to.
+	 * @param eventName - Which event to subscribe to.
+	 * @param listener - The callback to trigger for the event. The tree can be read during the callback, but it is invalid to modify the tree during this callback.
+	 * @returns A callback function which will deregister the event.
+	 * This callback should be called only once.
+	 */
+	on<K extends keyof MapNodeChangeEvents>(
+		node: TreeMapNode,
+		eventName: K,
+		listener: MapNodeChangeEvents[K],
 	): () => void;
 
 	/**

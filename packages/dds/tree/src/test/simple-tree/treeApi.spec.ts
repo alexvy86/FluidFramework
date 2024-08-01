@@ -19,7 +19,9 @@ import {
 	type NodeFromSchema,
 	SchemaFactory,
 	treeNodeApi as Tree,
+	type TreeArrayNode,
 	type TreeChangeEvents,
+	type TreeMapNode,
 	TreeViewConfiguration,
 } from "../../simple-tree/index.js";
 import { getView } from "../utils.js";
@@ -37,6 +39,7 @@ import {
 } from "../../simple-tree/leafNodeSchema.js";
 // eslint-disable-next-line import/no-internal-modules
 import { tryGetSchema } from "../../simple-tree/treeNodeApi.js";
+import type { NodeChangedEventArgs } from "../../simple-tree/types.js";
 
 const schema = new SchemaFactory("com.example");
 
@@ -782,8 +785,8 @@ describe("treeNodeApi", () => {
 			const root = view.root;
 
 			const eventLog: ReadonlySet<string>[] = [];
-			Tree.on(root, "nodeChanged", ({ changedProperties }) =>
-				eventLog.push(changedProperties),
+			Tree.on(root, "nodeChanged", (args: NodeChangedEventArgs) =>
+				eventLog.push(args.changedProperties),
 			);
 
 			const { forkView, forkCheckout } = getViewForForkedBranch(view);
@@ -813,8 +816,8 @@ describe("treeNodeApi", () => {
 			const root = view.root;
 
 			const eventLog: ReadonlySet<string>[] = [];
-			Tree.on(root, "nodeChanged", ({ changedProperties }) =>
-				eventLog.push(changedProperties),
+			Tree.on(root, "nodeChanged", (args: NodeChangedEventArgs) =>
+				eventLog.push(args.changedProperties),
 			);
 
 			const { forkView, forkCheckout } = getViewForForkedBranch(view);
@@ -830,7 +833,7 @@ describe("treeNodeApi", () => {
 			assert.deepEqual(eventLog, [new Set(["key1", "key2", "key3"])]);
 		});
 
-		it(`'nodeChanged' does not include the names of changed properties (arrayNode)`, () => {
+		it(`'nodeChanged' does not have changed properties (arrayNode)`, () => {
 			const sb = new SchemaFactory("test");
 			class TestNode extends sb.array("root", [sb.number]) {}
 
@@ -838,10 +841,13 @@ describe("treeNodeApi", () => {
 			view.initialize([1, 2]);
 			const root = view.root;
 
-			const eventLog: ReadonlySet<string>[] = [];
-			Tree.on(root, "nodeChanged", ({ changedProperties }) =>
-				eventLog.push(changedProperties),
-			);
+			let eventFireCount = 0;
+			// @ts-expect-error The Tree.on() overload for nodeChanged event for an array node should not have a payload.
+			// It still exists, but it should be an empty set for now.
+			Tree.on(root, "nodeChanged", (args: NodeChangedEventArgs) => {
+				eventFireCount++;
+				assert.equal(args.changedProperties, new Set());
+			});
 
 			const { forkView, forkCheckout } = getViewForForkedBranch(view);
 
@@ -853,10 +859,10 @@ describe("treeNodeApi", () => {
 
 			view.checkout.merge(forkCheckout);
 
-			assert.deepEqual(eventLog, [new Set()]);
+			assert.equal(eventFireCount, 1);
 		});
 
-		it(`'nodeChanged' uses view keys, not stored keys, for the list of changed properties`, () => {
+		it(`'nodeChanged' on an object node uses view keys, not stored keys, for the list of changed properties`, () => {
 			const sb = new SchemaFactory("test");
 			class TestNode extends sb.object("root", {
 				prop1: sb.optional(sb.number, { key: "stored-prop1" }),
@@ -867,8 +873,8 @@ describe("treeNodeApi", () => {
 			const root = view.root;
 
 			const eventLog: ReadonlySet<string>[] = [];
-			Tree.on(root, "nodeChanged", ({ changedProperties }) =>
-				eventLog.push(changedProperties),
+			Tree.on(root, "nodeChanged", (args: NodeChangedEventArgs) =>
+				eventLog.push(args.changedProperties),
 			);
 
 			const { forkView, forkCheckout } = getViewForForkedBranch(view);
