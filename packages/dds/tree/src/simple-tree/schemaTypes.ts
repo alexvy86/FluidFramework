@@ -601,6 +601,19 @@ export type TreeLeafValue = number | string | boolean | IFluidHandle | null;
 export const typeNameSymbol: unique symbol = Symbol("TreeNode Type");
 
 /**
+ * The node kind of a {@link TreeNode}.
+ * @remarks
+ * This symbol mainly exists on nodes to allow TypeScript to provide more accurate type checking.
+ *
+ * This symbol should not manually be added to objects as doing so allows the object to be invalidly used where nodes are expected.
+ * Instead construct a real node of the desired type using its constructor.
+ * @privateRemarks
+ * This prevents non-nodes from being accidentally used as nodes, as well as allows the type checker to distinguish different node kinds.
+ * @public
+ */
+export const nodeKindSymbol: unique symbol = Symbol("TreeNode Kind");
+
+/**
  * Adds a type symbol to a type for stronger typing.
  * @remarks
  * An implementation detail of {@link TreeNode}'s strong typing setup: not intended for direct use outside of this package.

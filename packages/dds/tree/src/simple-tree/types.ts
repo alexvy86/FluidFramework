@@ -11,6 +11,7 @@ import {
 	type TreeNodeSchema,
 	type TreeNodeSchemaClass,
 	type WithType,
+	type nodeKindSymbol,
 	typeNameSymbol,
 } from "./schemaTypes.js";
 import {
@@ -38,6 +39,69 @@ import { tryGetSchema } from "./treeNodeApi.js";
  */
 export type Unhydrated<T> = T;
 
+export interface NodeChangedEventArgs {
+	readonly changedProperties: ReadonlySet<string>;
+}
+
+export interface TreeChangeEventsBase {
+	/**
+	 * Emitted by a node after a batch of changes has been applied to the tree, when something changed anywhere in the
+	 * subtree rooted at it.
+	 *
+	 * @remarks
+	 * This event is not emitted when the node itself is moved to a different location in the tree or removed from the tree.
+	 * In that case it is emitted on the _parent_ node, not the node itself.
+	 *
+	 * The node itself is part of the subtree, so this event will be emitted even if the only changes are to the properties
+	 * of the node itself.
+	 *
+	 * For remote edits, this event is not guaranteed to occur in the same order or quantity that it did in
+	 * the client that made the original edit.
+	 *
+	 * When it is emitted, the tree is guaranteed to be in-schema.
+	 */
+	treeChanged(): void;
+}
+
+export interface TreeChangeEventsInternal extends TreeChangeEventsBase {
+	/**
+	 * Emitted by a node after a batch of changes has been applied to the tree, if a change affected the node, where a
+	 * change is:
+	 *
+	 * - For an object node, when the value of one of its properties changes (i.e., the property's value is set
+	 * to something else, including `undefined`).
+	 *
+	 * - For an array node, when an element is added, removed, or moved.
+	 *
+	 * - For a map node, when an entry is added, updated, or removed.
+	 *
+	 * @remarks
+	 * Prefer using events on the specific node kind (object nodes, map nodes, array nodes) instead of this one
+	 * for more specific listener signatures according to what a given node kind actually supports.
+	 *
+	 * This event is not emitted when:
+	 *
+	 * - Properties of a child node change. Notably, updates to an array node or a map node (like adding or removing
+	 * elements/entries) will emit this event on the array/map node itself, but not on the node that contains the
+	 * array/map node as one of its properties.
+	 *
+	 * - The node is moved to a different location in the tree or removed from the tree.
+	 * In this case the event is emitted on the _parent_ node, not the node itself.
+	 *
+	 * For remote edits, this event is not guaranteed to occur in the same order or quantity that it did in
+	 * the client that made the original edit.
+	 *
+	 * When it is emitted, the tree is guaranteed to be in-schema.
+	 *
+	 * @privateRemarks
+	 * This event occurs whenever the apparent contents of the node instance change, regardless of what caused the change.
+	 * For example, it will fire when the local client reassigns a child, when part of a remote edit is applied to the
+	 * node, or when the node has to be updated due to resolution of a merge conflict
+	 * (for example a previously applied local change might be undone, then reapplied differently or not at all).
+	 */
+	nodeChanged(args: NodeChangedEventArgs): void;
+}
+
 /**
  * A collection of events that can be emitted by a {@link TreeNode}.
  *
@@ -59,7 +123,7 @@ export type Unhydrated<T> = T;
  *
  * @sealed @public
  */
-export interface TreeChangeEvents {
+export interface TreeChangeEvents extends TreeChangeEventsBase {
 	/**
 	 * Emitted by a node after a batch of changes has been applied to the tree, if a change affected the node, where a
 	 * change is:
@@ -70,6 +134,39 @@ export interface TreeChangeEvents {
 	 * - For an array node, when an element is added, removed, or moved.
 	 *
 	 * - For a map node, when an entry is added, updated, or removed.
+	 *
+	 * @remarks
+	 * Prefer using events on the specific node kind (object nodes, map nodes, array nodes) instead of this one
+	 * for more specific listener signatures according to what a given node kind actually supports.
+	 *
+	 * This event is not emitted when:
+	 *
+	 * - Properties of a child node change. Notably, updates to an array node or a map node (like adding or removing
+	 * elements/entries) will emit this event on the array/map node itself, but not on the node that contains the
+	 * array/map node as one of its properties.
+	 *
+	 * - The node is moved to a different location in the tree or removed from the tree.
+	 * In this case the event is emitted on the _parent_ node, not the node itself.
+	 *
+	 * For remote edits, this event is not guaranteed to occur in the same order or quantity that it did in
+	 * the client that made the original edit.
+	 *
+	 * When it is emitted, the tree is guaranteed to be in-schema.
+	 *
+	 * @privateRemarks
+	 * This event occurs whenever the apparent contents of the node instance change, regardless of what caused the change.
+	 * For example, it will fire when the local client reassigns a child, when part of a remote edit is applied to the
+	 * node, or when the node has to be updated due to resolution of a merge conflict
+	 * (for example a previously applied local change might be undone, then reapplied differently or not at all).
+	 */
+	nodeChanged(): void;
+}
+
+export interface ObjectNodeChangeEvents {
+	/**
+	 * Emitted by an object node after a batch of changes has been applied to the tree, if a change affected the node,
+	 * where a change means that the  value of one of its properties changed (i.e., the property's value is set
+	 * to something else, including `undefined`).
 	 *
 	 * @remarks
 	 * This event is not emitted when:
@@ -95,24 +192,62 @@ export interface TreeChangeEvents {
 	nodeChanged({
 		changedProperties,
 	}: { readonly changedProperties: ReadonlySet<string> }): void;
+}
 
+export interface MapNodeChangeEvents {
 	/**
-	 * Emitted by a node after a batch of changes has been applied to the tree, when something changed anywhere in the
-	 * subtree rooted at it.
+	 * Emitted by a map node after a batch of changes has been applied to the tree, if a change affected the node, where a
+	 * change means that an entry was added, updated, or removed.
 	 *
 	 * @remarks
-	 * This event is not emitted when the node itself is moved to a different location in the tree or removed from the tree.
-	 * In that case it is emitted on the _parent_ node, not the node itself.
+	 * This event is not emitted when:
 	 *
-	 * The node itself is part of the subtree, so this event will be emitted even if the only changes are to the properties
-	 * of the node itself.
+	 * - Properties of a child node change. Notably, updates to an array node or a map node (like adding or removing
+	 * elements/entries) will emit this event on the array/map node itself, but not on the node that contains the
+	 * array/map node as one of its properties.
+	 *
+	 * - The node is moved to a different location in the tree or removed from the tree.
+	 * In this case the event is emitted on the _parent_ node, not the node itself.
 	 *
 	 * For remote edits, this event is not guaranteed to occur in the same order or quantity that it did in
 	 * the client that made the original edit.
 	 *
 	 * When it is emitted, the tree is guaranteed to be in-schema.
+	 *
+	 * @privateRemarks
+	 * This event occurs whenever the apparent contents of the node instance change, regardless of what caused the change.
+	 * For example, it will fire when the local client reassigns a child, when part of a remote edit is applied to the
+	 * node, or when the node has to be updated due to resolution of a merge conflict
+	 * (for example a previously applied local change might be undone, then reapplied differently or not at all).
 	 */
-	treeChanged(): void;
+	nodeChanged({
+		changedProperties,
+	}: { readonly changedProperties: ReadonlySet<string> }): void;
+}
+
+export interface ArrayNodeChangeEvents {
+	/**
+	 * Emitted by an array node after a batch of changes has been applied to the tree, if a change affected the node,
+	 * where a change means that an element was added, removed, or moved.
+	 *
+	 * @remarks
+	 * This event is not emitted when:
+	 *
+	 * - The node is moved to a different location in the tree or removed from the tree.
+	 * In this case the event is emitted on the _parent_ node, not the node itself.
+	 *
+	 * For remote edits, this event is not guaranteed to occur in the same order or quantity that it did in
+	 * the client that made the original edit.
+	 *
+	 * When it is emitted, the tree is guaranteed to be in-schema.
+	 *
+	 * @privateRemarks
+	 * This event occurs whenever the apparent contents of the node instance change, regardless of what caused the change.
+	 * For example, it will fire when the local client reassigns a child, when part of a remote edit is applied to the
+	 * node, or when the node has to be updated due to resolution of a merge conflict
+	 * (for example a previously applied local change might be undone, then reapplied differently or not at all).
+	 */
+	nodeChanged(): void;
 }
 
 /**
@@ -173,6 +308,13 @@ export abstract class TreeNode implements WithType {
 	 * Subclasses provide more specific strings for this to get strong typing of otherwise type compatible nodes.
 	 */
 	public abstract get [typeNameSymbol](): string;
+
+	/**
+	 * Adds a node kind symbol for stronger typing.
+	 * @privateRemarks
+	 * Subclasses provide more specific strings for this to get strong typing of otherwise type compatible nodes.
+	 */
+	public abstract get [nodeKindSymbol](): NodeKind;
 
 	/**
 	 * Provides `instanceof` support for testing if a value is a `TreeNode`.

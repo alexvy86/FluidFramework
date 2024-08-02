@@ -5,7 +5,7 @@
 
 import { assert } from "@fluidframework/core-utils/internal";
 import { createEmitter, type Listenable, type Off } from "../events/index.js";
-import type { TreeChangeEvents, TreeNode } from "./types.js";
+import type { TreeChangeEvents, TreeChangeEventsInternal, TreeNode } from "./types.js";
 import type { AnchorNode } from "../core/index.js";
 import {
 	flexTreeSlot,
@@ -25,12 +25,12 @@ import { NodeKind } from "./schemaTypes.js";
  * The kernel has the same lifetime as the node and spans both its unhydrated and hydrated states.
  * When hydration occurs, the kernel is notified via the {@link TreeNodeKernel.hydrate | hydrate} method.
  */
-export class TreeNodeKernel implements Listenable<TreeChangeEvents> {
+export class TreeNodeKernel implements Listenable<TreeChangeEventsInternal> {
 	#hydrated?: {
 		anchorNode: AnchorNode;
 		offAnchorNode: Off;
 	};
-	#events = createEmitter<TreeChangeEvents>();
+	#events = createEmitter<TreeChangeEventsInternal>();
 
 	public constructor(public readonly node: TreeNode) {}
 
@@ -107,9 +107,9 @@ export class TreeNodeKernel implements Listenable<TreeChangeEvents> {
 		return treeStatusFromAnchorCache(this.#hydrated.anchorNode);
 	}
 
-	public on<K extends keyof TreeChangeEvents>(
+	public on<K extends keyof TreeChangeEventsInternal>(
 		eventName: K,
-		listener: TreeChangeEvents[K],
+		listener: TreeChangeEventsInternal[K],
 	): Off {
 		return this.#events.on(eventName, listener);
 	}
