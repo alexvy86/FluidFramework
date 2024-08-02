@@ -11,6 +11,7 @@ import {
 	type TreeNodeSchema,
 	type TreeNodeSchemaClass,
 	type WithType,
+	type nodeKindSymbol,
 	typeNameSymbol,
 } from "./schemaTypes.js";
 import {
@@ -307,6 +308,13 @@ export abstract class TreeNode implements WithType {
 	 * Subclasses provide more specific strings for this to get strong typing of otherwise type compatible nodes.
 	 */
 	public abstract get [typeNameSymbol](): string;
+
+	/**
+	 * Adds a node kind symbol for stronger typing.
+	 * @privateRemarks
+	 * Subclasses provide more specific strings for this to get strong typing of otherwise type compatible nodes.
+	 */
+	public abstract get [nodeKindSymbol](): NodeKind;
 
 	/**
 	 * Provides `instanceof` support for testing if a value is a `TreeNode`.

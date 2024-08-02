@@ -9,7 +9,12 @@ import type { EmptyObject } from "../feature-libraries/index.js";
 import { fail } from "../util/index.js";
 
 import type { SchemaFactory, ScopedSchemaName } from "./schemaFactory.js";
-import type { NodeFromSchema, NodeKind, TreeNodeSchemaClass } from "./schemaTypes.js";
+import {
+	NodeKind,
+	nodeKindSymbol,
+	type NodeFromSchema,
+	type TreeNodeSchemaClass,
+} from "./schemaTypes.js";
 import type { TreeNode } from "./types.js";
 import type {
 	InsertableObjectFromSchemaRecord,
@@ -35,6 +40,10 @@ export function singletonSchema<TScope extends string, TName extends string | nu
 		}
 		public get value(): TName {
 			return name;
+		}
+
+		public get [nodeKindSymbol](): NodeKind {
+			return NodeKind.Object;
 		}
 	}
 

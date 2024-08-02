@@ -40,6 +40,7 @@ import {
 	typeNameSymbol,
 	type ImplicitAllowedTypes,
 	FieldKind,
+	nodeKindSymbol,
 } from "./schemaTypes.js";
 import { mapTreeFromNodeData } from "./toMapTree.js";
 import {
@@ -305,6 +306,10 @@ abstract class CustomObjectNodeBase<
 	const T extends RestrictiveReadonlyRecord<string, ImplicitFieldSchema>,
 > extends TreeNodeValid<InsertableObjectFromSchemaRecord<T>> {
 	public static readonly kind = NodeKind.Object;
+
+	public get [nodeKindSymbol](): NodeKind {
+		return NodeKind.Object;
+	}
 }
 
 /**

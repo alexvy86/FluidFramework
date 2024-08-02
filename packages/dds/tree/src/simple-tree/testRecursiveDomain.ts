@@ -16,7 +16,7 @@ import { SchemaFactory } from "./schemaFactory.js";
 // If we let TypeScript generate these includes, they use relative paths which break API extractor's rollup.
 // API-Extractor issue: https://github.com/microsoft/rushstack/issues/4507
 // eslint-disable-next-line @typescript-eslint/no-unused-vars, unused-imports/no-unused-imports
-import type { FieldKind, NodeKind } from "./schemaTypes.js";
+import { NodeKind, nodeKindSymbol, type FieldKind } from "./schemaTypes.js";
 
 const builder = new SchemaFactory("Test Recursive Domain");
 
@@ -38,7 +38,11 @@ export const base = builder.objectRecursive("testObject", {
 /**
  * @internal
  */
-export class RecursiveObject extends base {}
+export class RecursiveObject extends base {
+	public get [nodeKindSymbol](): NodeKind {
+		return NodeKind.Object;
+	}
+}
 
 /**
  * Due to https://github.com/microsoft/TypeScript/issues/55832 this is expected to compile to a d.ts file which contain `any`, and therefore the other (above) approach using class definitions is recommended for recursive schema.

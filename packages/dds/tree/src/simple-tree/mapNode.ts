@@ -29,6 +29,7 @@ import {
 	type TreeNodeSchema,
 	type TreeNodeFromImplicitAllowedTypes,
 	typeNameSymbol,
+	nodeKindSymbol,
 } from "./schemaTypes.js";
 import { mapTreeFromNodeData } from "./toMapTree.js";
 import { type MostDerivedData, type TreeNode, TreeNodeValid } from "./types.js";
@@ -256,6 +257,10 @@ export function mapSchema<
 
 		public get [typeNameSymbol](): TName {
 			return identifier;
+		}
+
+		public get [nodeKindSymbol](): NodeKind {
+			return NodeKind.Map;
 		}
 	}
 	const schemaErased: TreeNodeSchemaClass<

@@ -32,6 +32,7 @@ import {
 	type TreeNodeSchema,
 	typeNameSymbol,
 	normalizeFieldSchema,
+	nodeKindSymbol,
 } from "./schemaTypes.js";
 import { mapTreeFromNodeData } from "./toMapTree.js";
 import {
@@ -974,6 +975,10 @@ export function arraySchema<
 
 		public get [typeNameSymbol](): TName {
 			return identifier;
+		}
+
+		public get [nodeKindSymbol](): NodeKind {
+			return NodeKind.Array;
 		}
 
 		protected get simpleSchema(): T {
