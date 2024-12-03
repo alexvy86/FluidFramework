@@ -6,27 +6,31 @@
 import { TypedEventEmitter } from "@fluid-internal/client-utils";
 import { AttachState } from "@fluidframework/container-definitions";
 import { FluidObject, IFluidHandle, IRequest } from "@fluidframework/core-interfaces";
-import { assert } from "@fluidframework/core-utils";
+import { assert } from "@fluidframework/core-utils/internal";
 import {
 	FluidDataStoreRuntime,
 	FluidObjectHandle,
 	ISharedObjectRegistry,
-} from "@fluidframework/datastore";
-import { IChannelFactory, IFluidDataStoreRuntime } from "@fluidframework/datastore-definitions";
-import { ISharedMap, IValueChanged, SharedMap } from "@fluidframework/map";
-import { ConsensusRegisterCollection } from "@fluidframework/register-collection";
+} from "@fluidframework/datastore/internal";
+import {
+	IChannelFactory,
+	IFluidDataStoreRuntime,
+} from "@fluidframework/datastore-definitions/internal";
+import { ISharedMap, IValueChanged, SharedMap } from "@fluidframework/map/internal";
+import { ConsensusRegisterCollection } from "@fluidframework/register-collection/internal";
 import {
 	IFluidDataStoreContext,
 	IFluidDataStoreFactory,
 	NamedFluidDataStoreRegistryEntry,
-} from "@fluidframework/runtime-definitions";
+} from "@fluidframework/runtime-definitions/internal";
 import {
 	type ITelemetryLoggerExt,
 	UsageError,
 	createChildLogger,
 	tagCodeArtifacts,
-} from "@fluidframework/telemetry-utils";
+} from "@fluidframework/telemetry-utils/internal";
 import { v4 as uuid } from "uuid";
+
 import { IAgentScheduler, IAgentSchedulerEvents } from "./agent.js";
 
 // Note: making sure this ID is unique and does not collide with storage provided clientID
@@ -263,10 +267,8 @@ export class AgentScheduler
 		// Probably okay for now to have every client try to do this.
 		// eslint-disable-next-line @typescript-eslint/no-misused-promises
 		quorum.on("removeMember", async (clientId: string) => {
-			assert(
-				this.runtime.objectsRoutingContext.isAttached,
-				0x11c /* "Detached object routing context" */,
-			);
+			// TODO AB#19980: The scenario with a detached routing context is not fully supported.
+			if (!this.runtime.objectsRoutingContext.isAttached) return;
 			// Cleanup only if connected. If not, cleanup will happen in initializeCore() that runs on connection.
 			if (this.isActive()) {
 				const tasks: Promise<any>[] = [];
@@ -463,6 +465,7 @@ class AgentSchedulerRuntime extends FluidDataStoreRuntime {
 }
 
 /**
+ * @legacy
  * @alpha
  */
 export class AgentSchedulerFactory implements IFluidDataStoreFactory {

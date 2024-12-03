@@ -13,9 +13,6 @@
  * @packageDocumentation
  */
 
-// TODOs:
-// - bundle helper libraries as module (namespace) exports?
-
 export {
 	type ApiItemTransformationConfiguration,
 	type ApiItemTransformationOptions,
@@ -36,10 +33,18 @@ export {
 export * from "./documentation-domain/index.js";
 
 export {
+	documentToHtml,
+	documentationNodeToHtml,
+	documentationNodesToHtml,
+	type Transformation as ToHtmlTransformation,
+	type Transformations as ToHtmlTransformations,
+	type TransformationConfig as ToHtmlConfig,
+	type TransformationContext as ToHtmlContext,
+} from "./documentation-domain-to-html/index.js";
+export {
 	DocumentWriter,
-	type HtmlRenderContext,
-	type HtmlRenderers,
-	type HtmlRenderConfiguration,
+	type RenderDocumentAsHtmlConfig,
+	type RenderHtmlConfig,
 	type MarkdownRenderContext,
 	type MarkdownRenderers,
 	type MarkdownRenderConfiguration,
@@ -48,7 +53,13 @@ export type { ConfigurationBase } from "./ConfigurationBase.js";
 export type { FileSystemConfiguration } from "./FileSystemConfiguration.js";
 export type { Heading } from "./Heading.js";
 export type { Link, UrlTarget } from "./Link.js";
-export { loadModel } from "./LoadModel.js";
+export {
+	lintApiModel,
+	type LintApiModelConfiguration,
+	type LinterErrors,
+	type LinterReferenceError,
+} from "./LintApiModel.js";
+export { loadModel, type LoadModelOptions } from "./LoadModel.js";
 export {
 	defaultConsoleLogger,
 	type LoggingFunction,
@@ -66,7 +77,7 @@ export {
 // #region Scoped exports
 
 // This pattern is required to scope the utilities in a way that API-Extractor supports.
-/* eslint-disable unicorn/prefer-export-from */
+/* eslint-disable import/order, unicorn/prefer-export-from */
 
 // Export `ApiItem`-related utilities
 import * as ApiItemUtilities from "./ApiItemUtilitiesModule.js";
@@ -113,7 +124,7 @@ export {
 	MarkdownRenderer,
 };
 
-/* eslint-enable unicorn/prefer-export-from */
+/* eslint-enable import/order, unicorn/prefer-export-from */
 
 // #endregion
 

@@ -3,30 +3,32 @@
  * Licensed under the MIT License.
  */
 
-import { assert } from "@fluidframework/core-utils";
-import { SessionId } from "@fluidframework/id-compressor";
+import { assert } from "@fluidframework/core-utils/internal";
+import { createEmitter } from "@fluid-internal/client-utils";
+import type { SessionId } from "@fluidframework/id-compressor";
 import { BTree } from "@tylerbu/sorted-btree-es6";
+
 import {
-	ChangeFamily,
-	ChangeFamilyEditor,
-	GraphCommit,
-	Revertible,
-	RevisionTag,
+	type ChangeFamily,
+	type ChangeFamilyEditor,
+	type GraphCommit,
+	type RevisionTag,
 	findAncestor,
 	findCommonAncestor,
 	mintCommit,
 	rebaseChange,
+	type RebaseStatsWithDuration,
+	tagChange,
 } from "../core/index.js";
+import { type Mutable, brand, fail, getOrCreate, mapIterable } from "../util/index.js";
+
 import {
-	Mutable,
-	RecursiveReadonly,
-	brand,
-	fail,
-	getOrCreate,
-	mapIterable,
-} from "../util/index.js";
-import { SharedTreeBranch, getChangeReplaceType, onForkTransitive } from "./branch.js";
-import {
+	SharedTreeBranch,
+	type BranchTrimmingEvents,
+	getChangeReplaceType,
+	onForkTransitive,
+} from "./branch.js";
+import type {
 	Commit,
 	SeqNumber,
 	SequenceId,
@@ -40,11 +42,29 @@ import {
 	minSequenceId,
 	sequenceIdComparator,
 } from "./sequenceIdUtils.js";
+import {
+	TelemetryEventBatcher,
+	measure,
+	type ITelemetryLoggerExt,
+} from "@fluidframework/telemetry-utils/internal";
 
 export const minimumPossibleSequenceNumber: SeqNumber = brand(Number.MIN_SAFE_INTEGER);
 const minimumPossibleSequenceId: SequenceId = {
 	sequenceNumber: minimumPossibleSequenceNumber,
 };
+
+/**
+ * A special revision tag for the initial {@link EditManager.trunkBase} commit.
+ * @remarks This tag is used to supply the _initial_ trunk base with a known revision.
+ * The trunk base may advance over time, after which point the trunk base will have a different revision.
+ * When {@link EditManager.getSummaryData | serializing} and deserializing, peer branches that include the trunk base commit in their history will always use this tag.
+ */
+const rootRevision = "root" as const satisfies RevisionTag;
+
+/**
+ * Max number of telemetry log call that may be aggregated before being sent.
+ */
+const maxRebaseStatsAggregationCount = 1000;
 
 /**
  * Represents a local branch of a document and interprets the effect on the document of adding sequenced changes,
@@ -56,6 +76,8 @@ export class EditManager<
 	TChangeset,
 	TChangeFamily extends ChangeFamily<TEditor, TChangeset>,
 > {
+	private readonly _events = createEmitter<BranchTrimmingEvents>();
+
 	/** The "trunk" branch. The trunk represents the list of received sequenced changes. */
 	private readonly trunk: SharedTreeBranch<TEditor, TChangeset>;
 
@@ -81,7 +103,6 @@ export class EditManager<
 	 * at the time of submitting the latest known edit on the branch.
 	 * This means the head commit of each branch is always in its original (non-rebased) form.
 	 */
-	// TODO:#4593: Add test to ensure that peer branches are never initialized with a repairDataStoreProvider
 	private readonly peerLocalBranches: Map<SessionId, SharedTreeBranch<TEditor, TChangeset>> =
 		new Map();
 
@@ -93,6 +114,9 @@ export class EditManager<
 	/**
 	 * Tracks where on the trunk all registered branches are based. Each key is the sequence id of a commit on
 	 * the trunk, and the value is the set of all branches who have that commit as their common ancestor with the trunk.
+	 *
+	 * @remarks
+	 * This does not include the local branch.
 	 */
 	private readonly trunkBranches = new BTree<
 		SequenceId,
@@ -108,12 +132,6 @@ export class EditManager<
 	private minimumSequenceNumber = minimumPossibleSequenceNumber;
 
 	/**
-	 * The sequence ID corresponding to the oldest revertible commit owned by the local branch. This is used
-	 * to prevent the trunk from trimming this commit or commits after it as they're needed for undo.
-	 */
-	private _oldestRevertibleSequenceId?: SequenceId;
-
-	/**
 	 * A special commit that is a "base" (tail) of the trunk, though not part of the trunk itself.
 	 * This makes it possible to model the trunk in the same way as any other branch (it branches off of a base commit)
 	 * which allows it to use branching APIs to interact with the other branches.
@@ -127,6 +145,10 @@ export class EditManager<
 	 */
 	private readonly localCommits: GraphCommit<TChangeset>[] = [];
 
+	private readonly telemetryEventBatcher:
+		| TelemetryEventBatcher<keyof RebaseStatsWithDuration>
+		| undefined;
+
 	/**
 	 * @param changeFamily - the change family of changes on the trunk and local branch
 	 * @param localSessionId - the id of the local session that will be used for local commits
@@ -135,20 +157,41 @@ export class EditManager<
 		public readonly changeFamily: TChangeFamily,
 		public readonly localSessionId: SessionId,
 		private readonly mintRevisionTag: () => RevisionTag,
+		logger?: ITelemetryLoggerExt,
 	) {
 		this.trunkBase = {
-			revision: "root",
+			revision: rootRevision,
 			change: changeFamily.rebaser.compose([]),
 		};
 		this.sequenceMap.set(minimumPossibleSequenceId, this.trunkBase);
-		this.trunk = new SharedTreeBranch(this.trunkBase, changeFamily, mintRevisionTag);
+
+		if (logger !== undefined) {
+			this.telemetryEventBatcher = new TelemetryEventBatcher(
+				{
+					eventName: "rebaseProcessing",
+					category: "performance",
+				},
+				logger,
+				maxRebaseStatsAggregationCount,
+			);
+		}
+
+		this.trunk = new SharedTreeBranch(
+			this.trunkBase,
+			changeFamily,
+			mintRevisionTag,
+			this._events,
+			this.telemetryEventBatcher,
+		);
 		this.localBranch = new SharedTreeBranch(
 			this.trunk.getHead(),
 			changeFamily,
 			mintRevisionTag,
+			this._events,
+			this.telemetryEventBatcher,
 		);
 
-		this.localBranch.on("afterChange", (event) => {
+		this.localBranch.events.on("afterChange", (event) => {
 			if (event.type === "append") {
 				for (const commit of event.newCommits) {
 					this.localCommits.push(commit);
@@ -161,7 +204,6 @@ export class EditManager<
 				);
 			}
 		});
-		this.localBranch.on("revertibleDisposed", this.onRevertibleDisposed.bind(this));
 
 		// Track all forks of the local branch for purposes of trunk eviction. Unlike the local branch, they have
 		// an unknown lifetime and rebase frequency, so we can not make any assumptions about which trunk commits
@@ -181,19 +223,19 @@ export class EditManager<
 	private registerBranch(branch: SharedTreeBranch<TEditor, TChangeset>): void {
 		this.trackBranch(branch);
 		// Whenever the branch is rebased, update our record of its base trunk commit
-		const offBeforeRebase = branch.on("beforeChange", (args) => {
+		const offBeforeRebase = branch.events.on("beforeChange", (args) => {
 			if (args.type === "replace" && getChangeReplaceType(args) === "rebase") {
 				this.untrackBranch(branch);
 			}
 		});
-		const offAfterRebase = branch.on("afterChange", (args) => {
+		const offAfterRebase = branch.events.on("afterChange", (args) => {
 			if (args.type === "replace" && getChangeReplaceType(args) === "rebase") {
 				this.trackBranch(branch);
 				this.trimTrunk();
 			}
 		});
 		// When the branch is disposed, update our branch set and trim the trunk
-		const offDispose = branch.on("dispose", () => {
+		const offDispose = branch.events.on("dispose", () => {
 			this.untrackBranch(branch);
 			this.trimTrunk();
 			offBeforeRebase();
@@ -228,66 +270,60 @@ export class EditManager<
 	}
 
 	/**
-	 * Updates the `trunkBranches` map to reflect the fact that a new local commit was fast-forwarded to the trunk.
-	 * @param priorTrunkCommit - The trunk head prior to the fast-forward.
-	 * @param newId - The ID of the new trunk head.
+	 * Promote the oldest un-sequenced commit on the local branch to the head of the trunk.
+	 * @param sequenceId - The sequence id of the new trunk commit
+	 * @remarks This method is a performance optimization for the scenario where this client receives its own change back after sequencing.
+	 * The normal (not optimized) process in this case would be to apply the new sequenced commit to the trunk and then rebase the local branch over the trunk.
+	 * The first commit will be "the same" (as in, it will have the same revision) as the commit that was just sequenced, so the rebase will be a no-op.
+	 * Because the rebase is a no-op, we can skip it entirely and simply remove the commit from the local branch and append it to the trunk.
+	 * Avoiding the overhead of the rebase process, even when it's a no-op, has real measured performance benefits and is worth the added complexity here.
 	 */
-	private fastForwardBranches(
-		priorTrunkCommit: GraphCommit<TChangeset>,
-		newId: SequenceId,
-	): void {
-		const currentId = this.getCommitSequenceId(priorTrunkCommit);
-		const currentBranches = this.trunkBranches.get(currentId);
+	private fastForwardNextLocalCommit(sequenceId: SequenceId): void {
+		// First, push the local commit to the trunk.
+		// We are mutating our `localCommits` cache here, but there is no need to actually change the `localBranch` itself because it will simply catch up later if/when it next rebases.
+		const firstLocalCommit = this.localCommits.shift();
+		assert(
+			firstLocalCommit !== undefined,
+			0x6b5 /* Received a sequenced change from the local session despite having no local changes */,
+		);
+
+		const previousSequenceId = this.getCommitSequenceId(this.trunk.getHead());
+		this.pushGraphCommitToTrunk(sequenceId, firstLocalCommit, this.localSessionId);
+
+		// Next, we need to update the sequence IDs that our local branches (user's branches, not peer branches) are associated with.
+		// In particular, if a local branch is based on the previous trunk head (the branch's first ancestor in the trunk is the commit that was the head before we pushed the new commit)
+		// and also branches off of the local branch (it has an ancestor that is part of the local branch), it needs to have its sequence number advanced to be that of the new trunk head.
+		// Intuitively, this makes sense because:
+		// 1. The trunk's head just advanced forward by some (sequence) amount.
+		// 2. The local branch is always rebased to be branching off of the head of the trunk (not literally in this case, because of the optimization, but in effect).
+		// 3. Therefore, the entire local branch just advanced forward by some (sequence) amount, and any commits downstream of it which track the sequence numbers of their base commits on the trunk should also advance.
+		// This update is not necessarily required for all local branches, since some may have fallen behind the local branch and are based on older trunk commits (such branches do not need updating).
+		const currentBranches = this.trunkBranches.get(previousSequenceId);
 		if (currentBranches !== undefined) {
-			const newBranches = getOrCreate(this.trunkBranches, newId, () => new Set());
+			const newBranches = getOrCreate(this.trunkBranches, sequenceId, () => new Set());
 			for (const branch of currentBranches) {
-				if (branch.getHead() !== priorTrunkCommit) {
+				// Check every branch associated with the old sequence ID and advance it if it is based on the local branch (specifically, on the local branch as it was before we pushed its first commit to the trunk).
+				// We validate this by checking if the branch's head is a descendant of the local commit that we just pushed.
+				if (findAncestor(branch.getHead(), (c) => c === firstLocalCommit) !== undefined) {
 					newBranches.add(branch);
 					currentBranches.delete(branch);
 				}
 			}
+			// Clean up our trunk branches map by removing any empty sets.
 			if (currentBranches.size === 0) {
-				this.trunkBranches.delete(currentId);
+				this.trunkBranches.delete(previousSequenceId);
+			}
+			if (newBranches.size === 0) {
+				this.trunkBranches.delete(sequenceId);
 			}
 		}
 	}
 
 	/**
-	 * Returns the sequence id of the oldest sequenced revertible commit on the local branch.
-	 *
-	 * TODO: may be more performant to maintain the oldest revertible on the branches themselves
-	 * this should be tested and revisited once branches are supported
+	 * Return the sequence number at which the given commit was sequenced on the trunk, or undefined if the commit is not part of the trunk.
 	 */
-	private getOldestRevertibleSequenceId(): SequenceId | undefined {
-		if (this._oldestRevertibleSequenceId === undefined) {
-			let oldest: SequenceId | undefined;
-			for (const revision of this.localBranch.revertibleCommits()) {
-				if (oldest === undefined) {
-					oldest = this.trunkMetadata.get(revision)?.sequenceId;
-				} else {
-					const current = this.trunkMetadata.get(revision)?.sequenceId;
-					if (current !== undefined) {
-						oldest = minSequenceId(oldest, current);
-					}
-				}
-			}
-			this._oldestRevertibleSequenceId = oldest;
-		}
-
-		return this._oldestRevertibleSequenceId;
-	}
-
-	private onRevertibleDisposed(revertible: Revertible, revision: RevisionTag): void {
-		const metadata = this.trunkMetadata.get(revision);
-
-		// if this revision hasn't been sequenced, it won't be evicted
-		if (metadata !== undefined) {
-			const { sequenceId: id } = metadata;
-			// if this revision corresponds with the current oldest revertible sequence id, replace it with the new oldest
-			if (id === this._oldestRevertibleSequenceId) {
-				this._oldestRevertibleSequenceId = undefined;
-			}
-		}
+	public getSequenceNumber(trunkCommit: GraphCommit<TChangeset>): SeqNumber | undefined {
+		return this.trunkMetadata.get(trunkCommit.revision)?.sequenceId.sequenceNumber;
 	}
 
 	/**
@@ -297,7 +333,10 @@ export class EditManager<
 	 *
 	 * @remarks If there are more than one commit with the same sequence number we assume this refers to the last commit in the batch.
 	 */
-	public advanceMinimumSequenceNumber(minimumSequenceNumber: SeqNumber): void {
+	public advanceMinimumSequenceNumber(
+		minimumSequenceNumber: SeqNumber,
+		trimTrunk = true,
+	): void {
 		if (minimumSequenceNumber === this.minimumSequenceNumber) {
 			return;
 		}
@@ -308,16 +347,17 @@ export class EditManager<
 		);
 
 		this.minimumSequenceNumber = minimumSequenceNumber;
-		this.trimTrunk();
+		if (trimTrunk) {
+			this.trimTrunk();
+		}
 	}
 
 	/**
 	 * Examines the latest known minimum sequence number and the trunk bases of any registered branches to determine
 	 * if any commits on the trunk are unreferenced and unneeded for future computation; those found are evicted from the trunk.
-	 * @returns the number of commits that were removed from the trunk
 	 */
 	private trimTrunk(): void {
-		/** The sequence id of the oldest commit on the trunk that will be retained */
+		/** The sequence id of the most recent commit on the trunk that will be trimmed */
 		let trunkTailSequenceId: SequenceId = {
 			sequenceNumber: this.minimumSequenceNumber,
 			indexInBatch: Number.POSITIVE_INFINITY,
@@ -333,19 +373,6 @@ export class EditManager<
 			trunkTailSequenceId = minSequenceId(
 				trunkTailSequenceId,
 				sequenceIdBeforeMinimumBranchBase,
-			);
-		}
-
-		// TODO get the oldest revertible sequence id from all registered branches, not just the local branch
-		const oldestRevertibleSequenceId = this.getOldestRevertibleSequenceId();
-		if (oldestRevertibleSequenceId !== undefined) {
-			// use a smaller sequence number so that the oldest revertible is not trimmed
-			const sequenceIdBeforeOldestRevertible = decrementSequenceId(
-				oldestRevertibleSequenceId,
-			);
-			trunkTailSequenceId = minSequenceId(
-				trunkTailSequenceId,
-				sequenceIdBeforeOldestRevertible,
 			);
 		}
 
@@ -375,34 +402,50 @@ export class EditManager<
 			const newTrunkBase = latestEvicted as Mutable<typeof latestEvicted>;
 			// The metadata for new trunk base revision needs to be deleted before modifying it.
 			this.trunkMetadata.delete(newTrunkBase.revision);
-			// Copying the revision of the old trunk base into the new trunk base means we don't need to write out the original
-			// revision to summaries. All clients agree that the trunk base always has the same hardcoded revision.
-			newTrunkBase.revision = this.trunkBase.revision;
-			// Overwriting the change is not strictly necessary, but done here for consistency (so all trunk bases are deeply equal).
-			newTrunkBase.change = this.trunkBase.change;
+			// collect the revisions that will be trimmed to send as part of the branch trimmed event
+			const trimmedRevisions: RevisionTag[] = getPathFromBase(
+				newTrunkBase,
+				this.trunkBase,
+			).map((c) => c.revision);
 			// Dropping the parent field removes (transitively) all references to the evicted commits so they can be garbage collected.
 			delete newTrunkBase.parent;
 			this.trunkBase = newTrunkBase;
 
 			// Update any state that is derived from trunk commits
-			this.sequenceMap.editRange(
-				minimumPossibleSequenceId,
-				sequenceId,
-				true,
-				(s, { revision }) => {
-					// Cleanup look-aside data for each evicted commit
-					this.trunkMetadata.delete(revision);
-					// Delete all evicted commits from `sequenceMap` except for the latest one, which is the new `trunkBase`
-					if (equalSequenceIds(s, sequenceId)) {
-						assert(
-							revision === newTrunkBase.revision,
-							0x729 /* Expected last evicted commit to be new trunk base */,
-						);
-					} else {
-						return { delete: true };
-					}
-				},
-			);
+			this.sequenceMap.editRange(minimumPossibleSequenceId, sequenceId, true, (s, commit) => {
+				// Cleanup look-aside data for each evicted commit
+				this.trunkMetadata.delete(commit.revision);
+				// Delete all evicted commits from `sequenceMap` except for the latest one, which is the new `trunkBase`
+				if (equalSequenceIds(s, sequenceId)) {
+					assert(
+						commit === newTrunkBase,
+						0x729 /* Expected last evicted commit to be new trunk base */,
+					);
+				} else {
+					Reflect.defineProperty(commit, "change", {
+						get: () =>
+							assert(
+								false,
+								0xa5e /* Should not access 'change' property of an evicted commit */,
+							),
+					});
+					Reflect.defineProperty(commit, "revision", {
+						get: () =>
+							assert(
+								false,
+								0xa5f /* Should not access 'revision' property of an evicted commit */,
+							),
+					});
+					Reflect.defineProperty(commit, "parent", {
+						get: () =>
+							assert(
+								false,
+								0xa60 /* Should not access 'parent' property of an evicted commit */,
+							),
+					});
+					return { delete: true };
+				}
+			});
 
 			const trunkSize = getPathFromBase(this.trunk.getHead(), this.trunkBase).length;
 			assert(
@@ -413,6 +456,8 @@ export class EditManager<
 				this.trunkMetadata.size === trunkSize,
 				0x745 /* The size of the trunkMetadata must be the same as the trunk */,
 			);
+
+			this._events.emit("ancestryTrimmed", trimmedRevisions);
 		}
 	}
 
@@ -439,6 +484,9 @@ export class EditManager<
 			0x428 /* Clients with local changes cannot be used to generate summaries */,
 		);
 
+		// Trimming the trunk before serializing ensures that the trunk data in the summary is as minimal as possible.
+		this.trimTrunk();
+
 		let oldestCommitInCollabWindow = this.getClosestTrunkCommit(this.minimumSequenceNumber)[1];
 		assert(
 			oldestCommitInCollabWindow.parent !== undefined ||
@@ -450,20 +498,26 @@ export class EditManager<
 		oldestCommitInCollabWindow =
 			oldestCommitInCollabWindow.parent ?? oldestCommitInCollabWindow;
 
-		const trunk = getPathFromBase(this.trunk.getHead(), oldestCommitInCollabWindow).map((c) => {
-			const metadata =
-				this.trunkMetadata.get(c.revision) ?? fail("Expected metadata for trunk commit");
-			const commit: SequencedCommit<TChangeset> = {
-				change: c.change,
-				revision: c.revision,
-				sequenceNumber: metadata.sequenceId.sequenceNumber,
-				sessionId: metadata.sessionId,
-			};
-			if (metadata.sequenceId.indexInBatch !== undefined) {
-				commit.indexInBatch = metadata.sequenceId.indexInBatch;
-			}
-			return commit;
-		});
+		const trunk = getPathFromBase(this.trunk.getHead(), oldestCommitInCollabWindow).map(
+			(c) => {
+				assert(
+					c !== this.trunkBase,
+					0xa61 /* Serialized trunk should not include the trunk base */,
+				);
+				const metadata =
+					this.trunkMetadata.get(c.revision) ?? fail("Expected metadata for trunk commit");
+				const commit: SequencedCommit<TChangeset> = {
+					change: c.change,
+					revision: c.revision,
+					sequenceNumber: metadata.sequenceId.sequenceNumber,
+					sessionId: metadata.sessionId,
+				};
+				if (metadata.sequenceId.indexInBatch !== undefined) {
+					commit.indexInBatch = metadata.sequenceId.indexInBatch;
+				}
+				return commit;
+			},
+		);
 
 		const peerLocalBranches = new Map<SessionId, SummarySessionBranch<TChangeset>>(
 			mapIterable(this.peerLocalBranches.entries(), ([sessionId, branch]) => {
@@ -472,11 +526,16 @@ export class EditManager<
 					findCommonAncestor([branch.getHead(), branchPath], this.trunk.getHead()) ??
 					fail("Expected branch to be based on trunk");
 
+				const base = ancestor === this.trunkBase ? rootRevision : ancestor.revision;
 				return [
 					sessionId,
 					{
-						base: ancestor.revision,
+						base,
 						commits: branchPath.map((c) => {
+							assert(
+								c !== this.trunkBase,
+								0xa62 /* Serialized branch should not include the trunk base */,
+							);
 							const commit: Commit<TChangeset> = {
 								change: c.change,
 								revision: c.revision,
@@ -507,11 +566,11 @@ export class EditManager<
 					c.indexInBatch === undefined
 						? {
 								sequenceNumber: c.sequenceNumber,
-						  }
+							}
 						: {
 								sequenceNumber: c.sequenceNumber,
 								indexInBatch: c.indexInBatch,
-						  };
+							};
 				const commit = mintCommit(base, c);
 				this.sequenceMap.set(sequenceId, commit);
 				this.trunkMetadata.set(c.revision, {
@@ -541,15 +600,23 @@ export class EditManager<
 		}
 	}
 
-	private getCommitSequenceId(commit: GraphCommit<TChangeset>): SequenceId {
-		return this.trunkMetadata.get(commit.revision)?.sequenceId ?? minimumPossibleSequenceId;
+	private getCommitSequenceId(trunkCommitOrTrunkBase: GraphCommit<TChangeset>): SequenceId {
+		const id = this.trunkMetadata.get(trunkCommitOrTrunkBase.revision)?.sequenceId;
+		if (id === undefined) {
+			assert(
+				trunkCommitOrTrunkBase === this.trunkBase,
+				0xa63 /* Commit must be either be on the trunk or be the trunk base */,
+			);
+			return minimumPossibleSequenceId;
+		}
+		return id;
 	}
 
-	public getTrunkChanges(): readonly RecursiveReadonly<TChangeset>[] {
+	public getTrunkChanges(): readonly TChangeset[] {
 		return this.getTrunkCommits().map((c) => c.change);
 	}
 
-	public getTrunkCommits(): readonly RecursiveReadonly<GraphCommit<TChangeset>>[] {
+	public getTrunkCommits(): readonly GraphCommit<TChangeset>[] {
 		return getPathFromBase(this.trunk.getHead(), this.trunkBase);
 	}
 
@@ -557,11 +624,11 @@ export class EditManager<
 		return this.trunk.getHead();
 	}
 
-	public getLocalChanges(): readonly RecursiveReadonly<TChangeset>[] {
+	public getLocalChanges(): readonly TChangeset[] {
 		return this.getLocalCommits().map((c) => c.change);
 	}
 
-	public getLocalCommits(): readonly RecursiveReadonly<GraphCommit<TChangeset>>[] {
+	public getLocalCommits(): readonly GraphCommit<TChangeset>[] {
 		return this.localCommits;
 	}
 
@@ -594,29 +661,25 @@ export class EditManager<
 			0x713 /* Expected change sequence number to exceed the last known minimum sequence number */,
 		);
 
+		assert(
+			sequenceNumber >= // This is ">=", not ">" because changes in the same batch will have the same sequence number
+				(this.sequenceMap.maxKey()?.sequenceNumber ?? minimumPossibleSequenceNumber),
+			0xa64 /* Attempted to sequence change with an outdated sequence number */,
+		);
+
 		const commitsSequenceNumber = this.getBatch(sequenceNumber);
 		const sequenceId: SequenceId =
 			commitsSequenceNumber.length === 0
 				? {
 						sequenceNumber,
-				  }
+					}
 				: {
 						sequenceNumber,
 						indexInBatch: commitsSequenceNumber.length,
-				  };
+					};
 
 		if (newCommit.sessionId === this.localSessionId) {
-			const headTrunkCommit = this.trunk.getHead();
-			const firstLocalCommit = this.localCommits.shift();
-			assert(
-				firstLocalCommit !== undefined,
-				0x6b5 /* Received a sequenced change from the local session despite having no local changes */,
-			);
-
-			// The first local branch commit is already rebased over the trunk, so we can push it directly to the trunk.
-			this.pushGraphCommitToTrunk(sequenceId, firstLocalCommit, this.localSessionId);
-			this.fastForwardBranches(headTrunkCommit, sequenceId);
-			return;
+			return this.fastForwardNextLocalCommit(sequenceId);
 		}
 
 		// Get the revision that the remote change is based on
@@ -626,8 +689,7 @@ export class EditManager<
 		const peerLocalBranch = getOrCreate(
 			this.peerLocalBranches,
 			newCommit.sessionId,
-			() =>
-				new SharedTreeBranch(baseRevisionInTrunk, this.changeFamily, this.mintRevisionTag),
+			() => new SharedTreeBranch(baseRevisionInTrunk, this.changeFamily, this.mintRevisionTag),
 		);
 		peerLocalBranch.rebaseOnto(this.trunk, baseRevisionInTrunk);
 
@@ -637,18 +699,25 @@ export class EditManager<
 			peerLocalBranch.setHead(this.trunk.getHead());
 		} else {
 			// Otherwise, rebase the change over the trunk and append it, and append the original change to the peer branch.
-			const newChangeFullyRebased = rebaseChange(
-				this.changeFamily.rebaser,
-				newCommit.change,
-				peerLocalBranch.getHead(),
-				this.trunk.getHead(),
-				this.mintRevisionTag,
+			const { duration, output: newChangeFullyRebased } = measure(() =>
+				rebaseChange(
+					this.changeFamily.rebaser,
+					newCommit,
+					peerLocalBranch.getHead(),
+					this.trunk.getHead(),
+					this.mintRevisionTag,
+				),
 			);
 
-			peerLocalBranch.apply(newCommit.change, newCommit.revision);
+			this.telemetryEventBatcher?.accumulateAndLog({
+				duration,
+				...newChangeFullyRebased.telemetryProperties,
+			});
+
+			peerLocalBranch.apply(tagChange(newCommit.change, newCommit.revision));
 			this.pushCommitToTrunk(sequenceId, {
 				...newCommit,
-				change: newChangeFullyRebased,
+				change: newChangeFullyRebased.change,
 			});
 		}
 
@@ -667,11 +736,7 @@ export class EditManager<
 		return [commit, commits];
 	}
 
-	private pushCommitToTrunk(
-		sequenceId: SequenceId,
-		commit: Commit<TChangeset>,
-		local = false,
-	): void {
+	private pushCommitToTrunk(sequenceId: SequenceId, commit: Commit<TChangeset>): void {
 		const mintedCommit = mintCommit(this.trunk.getHead(), commit);
 		this.pushGraphCommitToTrunk(sequenceId, mintedCommit, commit.sessionId);
 	}
@@ -682,7 +747,6 @@ export class EditManager<
 		sessionId: SessionId,
 	): void {
 		this.trunk.setHead(graphCommit);
-		this.localBranch.updateRevertibleCommit(graphCommit);
 		const trunkHead = this.trunk.getHead();
 		this.sequenceMap.set(sequenceId, trunkHead);
 		this.trunkMetadata.set(trunkHead.revision, { sequenceId, sessionId });
@@ -707,7 +771,7 @@ export class EditManager<
 						// 2) There are more than one commit for the same sequence number, in this case we need to select the last one.
 						sequenceNumber: searchBy,
 						indexInBatch: Number.POSITIVE_INFINITY,
-				  }
+					}
 				: searchBy;
 
 		const commit = this.sequenceMap.getPairOrNextLower(sequenceId);

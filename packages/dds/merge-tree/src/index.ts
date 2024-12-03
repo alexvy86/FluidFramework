@@ -10,7 +10,11 @@ export {
 	SerializedAttributionCollection,
 	SequenceOffsets,
 } from "./attributionCollection.js";
-export { createInsertOnlyAttributionPolicy } from "./attributionPolicy.js";
+export {
+	createInsertOnlyAttributionPolicy,
+	createPropertyTrackingAttributionPolicyFactory,
+	createPropertyTrackingAndInsertionAttributionPolicyFactory,
+} from "./attributionPolicy.js";
 export { Client, IClientEvents } from "./client.js";
 export {
 	ConflictAction,
@@ -38,6 +42,7 @@ export {
 	AttributionPolicy,
 	IMergeTreeAttributionOptions,
 	IMergeTreeOptions,
+	IMergeTreeOptionsInternal,
 	getSlideToSegoff,
 } from "./mergeTree.js";
 export {
@@ -61,11 +66,12 @@ export {
 	ISegment,
 	ISegmentAction,
 	Marker,
-	MergeNode,
 	reservedMarkerIdKey,
 	reservedMarkerSimpleTypeKey,
 	SegmentGroup,
 	toRemovalInfo,
+	ObliterateInfo,
+	ISegmentInternal,
 } from "./mergeTreeNodes.js";
 export {
 	Trackable,
@@ -82,6 +88,7 @@ export {
 	createObliterateRangeOp,
 } from "./opBuilder.js";
 export {
+	AdjustParams,
 	IJSONSegment,
 	IMarkerDef,
 	IMergeTreeAnnotateMsg,
@@ -91,12 +98,20 @@ export {
 	IMergeTreeInsertMsg,
 	IMergeTreeOp,
 	IMergeTreeRemoveMsg,
+	IMergeTreeAnnotateAdjustMsg,
 	IRelativePosition,
 	MergeTreeDeltaType,
 	ReferenceType,
 	IMergeTreeObliterateMsg,
+	IMergeTreeObliterateSidedMsg,
 } from "./ops.js";
-export { addProperties, createMap, MapLike, matchProperties, PropertySet } from "./properties.js";
+export {
+	addProperties,
+	createMap,
+	MapLike,
+	matchProperties,
+	PropertySet,
+} from "./properties.js";
 export {
 	compareReferencePositions,
 	DetachedReferencePosition,
@@ -110,8 +125,18 @@ export {
 	reservedRangeLabelsKey,
 	reservedTileLabelsKey,
 } from "./referencePositions.js";
-export { SegmentGroupCollection } from "./segmentGroupCollection.js";
-export { PropertiesManager, PropertiesRollback } from "./segmentPropertiesManager.js";
+export {
+	PropsOrAdjust,
+	copyPropertiesAndManager,
+	PropertiesManager,
+	PropertiesRollback,
+} from "./segmentPropertiesManager.js";
+export {
+	InteriorSequencePlace,
+	Side,
+	SequencePlace,
+	endpointPosAndSide,
+} from "./sequencePlace.js";
 export { SortedSet } from "./sortedSet.js";
 export { SortedSegmentSet, SortedSegmentSetItem } from "./sortedSegmentSet.js";
 export { IJSONTextSegment, IMergeTreeTextHelper, TextSegment } from "./textSegment.js";

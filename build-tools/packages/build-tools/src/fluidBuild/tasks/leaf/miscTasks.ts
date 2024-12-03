@@ -3,13 +3,22 @@
  * Licensed under the MIT License.
  */
 
-import * as path from "path";
+import { readFile, readdir, stat } from "node:fs/promises";
+import * as path from "node:path";
 
-import { globFn, readFileAsync, statAsync, toPosixPath, unquote } from "../../../common/utils";
-import { BuildPackage } from "../../buildGraph";
-import { LeafTask, LeafWithDoneFileTask, LeafWithFileStatDoneFileTask } from "./leafTask";
 import picomatch from "picomatch";
-import { readdir, stat } from "fs/promises";
+import { getTypeTestPreviousPackageDetails } from "../../../common/typeTests";
+import type { BuildContext } from "../../buildContext";
+import { BuildPackage } from "../../buildGraph";
+import { globFn, toPosixPath } from "../taskUtils";
+import { LeafTask, LeafWithFileStatDoneFileTask } from "./leafTask";
+
+function unquote(str: string) {
+	if (str.length >= 2 && str[0] === '"' && str[str.length - 1] === '"') {
+		return str.substr(1, str.length - 2);
+	}
+	return str;
+}
 
 export class EchoTask extends LeafTask {
 	protected get isIncremental() {
@@ -39,8 +48,8 @@ export class LesscTask extends LeafTask {
 		const srcPath = unquote(args[1]);
 		const dstPath = unquote(args[2]);
 		try {
-			const srcTimeP = statAsync(path.join(this.node.pkg.directory, srcPath));
-			const dstTimeP = statAsync(path.join(this.node.pkg.directory, dstPath));
+			const srcTimeP = stat(path.join(this.node.pkg.directory, srcPath));
+			const dstTimeP = stat(path.join(this.node.pkg.directory, dstPath));
 			const [srcTime, dstTime] = await Promise.all([srcTimeP, dstTimeP]);
 			const result = srcTime <= dstTime;
 			if (!result) {
@@ -65,8 +74,13 @@ export class CopyfilesTask extends LeafWithFileStatDoneFileTask {
 	private readonly flat: boolean = false;
 	private readonly copyDstArg: string = "";
 
-	constructor(node: BuildPackage, command: string, taskName: string | undefined) {
-		super(node, command, taskName);
+	constructor(
+		node: BuildPackage,
+		command: string,
+		context: BuildContext,
+		taskName: string | undefined,
+	) {
+		super(node, command, context, taskName);
 
 		// TODO: something better
 		const args = this.command.split(" ");
@@ -202,7 +216,7 @@ export class GenVerTask extends LeafTask {
 	protected async checkLeafIsUpToDate() {
 		const file = path.join(this.node.pkg.directory, "src/packageVersion.ts");
 		try {
-			const content = await readFileAsync(file, "utf8");
+			const content = await readFile(file, "utf8");
 			const match = content.match(
 				/.*\nexport const pkgName = "(.*)";[\n\r]*export const pkgVersion = "([0-9A-Za-z.+-]+)";.*/m,
 			);
@@ -226,9 +240,45 @@ export class GenVerTask extends LeafTask {
 	}
 }
 
-export class TypeValidationTask extends LeafWithDoneFileTask {
-	protected async getDoneFileContent(): Promise<string | undefined> {
-		return JSON.stringify(this.package.packageJson);
+export class TypeValidationTask extends LeafWithFileStatDoneFileTask {
+	private inputFiles: string[] | undefined;
+	private outputFiles: string[] | undefined;
+
+	/**
+	 * All config for the type tests is contained in package.json.
+	 */
+	protected async getInputFiles(): Promise<string[]> {
+		if (this.inputFiles === undefined) {
+			this.inputFiles = [path.join(this.node.pkg.directory, "package.json")];
+			// Casting as any is a workaround because the typeValidation-related types are in build-cli.
+			// Eventually the common stuff will be split into a shared package; tracked by AB#13197.
+			if (!((this.node.pkg.packageJson as any).typeValidation?.disabled === true)) {
+				// TODO: depend on all of input to product tsc, which impacts the API.
+				// This task is effectively a TscDependentTask with additional input,
+				// but some packages build tests including type tests as part of
+				// production build, which would create a dependency cycle.
+				// AB#7318 would make sure type tests are separate.
+
+				// The package.json file of prior package is a pretty good representative
+				// for exposed types of prior package. If this is missing, task won't be
+				// incremental. That is okay because task will also fail.
+				this.inputFiles.push(getTypeTestPreviousPackageDetails(this.node.pkg).packageJsonPath);
+			}
+		}
+		return this.inputFiles;
+	}
+
+	/**
+	 * Includes all type test files that are output by the task.
+	 * This implementation assumes all typetest output is in src/test/types.
+	 */
+	protected async getOutputFiles(): Promise<string[]> {
+		if (this.outputFiles === undefined) {
+			// Assumes all typetest output is in src/test/types
+			const typetestGlob = path.join(this.node.pkg.directory, "src/test/types/**");
+			this.outputFiles = await globFn(typetestGlob, { nodir: true });
+		}
+		return this.outputFiles;
 	}
 }
 

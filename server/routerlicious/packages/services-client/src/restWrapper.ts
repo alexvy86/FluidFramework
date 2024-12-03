@@ -14,7 +14,7 @@ import {
 import { v4 as uuid } from "uuid";
 import { debug } from "./debug";
 import { createFluidServiceNetworkError, INetworkErrorDetails } from "./error";
-import { CorrelationIdHeaderName } from "./constants";
+import { CorrelationIdHeaderName, TelemetryContextHeaderName } from "./constants";
 
 /**
  * @internal
@@ -125,7 +125,9 @@ export abstract class RestWrapper {
 
 	protected abstract request<T>(options: AxiosRequestConfig, statusCode: number): Promise<T>;
 
-	protected generateQueryString(queryStringValues: Record<string, string | number | boolean>) {
+	protected generateQueryString(
+		queryStringValues: Record<string, string | number | boolean> | undefined,
+	) {
 		if (this.defaultQueryString || queryStringValues) {
 			const queryStringRecord = { ...this.defaultQueryString, ...queryStringValues };
 
@@ -162,6 +164,9 @@ export class BasicRestWrapper extends RestWrapper {
 		>,
 		private readonly refreshDefaultHeaders?: () => RawAxiosRequestHeaders,
 		private readonly getCorrelationId?: () => string | undefined,
+		private readonly getTelemetryContextProperties?: () =>
+			| Record<string, string | number | boolean>
+			| undefined,
 	) {
 		super(baseurl, defaultQueryString, maxBodyLength, maxContentLength);
 	}
@@ -175,6 +180,7 @@ export class BasicRestWrapper extends RestWrapper {
 		options.headers = this.generateHeaders(
 			options.headers,
 			this.getCorrelationId?.() ?? uuid(),
+			this.getTelemetryContextProperties?.(),
 		);
 
 		return new Promise<T>((resolve, reject) => {
@@ -219,7 +225,7 @@ export class BasicRestWrapper extends RestWrapper {
 						const retryConfig = { ...requestConfig };
 						retryConfig.headers = this.generateHeaders(
 							retryConfig.headers,
-							options.headers[CorrelationIdHeaderName] as string,
+							options.headers?.[CorrelationIdHeaderName],
 						);
 
 						this.request<T>(retryConfig, statusCode, false).then(resolve).catch(reject);
@@ -275,16 +281,21 @@ export class BasicRestWrapper extends RestWrapper {
 	private generateHeaders(
 		headers?: RawAxiosRequestHeaders,
 		fallbackCorrelationId?: string,
+		telemetryContextProperties?: Record<string, string | number | boolean>,
 	): RawAxiosRequestHeaders {
-		let result = headers ?? {};
-		if (this.defaultHeaders) {
-			result = { ...this.defaultHeaders, ...headers };
+		const result = {
+			...this.defaultHeaders,
+			...headers,
+		};
+
+		if (!result[CorrelationIdHeaderName] && fallbackCorrelationId) {
+			result[CorrelationIdHeaderName] = fallbackCorrelationId;
+		}
+		if (!result[TelemetryContextHeaderName] && telemetryContextProperties) {
+			result[TelemetryContextHeaderName] = JSON.stringify(telemetryContextProperties);
 		}
 
-		if (result[CorrelationIdHeaderName]) {
-			return result;
-		}
-		return { [CorrelationIdHeaderName]: fallbackCorrelationId, ...result };
+		return result;
 	}
 
 	private refreshOnAuthError(): boolean {

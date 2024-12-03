@@ -4,7 +4,11 @@
  */
 
 import { IRequest } from "@fluidframework/core-interfaces";
-import { DriverHeader, IResolvedUrl, IUrlResolver } from "@fluidframework/driver-definitions";
+import {
+	DriverHeader,
+	IResolvedUrl,
+	IUrlResolver,
+} from "@fluidframework/driver-definitions/internal";
 
 /**
  * Default endpoint port. Will be used by the service if the consumer does not specify a port.
@@ -70,7 +74,10 @@ export class InsecureTinyliciousUrlResolver implements IUrlResolver {
 		};
 	}
 
-	public async getAbsoluteUrl(resolvedUrl: IResolvedUrl, relativeUrl: string): Promise<string> {
+	public async getAbsoluteUrl(
+		resolvedUrl: IResolvedUrl,
+		relativeUrl: string,
+	): Promise<string> {
 		const documentId = decodeURIComponent(
 			resolvedUrl.url.replace(`${this.tinyliciousEndpoint}/tinylicious/`, ""),
 		);

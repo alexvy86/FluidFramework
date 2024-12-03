@@ -4,16 +4,30 @@
  */
 
 /* eslint-disable @typescript-eslint/no-unused-expressions */
+
 import { strict as assert } from "assert";
+
 import { DeterministicRandomGenerator } from "@fluid-experimental/property-common";
+import {
+	ArrayProperty,
+	Float64Property,
+	Int32Property,
+	NamedProperty,
+	PropertyFactory,
+	StringArrayProperty,
+	StringProperty,
+} from "@fluid-experimental/property-properties";
 import {
 	IContainer,
 	IFluidCodeDetails,
 	IHostLoader,
 	ILoaderOptions,
-} from "@fluidframework/container-definitions";
-import { IUrlResolver } from "@fluidframework/driver-definitions";
-import { LocalDocumentServiceFactory, LocalResolver } from "@fluidframework/local-driver";
+} from "@fluidframework/container-definitions/internal";
+import { IUrlResolver } from "@fluidframework/driver-definitions/internal";
+import {
+	LocalDocumentServiceFactory,
+	LocalResolver,
+} from "@fluidframework/local-driver/internal";
 import {
 	ILocalDeltaConnectionServer,
 	LocalDeltaConnectionServer,
@@ -24,7 +38,7 @@ import {
 	TestFluidObjectFactory,
 	createAndAttachContainer,
 	createLoader,
-} from "@fluidframework/test-utils";
+} from "@fluidframework/test-utils/internal";
 import { expect } from "chai";
 import lodash from "lodash";
 import { v5 as uuidv5 } from "uuid";
@@ -32,15 +46,6 @@ import { v5 as uuidv5 } from "uuid";
 // 'lodash' import workaround.
 const { range, sortedIndex, isFunction } = lodash;
 
-import {
-	ArrayProperty,
-	Float64Property,
-	Int32Property,
-	NamedProperty,
-	PropertyFactory,
-	StringArrayProperty,
-	StringProperty,
-} from "@fluid-experimental/property-properties";
 import { SharedPropertyTree } from "../propertyTree.js";
 
 // a "namespace" uuid to generate uuidv5 in fuzz tests
@@ -78,7 +83,9 @@ describe("PropertyDDS", () => {
 		package: "localServerTestPackage",
 		config: {},
 	};
-	const factory = new TestFluidObjectFactory([[propertyDdsId, SharedPropertyTree.getFactory()]]);
+	const factory = new TestFluidObjectFactory([
+		[propertyDdsId, SharedPropertyTree.getFactory()],
+	]);
 
 	let deltaConnectionServer: ILocalDeltaConnectionServer;
 	let urlResolver: LocalResolver;
@@ -141,8 +148,7 @@ describe("PropertyDDS", () => {
 				const operationCumSums = [] as number[];
 				for (const operation of operations) {
 					operationCumSums.push(
-						(operationCumSums[operationCumSums.length - 1] ?? 0) +
-							operation.probability,
+						(operationCumSums[operationCumSums.length - 1] ?? 0) + operation.probability,
 					);
 				}
 
@@ -719,9 +725,7 @@ describe("PropertyDDS", () => {
 								};
 							},
 							op: async (parameters) => {
-								await opProcessingController.processOutgoing(
-									parameters.container(),
-								);
+								await opProcessingController.processOutgoing(parameters.container());
 							},
 							probability: 1,
 						},
@@ -734,9 +738,7 @@ describe("PropertyDDS", () => {
 								};
 							},
 							op: async (parameters) => {
-								await opProcessingController.processIncoming(
-									parameters.container(),
-								);
+								await opProcessingController.processIncoming(parameters.container());
 							},
 							probability: 1,
 						},
@@ -1101,9 +1103,8 @@ describe("PropertyDDS", () => {
 
 				// This collaborator should still have pending changes after rebase the incoming commits
 				expect(
-					Object.keys(
-						sharedPropertyTree2.root.getPendingChanges().getSerializedChangeSet(),
-					).length,
+					Object.keys(sharedPropertyTree2.root.getPendingChanges().getSerializedChangeSet())
+						.length,
 				).to.not.equal(0);
 
 				// Committing the new pending change

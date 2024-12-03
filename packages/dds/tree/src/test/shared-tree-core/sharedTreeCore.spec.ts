@@ -3,50 +3,60 @@
  * Licensed under the MIT License.
  */
 
-import { strict as assert } from "assert";
+import { strict as assert } from "node:assert";
+
 import { IsoBuffer, TypedEventEmitter } from "@fluid-internal/client-utils";
-import { IEvent } from "@fluidframework/core-interfaces";
-import { IChannelStorageService } from "@fluidframework/datastore-definitions";
-import { createIdCompressor } from "@fluidframework/id-compressor";
-import { ISummaryTree, SummaryObject, SummaryType } from "@fluidframework/protocol-definitions";
+import type { IEvent } from "@fluidframework/core-interfaces";
+import type { IChannelStorageService } from "@fluidframework/datastore-definitions/internal";
+import { createIdCompressor } from "@fluidframework/id-compressor/internal";
 import {
+	type ISummaryTree,
+	type SummaryObject,
+	SummaryType,
+} from "@fluidframework/driver-definitions";
+import type {
 	IGarbageCollectionData,
 	ISummaryTreeWithStats,
 	ITelemetryContext,
-} from "@fluidframework/runtime-definitions";
-import { createSingleBlobSummary } from "@fluidframework/shared-object-base";
+} from "@fluidframework/runtime-definitions/internal";
+import { createSingleBlobSummary } from "@fluidframework/shared-object-base/internal";
 import {
 	MockContainerRuntimeFactory,
+	MockContainerRuntimeFactoryForReconnection,
 	MockFluidDataStoreRuntime,
 	MockSharedObjectServices,
 	MockStorage,
-} from "@fluidframework/test-runtime-utils";
+} from "@fluidframework/test-runtime-utils/internal";
+
 import {
-	AllowedUpdateType,
-	ChangeFamily,
-	ChangeFamilyEditor,
+	type ChangeFamily,
+	type ChangeFamilyEditor,
+	type GraphCommit,
 	rootFieldKey,
 } from "../../core/index.js";
-import { leaf } from "../../domains/index.js";
 import {
-	DefaultEditBuilder,
-	FieldKinds,
-	FlexFieldSchema,
-	SchemaBuilderBase,
+	type DefaultChangeset,
+	type DefaultEditBuilder,
+	type ModularChangeset,
 	cursorForJsonableTreeNode,
-	typeNameSymbol,
 } from "../../feature-libraries/index.js";
-import {
+import { Tree } from "../../shared-tree/index.js";
+import type {
+	ChangeEnricherReadonlyCheckout,
 	EditManager,
+	ResubmitMachine,
 	SharedTreeCore,
 	Summarizable,
 	SummaryElementParser,
 	SummaryElementStringifier,
 } from "../../shared-tree-core/index.js";
-import { InitializeAndSchematizeConfiguration } from "../../shared-tree/index.js";
-import { brand } from "../../util/index.js";
-import { SharedTreeTestFactory, schematizeFlexTree } from "../utils.js";
+import { brand, disposeSymbol } from "../../util/index.js";
+import { SharedTreeTestFactory, StringArray, TestTreeProviderLite } from "../utils.js";
+
 import { TestSharedTreeCore } from "./utils.js";
+import { SchemaFactory, TreeViewConfiguration } from "../../simple-tree/index.js";
+
+const enableSchemaValidation = true;
 
 describe("SharedTreeCore", () => {
 	it("summarizes without indexes", async () => {
@@ -184,27 +194,6 @@ describe("SharedTreeCore", () => {
 		assert.equal(getTrunkLength(tree), 6 - 3);
 	});
 
-	it("can complete a transaction that spans trunk eviction", () => {
-		const runtime = new MockFluidDataStoreRuntime({ idCompressor: createIdCompressor() });
-		const tree = new TestSharedTreeCore(runtime);
-		const factory = new MockContainerRuntimeFactory();
-		factory.createContainerRuntime(runtime);
-		tree.connect({
-			deltaConnection: runtime.createDeltaConnection(),
-			objectStorage: new MockStorage(),
-		});
-
-		changeTree(tree);
-		factory.processAllMessages();
-		assert.equal(getTrunkLength(tree), 1);
-		const branch1 = tree.getLocalBranch().fork();
-		branch1.startTransaction();
-		changeTree(tree);
-		changeTree(tree);
-		factory.processAllMessages();
-		branch1.commitTransaction();
-	});
-
 	it("evicts trunk commits only when no branches have them in their ancestry", () => {
 		const runtime = new MockFluidDataStoreRuntime({ idCompressor: createIdCompressor() });
 		const tree = new TestSharedTreeCore(runtime);
@@ -283,14 +272,10 @@ describe("SharedTreeCore", () => {
 			objectStorage: new MockStorage(),
 		});
 
-		const b = new SchemaBuilderBase(FieldKinds.optional, {
-			scope: "0x4a6 repro",
-			libraries: [leaf.library],
-		});
-		const node = b.objectRecursive("test node", {
-			child: FlexFieldSchema.createUnsafe(FieldKinds.optional, [() => node, leaf.number]),
-		});
-		const schema = b.intoSchema(node);
+		const sf = new SchemaFactory("0x4a6 repro");
+		class TestNode extends sf.objectRecursive("test node", {
+			child: sf.optionalRecursive([() => TestNode, sf.number]),
+		}) {}
 
 		const tree2 = await factory.load(
 			dataStoreRuntime2,
@@ -302,36 +287,315 @@ describe("SharedTreeCore", () => {
 			factory.attributes,
 		);
 
-		const config = {
-			schema,
-			initialTree: undefined,
-			allowedSchemaModifications: AllowedUpdateType.Initialize,
-		} satisfies InitializeAndSchematizeConfiguration;
-
-		const view1 = schematizeFlexTree(tree1, config);
+		const view1 = tree1.viewWith(
+			new TreeViewConfiguration({ schema: TestNode, enableSchemaValidation }),
+		);
+		view1.initialize(new TestNode({}));
 		containerRuntimeFactory.processAllMessages();
-		const view2 = schematizeFlexTree(tree2, config);
-		const editable1 = view1.flexTree;
-		const editable2 = view2.flexTree;
+		const view2 = tree2.viewWith(
+			new TreeViewConfiguration({ schema: TestNode, enableSchemaValidation }),
+		);
 
-		editable2.content = { [typeNameSymbol]: node.name, child: undefined };
-		editable1.content = { [typeNameSymbol]: node.name, child: undefined };
-		const rootNode = editable2.content;
-		assert(rootNode?.is(node), "Expected set operation to set root node");
-		rootNode.boxedChild.content = 42;
-		editable1.content = { [typeNameSymbol]: node.name, child: undefined };
-		rootNode.boxedChild.content = 43;
+		view2.root = new TestNode({});
+		view1.root = new TestNode({});
+		assert(Tree.is(view2.root, TestNode), "Expected set operation to set root node");
+		view2.root.child = 42;
+		view1.root = new TestNode({});
+		view2.root.child = 43;
 		containerRuntimeFactory.processAllMessages();
 		assert.deepEqual(tree1.contentSnapshot().tree, [
 			{
-				type: node.name,
+				type: TestNode.identifier,
 			},
 		]);
 		assert.deepEqual(tree2.contentSnapshot().tree, [
 			{
-				type: node.name,
+				type: TestNode.identifier,
 			},
 		]);
+	});
+
+	it("Does not submit changes that were aborted in an outer transaction", async () => {
+		const provider = new TestTreeProviderLite(2);
+		const view1 = provider.trees[0].viewWith(
+			new TreeViewConfiguration({
+				schema: StringArray,
+				enableSchemaValidation,
+			}),
+		);
+		view1.initialize(["A", "B"]);
+		provider.processMessages();
+		const view2 = provider.trees[1].viewWith(
+			new TreeViewConfiguration({
+				schema: StringArray,
+				enableSchemaValidation,
+			}),
+		);
+
+		const root1 = view1.root;
+		const root2 = view2.root;
+
+		Tree.runTransaction(root1, () => {
+			// Remove A as part of the aborted transaction
+			root1.removeAt(0);
+			Tree.runTransaction(root1, () => {
+				// Remove B as part of the committed inner transaction
+				root1.removeAt(0);
+			});
+			return Tree.runTransaction.rollback;
+		});
+
+		provider.processMessages();
+		assert.deepEqual([...root1], ["A", "B"]);
+		assert.deepEqual([...root2], ["A", "B"]);
+
+		// Make an additional change to ensure that all changes from the previous transactions were flushed
+		Tree.runTransaction(root1, () => {
+			root1.insertAtEnd("C");
+		});
+
+		provider.processMessages();
+		assert.deepEqual([...root1], ["A", "B", "C"]);
+		assert.deepEqual([...root2], ["A", "B", "C"]);
+	});
+
+	it("Does not submit changes that were aborted in an inner transaction", async () => {
+		const provider = new TestTreeProviderLite(2);
+		const view1 = provider.trees[0].viewWith(
+			new TreeViewConfiguration({
+				schema: StringArray,
+				enableSchemaValidation,
+			}),
+		);
+		view1.initialize(["A", "B"]);
+		provider.processMessages();
+		const view2 = provider.trees[1].viewWith(
+			new TreeViewConfiguration({
+				schema: StringArray,
+				enableSchemaValidation,
+			}),
+		);
+
+		const root1 = view1.root;
+		const root2 = view2.root;
+
+		Tree.runTransaction(root1, () => {
+			// Remove A as part of the committed transaction
+			root1.removeAt(0);
+			Tree.runTransaction(root1, () => {
+				// Remove B as part of the aborted transaction
+				root1.removeAt(0);
+				return Tree.runTransaction.rollback;
+			});
+		});
+
+		assert.deepEqual([...root1], ["B"]);
+		assert.deepEqual([...root2], ["A", "B"]);
+
+		provider.processMessages();
+
+		assert.deepEqual([...root1], ["B"]);
+		assert.deepEqual([...root2], ["B"]);
+
+		// Make an additional change to ensure that all changes from the previous transactions were flushed
+		Tree.runTransaction(root1, () => {
+			root1.insertAtEnd("C");
+		});
+
+		provider.processMessages();
+		assert.deepEqual([...root2], ["B", "C"]);
+		assert.deepEqual([...root2], ["B", "C"]);
+	});
+
+	describe("commit enrichment", () => {
+		interface EnrichedCommit extends GraphCommit<ModularChangeset> {
+			readonly original?: GraphCommit<ModularChangeset>;
+		}
+		class MockResubmitMachine implements ResubmitMachine<DefaultChangeset> {
+			public readonly resubmitQueue: EnrichedCommit[] = [];
+			public readonly sequencingLog: boolean[] = [];
+			public readonly submissionLog: EnrichedCommit[] = [];
+			public readonly resubmissionLog: GraphCommit<DefaultChangeset>[][] = [];
+
+			public prepareForResubmit(toResubmit: readonly GraphCommit<ModularChangeset>[]): void {
+				assert.equal(this.resubmitQueue.length, 0);
+				assert.equal(toResubmit.length, this.submissionLog.length);
+				this.resubmitQueue.push(...Array.from(toResubmit, (c) => ({ ...c, original: c })));
+				this.isInResubmitPhase = true;
+				this.resubmissionLog.push(toResubmit.slice());
+			}
+			public peekNextCommit(): GraphCommit<ModularChangeset> {
+				assert.equal(this.isInResubmitPhase, true);
+				assert.equal(this.resubmitQueue.length > 0, true);
+				return this.resubmitQueue[0];
+			}
+			public isInResubmitPhase: boolean = false;
+			public onCommitSubmitted(commit: GraphCommit<ModularChangeset>): void {
+				const toResubmit = this.resubmitQueue.shift();
+				if (toResubmit !== commit) {
+					this.resubmitQueue.shift();
+				}
+				this.submissionLog.push(commit);
+			}
+			public onSequencedCommitApplied(isLocal: boolean): void {
+				this.sequencingLog.push(isLocal);
+			}
+		}
+
+		interface Enrichment<T extends object> {
+			readonly input: T;
+			readonly output: T;
+		}
+
+		class MockChangeEnricher<T extends object> implements ChangeEnricherReadonlyCheckout<T> {
+			public isDisposed = false;
+			public enrichmentLog: Enrichment<T>[] = [];
+
+			public fork(): never {
+				// SharedTreeCore should never call fork on a change enricher
+				throw new Error("Unexpected use of fork");
+			}
+
+			public updateChangeEnrichments(input: T): T {
+				assert.equal(this.isDisposed, false);
+				const output = { ...input };
+				this.enrichmentLog.push({ input, output });
+				return output;
+			}
+
+			public [disposeSymbol](): void {
+				assert.equal(this.isDisposed, false);
+				this.isDisposed = true;
+			}
+		}
+
+		it("notifies the ResubmitMachine of submitted and sequenced commits", () => {
+			const machine = new MockResubmitMachine();
+			const tree = createTree([], machine);
+			const containerRuntimeFactory = new MockContainerRuntimeFactory();
+			const dataStoreRuntime1 = new MockFluidDataStoreRuntime({
+				idCompressor: createIdCompressor(),
+			});
+			containerRuntimeFactory.createContainerRuntime(dataStoreRuntime1);
+			tree.connect({
+				deltaConnection: dataStoreRuntime1.createDeltaConnection(),
+				objectStorage: new MockStorage(),
+			});
+
+			assert.equal(machine.submissionLog.length, 0);
+			assert.equal(machine.sequencingLog.length, 0);
+			changeTree(tree);
+			assert.equal(machine.submissionLog.length, 1);
+			assert.equal(machine.sequencingLog.length, 0);
+			containerRuntimeFactory.processAllMessages();
+			assert.equal(machine.submissionLog.length, 1);
+			assert.deepEqual(machine.sequencingLog, [true]);
+		});
+
+		it("enriches commits on first submit", () => {
+			const enricher = new MockChangeEnricher<ModularChangeset>();
+			const machine = new MockResubmitMachine();
+			const tree = createTree([], machine, enricher);
+			const containerRuntimeFactory = new MockContainerRuntimeFactory();
+			const dataStoreRuntime1 = new MockFluidDataStoreRuntime({
+				idCompressor: createIdCompressor(),
+			});
+			containerRuntimeFactory.createContainerRuntime(dataStoreRuntime1);
+			tree.connect({
+				deltaConnection: dataStoreRuntime1.createDeltaConnection(),
+				objectStorage: new MockStorage(),
+			});
+			assert.equal(enricher.enrichmentLog.length, 0);
+			changeTree(tree);
+			assert.equal(enricher.enrichmentLog.length, 1);
+			assert.equal(machine.submissionLog.length, 1);
+			assert.equal(enricher.enrichmentLog[0].input, tree.getLocalBranch().getHead().change);
+			assert.equal(enricher.enrichmentLog[0].output, machine.submissionLog[0].change);
+		});
+
+		it("enriches transactions on first submit", () => {
+			const enricher = new MockChangeEnricher<ModularChangeset>();
+			const machine = new MockResubmitMachine();
+			const tree = createTree([], machine, enricher);
+			const containerRuntimeFactory = new MockContainerRuntimeFactory();
+			const dataStoreRuntime1 = new MockFluidDataStoreRuntime({
+				idCompressor: createIdCompressor(),
+			});
+			containerRuntimeFactory.createContainerRuntime(dataStoreRuntime1);
+			tree.connect({
+				deltaConnection: dataStoreRuntime1.createDeltaConnection(),
+				objectStorage: new MockStorage(),
+			});
+			tree.transaction.start();
+			assert.equal(enricher.enrichmentLog.length, 0);
+			changeTree(tree);
+			assert.equal(enricher.enrichmentLog.length, 1);
+			assert.equal(enricher.enrichmentLog[0].input, tree.getLocalBranch().getHead().change);
+			changeTree(tree);
+			assert.equal(enricher.enrichmentLog.length, 2);
+			assert.equal(enricher.enrichmentLog[1].input, tree.getLocalBranch().getHead().change);
+			tree.transaction.commit();
+			assert.equal(enricher.enrichmentLog.length, 2);
+			assert.equal(machine.submissionLog.length, 1);
+			assert.notEqual(machine.submissionLog[0], tree.getLocalBranch().getHead().change);
+		});
+
+		it("handles aborted outer transaction", () => {
+			const enricher = new MockChangeEnricher<ModularChangeset>();
+			const machine = new MockResubmitMachine();
+			const tree = createTree([], machine, enricher);
+			const containerRuntimeFactory = new MockContainerRuntimeFactory();
+			const dataStoreRuntime1 = new MockFluidDataStoreRuntime({
+				idCompressor: createIdCompressor(),
+			});
+			containerRuntimeFactory.createContainerRuntime(dataStoreRuntime1);
+			tree.connect({
+				deltaConnection: dataStoreRuntime1.createDeltaConnection(),
+				objectStorage: new MockStorage(),
+			});
+			tree.transaction.start();
+			assert.equal(enricher.enrichmentLog.length, 0);
+			changeTree(tree);
+			assert.equal(enricher.enrichmentLog.length, 1);
+			assert.equal(enricher.enrichmentLog[0].input, tree.getLocalBranch().getHead().change);
+			tree.transaction.abort();
+			assert.equal(enricher.enrichmentLog.length, 1);
+			assert.equal(machine.submissionLog.length, 0);
+		});
+
+		it("update commit enrichments on re-submit", () => {
+			const enricher = new MockChangeEnricher<ModularChangeset>();
+			const machine = new MockResubmitMachine();
+			const tree = createTree([], machine, enricher);
+			const containerRuntimeFactory = new MockContainerRuntimeFactoryForReconnection();
+			const dataStoreRuntime1 = new MockFluidDataStoreRuntime({
+				idCompressor: createIdCompressor(),
+			});
+			const runtime = containerRuntimeFactory.createContainerRuntime(dataStoreRuntime1);
+			tree.connect({
+				deltaConnection: dataStoreRuntime1.createDeltaConnection(),
+				objectStorage: new MockStorage(),
+			});
+			runtime.connected = false;
+			assert.equal(enricher.enrichmentLog.length, 0);
+			changeTree(tree);
+			changeTree(tree);
+			assert.equal(enricher.enrichmentLog.length, 2);
+			assert.equal(machine.resubmitQueue.length, 0);
+			assert.equal(machine.submissionLog.length, 2);
+			assert.equal(machine.sequencingLog.length, 0);
+			runtime.connected = true;
+
+			assert.equal(machine.resubmissionLog.length, 1);
+			assert.equal(machine.resubmissionLog[0].length, 2);
+			assert.equal(machine.resubmitQueue.length, 0);
+			assert.equal(machine.submissionLog.length, 4);
+			assert.equal(machine.submissionLog[2].original, machine.resubmissionLog[0][0]);
+			assert.equal(machine.submissionLog[3].original, machine.resubmissionLog[0][1]);
+			assert.equal(machine.sequencingLog.length, 0);
+			containerRuntimeFactory.processAllMessages();
+			assert.equal(machine.sequencingLog.length, 2);
+		});
 	});
 
 	function isSummaryTree(summaryObject: SummaryObject): summaryObject is ISummaryTree {
@@ -340,11 +604,17 @@ describe("SharedTreeCore", () => {
 
 	function createTree<TIndexes extends readonly Summarizable[]>(
 		indexes: TIndexes,
+		resubmitMachine?: ResubmitMachine<DefaultChangeset>,
+		enricher?: ChangeEnricherReadonlyCheckout<DefaultChangeset>,
 	): TestSharedTreeCore {
 		return new TestSharedTreeCore(
 			new MockFluidDataStoreRuntime({ idCompressor: createIdCompressor() }),
 			undefined,
 			indexes,
+			undefined,
+			undefined,
+			resubmitMachine,
+			enricher,
 		);
 	}
 

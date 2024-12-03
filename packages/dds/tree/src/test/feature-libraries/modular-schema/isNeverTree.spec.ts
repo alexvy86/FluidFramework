@@ -3,16 +3,16 @@
  * Licensed under the MIT License.
  */
 
-import { strict as assert } from "assert";
+import { strict as assert } from "node:assert";
 
 import {
-	FieldKindIdentifier,
+	type FieldKindIdentifier,
 	MapNodeStoredSchema,
-	MutableTreeStoredSchema,
+	type MutableTreeStoredSchema,
 	ObjectNodeStoredSchema,
-	TreeFieldStoredSchema,
-	TreeNodeSchemaIdentifier,
-	TreeNodeStoredSchema,
+	type TreeFieldStoredSchema,
+	type TreeNodeSchemaIdentifier,
+	type TreeNodeStoredSchema,
 	TreeStoredSchemaRepository,
 	storedEmptyFieldSchema,
 } from "../../../core/index.js";
@@ -34,31 +34,18 @@ const emptyMap: ReadonlyMap<never, never> = new Map<never, never>();
 
 /**
  * Helper for building {@link TreeFieldStoredSchema}.
- * @internal
  */
 function fieldSchema(
 	kind: { identifier: FieldKindIdentifier },
-	types?: Iterable<TreeNodeSchemaIdentifier>,
+	types: Iterable<TreeNodeSchemaIdentifier>,
 ): TreeFieldStoredSchema {
 	return {
-		kind,
-		types: types === undefined ? undefined : new Set(types),
+		kind: kind.identifier,
+		types: new Set(types),
 	};
 }
 
 describe("Schema Comparison", () => {
-	/**
-	 * TreeFieldStoredSchema permits anything.
-	 * Note that children inside the field still have to be in schema.
-	 */
-	const anyField = fieldSchema(FieldKinds.sequence);
-
-	/**
-	 * TreeNodeStoredSchema that permits anything without a value.
-	 * Note that children under the fields still have to be in schema.
-	 */
-	const anyTreeWithoutValue: TreeNodeStoredSchema = new MapNodeStoredSchema(anyField);
-
 	/**
 	 * TreeFieldStoredSchema which is impossible for any data to be in schema with.
 	 */
@@ -95,9 +82,7 @@ describe("Schema Comparison", () => {
 			new Map([[brand("x"), fieldSchema(FieldKinds.required, [emptyTree.name])]]),
 		),
 	};
-	const valueAnyField = fieldSchema(FieldKinds.required);
 	const valueEmptyTreeField = fieldSchema(FieldKinds.required, [emptyTree.name]);
-	const optionalAnyField = fieldSchema(FieldKinds.optional);
 	const optionalEmptyTreeField = fieldSchema(FieldKinds.optional, [emptyTree.name]);
 
 	function updateTreeSchema(
@@ -120,7 +105,6 @@ describe("Schema Comparison", () => {
 		]);
 		assert(isNeverField(defaultSchemaPolicy, repo, neverField2));
 		assert.equal(isNeverField(defaultSchemaPolicy, repo, storedEmptyFieldSchema), false);
-		assert.equal(isNeverField(defaultSchemaPolicy, repo, anyField), false);
 		assert.equal(isNeverField(defaultSchemaPolicy, repo, valueEmptyTreeField), true);
 		updateTreeSchema(repo, brand("empty"), emptyTree.schema);
 		assert.equal(
@@ -131,9 +115,7 @@ describe("Schema Comparison", () => {
 			),
 			false,
 		);
-		assert.equal(isNeverField(defaultSchemaPolicy, repo, valueAnyField), false);
 		assert.equal(isNeverField(defaultSchemaPolicy, repo, valueEmptyTreeField), false);
-		assert.equal(isNeverField(defaultSchemaPolicy, repo, optionalAnyField), false);
 		assert.equal(isNeverField(defaultSchemaPolicy, repo, optionalEmptyTreeField), false);
 	});
 
@@ -147,7 +129,6 @@ describe("Schema Comparison", () => {
 			isNeverTree(defaultSchemaPolicy, repo, new ObjectNodeStoredSchema(emptyMap)),
 			false,
 		);
-		assert.equal(isNeverTree(defaultSchemaPolicy, repo, anyTreeWithoutValue), false);
 
 		assert(
 			allowsTreeSuperset(

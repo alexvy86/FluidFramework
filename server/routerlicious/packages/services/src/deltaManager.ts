@@ -7,7 +7,8 @@ import { fromUtf8ToBase64 } from "@fluidframework/common-utils";
 import { ISequencedDocumentMessage, ScopeType } from "@fluidframework/protocol-definitions";
 import { BasicRestWrapper } from "@fluidframework/server-services-client";
 import { IDeltaService } from "@fluidframework/server-services-core";
-import { generateToken, getCorrelationId } from "@fluidframework/server-services-utils";
+import { generateToken } from "@fluidframework/server-services-utils";
+import { getGlobalTelemetryContext } from "@fluidframework/server-services-telemetry";
 import { TenantManager } from "./tenant";
 
 /**
@@ -32,7 +33,7 @@ export class DeltaManager implements IDeltaService {
 		const restWrapper = await this.getBasicRestWrapper(tenantId, documentId, baseUrl);
 		const resultP = restWrapper.get<ISequencedDocumentMessage[]>(
 			`/deltas/${tenantId}/${documentId}`,
-			{ from, to, caller },
+			{ from, to, caller: caller ?? "Unknown" },
 		);
 		return resultP;
 	}
@@ -88,7 +89,8 @@ export class DeltaManager implements IDeltaService {
 			undefined,
 			undefined,
 			getDefaultHeaders,
-			getCorrelationId,
+			() => getGlobalTelemetryContext().getProperties().correlationId /* getCorrelationId */,
+			() => getGlobalTelemetryContext().getProperties() /* getTelemetryContextProperties */,
 		);
 		return restWrapper;
 	}

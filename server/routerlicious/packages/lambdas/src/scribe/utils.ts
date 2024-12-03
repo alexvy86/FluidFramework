@@ -27,13 +27,12 @@ export const initializeProtocol = (protocolState: IProtocolState): ProtocolOpHan
 		() => -1,
 	);
 
-export const sendToDeli = (
+export const sendToDeli = async (
 	tenantId: string,
 	documentId: string,
 	producer: IProducer | undefined,
 	operation: IDocumentMessage | IDocumentSystemMessage,
-	// eslint-disable-next-line @typescript-eslint/promise-function-async
-): Promise<any> => {
+): Promise<void> => {
 	if (!producer) {
 		throw new Error("Invalid producer");
 	}
@@ -50,7 +49,7 @@ export const sendToDeli = (
 	return producer.send([message], tenantId, documentId);
 };
 
-export const getClientIds = (protocolState: IProtocolState, clientCount: number) => {
+export const getClientIds = (protocolState: IProtocolState, clientCount: number): string[] => {
 	return protocolState.members.slice(0, clientCount).map((member) => member[0]);
 };
 
@@ -60,7 +59,10 @@ export const getClientIds = (protocolState: IProtocolState, clientCount: number)
  * @param globalCheckpointOnly - whether to always write checkpoints to global db
  * @returns whether to write checkpoint to local db
  */
-export const isLocalCheckpoint = (noActiveClients: boolean, globalCheckpointOnly: boolean) => {
+export const isLocalCheckpoint = (
+	noActiveClients: boolean,
+	globalCheckpointOnly: boolean,
+): boolean => {
 	return !isGlobalCheckpoint(noActiveClients, globalCheckpointOnly);
 };
 /**
@@ -69,7 +71,10 @@ export const isLocalCheckpoint = (noActiveClients: boolean, globalCheckpointOnly
  * @param globalCheckpointOnly - whether to always write checkpoints to global db
  * @returns whether to write checkpoint to global db
  */
-export const isGlobalCheckpoint = (noActiveClients: boolean, globalCheckpointOnly: boolean) => {
+export const isGlobalCheckpoint = (
+	noActiveClients: boolean,
+	globalCheckpointOnly: boolean,
+): boolean => {
 	return noActiveClients || globalCheckpointOnly;
 };
 
@@ -77,15 +82,18 @@ export const isGlobalCheckpoint = (noActiveClients: boolean, globalCheckpointOnl
  * Whether the quorum members represented in the checkpoint's protocol state have had their user data scrubbed
  * for privacy compliance.
  */
-export const isCheckpointQuorumScrubbed = (stringifiedCheckpoint: string): boolean => {
-	if (!stringifiedCheckpoint) {
+export const isScribeCheckpointQuorumScrubbed = (
+	checkpoint: string | IScribe | undefined,
+): boolean => {
+	if (!checkpoint) {
 		return false;
 	}
-	const checkpoint: IScribe = JSON.parse(stringifiedCheckpoint);
-	for (const [, sequencedClient] of checkpoint.protocolState.members) {
+	const parsedCheckpoint: IScribe =
+		typeof checkpoint === "string" ? JSON.parse(checkpoint) : checkpoint;
+	for (const [, sequencedClient] of parsedCheckpoint.protocolState.members) {
 		const user: IUser = sequencedClient.client.user;
-		// User information was scrubbed.
 		if (!user.id) {
+			// User information was scrubbed.
 			return true;
 		}
 	}

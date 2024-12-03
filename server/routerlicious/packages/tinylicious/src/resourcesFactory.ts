@@ -2,6 +2,7 @@
  * Copyright (c) Microsoft Corporation and contributors. All rights reserved.
  * Licensed under the MIT License.
  */
+
 // eslint-disable-next-line import/no-deprecated
 import { TypedEventEmitter } from "@fluidframework/common-utils";
 import { ICollaborationSessionEvents } from "@fluidframework/server-lambdas";
@@ -48,7 +49,7 @@ export class TinyliciousResourcesFactory implements IResourcesFactory<Tinyliciou
 		const databaseManager = new MongoDatabaseManager(
 			globalDbEnabled,
 			mongoManager,
-			null,
+			mongoManager,
 			collectionNames.nodes,
 			collectionNames.documents,
 			collectionNames.checkpoints,

@@ -3,10 +3,14 @@
  * Licensed under the MIT License.
  */
 
-import { assert } from "@fluidframework/core-utils";
-import { ISnapshot } from "@fluidframework/driver-definitions";
-import { ISequencedDocumentMessage, ISnapshotTree } from "@fluidframework/protocol-definitions";
-import { ITelemetryLoggerExt } from "@fluidframework/telemetry-utils";
+import { assert } from "@fluidframework/core-utils/internal";
+import {
+	ISnapshot,
+	ISnapshotTree,
+	ISequencedDocumentMessage,
+} from "@fluidframework/driver-definitions/internal";
+import { ITelemetryLoggerExt } from "@fluidframework/telemetry-utils/internal";
+
 import { ReadBuffer } from "./ReadBufferUtils.js";
 import { measure } from "./odspUtils.js";
 import {
@@ -60,17 +64,16 @@ function readBlobSection(node: NodeTypes): {
 			// "id": <node name>
 			// "data": <blob>
 			blobContents.set(blob.getString(1), blob.getBlob(3).arrayBuffer);
-			continue;
+		} else {
+			/**
+			 * More generalized workflow
+			 */
+			slowBlobStructureCount += 1;
+			const records = getNodeProps(blob);
+			assertBlobCoreInstance(records.data, "data should be of BlobCore type");
+			const id = getStringInstance(records.id, "blob id should be string");
+			blobContents.set(id, records.data.arrayBuffer);
 		}
-
-		/**
-		 * More generalized workflow
-		 */
-		slowBlobStructureCount += 1;
-		const records = getNodeProps(blob);
-		assertBlobCoreInstance(records.data, "data should be of BlobCore type");
-		const id = getStringInstance(records.id, "blob id should be string");
-		blobContents.set(id, records.data.arrayBuffer);
 	}
 	return { blobContents, slowBlobStructureCount };
 }
@@ -106,9 +109,11 @@ function readOpsSection(node: NodeTypes): ISequencedDocumentMessage[] {
 function readTreeSection(node: NodeCore): {
 	snapshotTree: ISnapshotTree;
 	slowTreeStructureCount: number;
+	treeStructureCountWithGroupId: number;
 } {
 	let slowTreeStructureCount = 0;
-	const trees = {};
+	let treeStructureCountWithGroupId = 0;
+	const trees: Record<string, ISnapshotTree> = {};
 	const snapshotTree: ISnapshotTree = {
 		blobs: {},
 		trees,
@@ -124,6 +129,12 @@ function readTreeSection(node: NodeCore): {
 		const length = treeNode.length;
 		if (length > 0 && treeNode.getMaybeString(0) === "name") {
 			switch (length) {
+				case 2: {
+					// empty tree case
+					// "name": <node name>
+					trees[treeNode.getString(1)] = { blobs: {}, trees: {} };
+					continue;
+				}
 				case 4: {
 					const content = treeNode.getMaybeString(2);
 					// "name": <node name>
@@ -132,6 +143,7 @@ function readTreeSection(node: NodeCore): {
 						const result = readTreeSection(treeNode.getNode(3));
 						trees[treeNode.getString(1)] = result.snapshotTree;
 						slowTreeStructureCount += result.slowTreeStructureCount;
+						treeStructureCountWithGroupId += result.treeStructureCountWithGroupId;
 						continue;
 					}
 					// "name": <node name>
@@ -164,10 +176,8 @@ function readTreeSection(node: NodeCore): {
 						const result = readTreeSection(treeNode.getNode(5));
 						trees[treeNode.getString(1)] = result.snapshotTree;
 						slowTreeStructureCount += result.slowTreeStructureCount;
-						assert(
-							treeNode.getBool(3),
-							0x3db /* Unreferenced if present should be true */,
-						);
+						treeStructureCountWithGroupId += result.treeStructureCountWithGroupId;
+						assert(treeNode.getBool(3), 0x3db /* Unreferenced if present should be true */);
 						snapshotTree.unreferenced = true;
 						continue;
 					}
@@ -182,27 +192,13 @@ function readTreeSection(node: NodeCore): {
 		/**
 		 * More generalized workflow
 		 */
-		slowTreeStructureCount += 1;
+		slowTreeStructureCount++;
 		const records = getNodeProps(treeNode);
 
 		if (records.unreferenced !== undefined) {
 			assertBoolInstance(records.unreferenced, "Unreferenced flag should be bool");
 			assert(records.unreferenced, 0x281 /* "Unreferenced if present should be true" */);
 			snapshotTree.unreferenced = true;
-		}
-
-		if (records.groupId !== undefined) {
-			const groupId = getStringInstance(records.groupId, "groupId should be a string");
-			snapshotTree.groupId = groupId;
-		}
-
-		if (records.omitted !== undefined) {
-			assertBoolInstance(records.omitted, "omitted should be a boolean");
-			assert(
-				!records.omitted || snapshotTree.groupId !== undefined,
-				0x8df /* GroupId absent but omitted is true */,
-			);
-			snapshotTree.omitted = records.omitted;
 		}
 
 		const path = getStringInstance(records.name, "Path name should be string");
@@ -216,12 +212,18 @@ function readTreeSection(node: NodeCore): {
 			assertNodeCoreInstance(records.children, "Trees should be of type NodeCore");
 			const result = readTreeSection(records.children);
 			trees[path] = result.snapshotTree;
+			if (records.groupId !== undefined) {
+				const groupId = getStringInstance(records.groupId, "groupId should be a string");
+				trees[path].groupId = groupId;
+				treeStructureCountWithGroupId++;
+			}
 			slowTreeStructureCount += result.slowTreeStructureCount;
+			treeStructureCountWithGroupId += result.treeStructureCountWithGroupId;
 		} else {
 			trees[path] = { blobs: {}, trees: {} };
 		}
 	}
-	return { snapshotTree, slowTreeStructureCount };
+	return { snapshotTree, slowTreeStructureCount, treeStructureCountWithGroupId };
 }
 
 /**
@@ -232,19 +234,22 @@ function readSnapshotSection(node: NodeTypes): {
 	sequenceNumber: number;
 	snapshotTree: ISnapshotTree;
 	slowTreeStructureCount: number;
+	treeStructureCountWithGroupId: number;
 } {
 	assertNodeCoreInstance(node, "Snapshot should be of type NodeCore");
 	const records = getNodeProps(node);
 
 	assertNodeCoreInstance(records.treeNodes, "TreeNodes should be of type NodeCore");
 	assertNumberInstance(records.sequenceNumber, "sequenceNumber should be of type number");
-	const { snapshotTree, slowTreeStructureCount } = readTreeSection(records.treeNodes);
+	const { snapshotTree, slowTreeStructureCount, treeStructureCountWithGroupId } =
+		readTreeSection(records.treeNodes);
 	snapshotTree.id = getStringInstance(records.id, "snapshotId should be string");
 	const sequenceNumber = records.sequenceNumber.valueOf();
 	return {
 		sequenceNumber,
 		snapshotTree,
 		slowTreeStructureCount,
+		treeStructureCountWithGroupId,
 	};
 }
 
@@ -283,12 +288,14 @@ export function parseCompactSnapshotResponse(
 		0x2c2 /* "Create Version should be equal to currentReadVersion" */,
 	);
 
-	const [snapshot, durationSnapshotTree] = measure(() => readSnapshotSection(records.snapshot));
+	const [snapshot, durationSnapshotTree] = measure(() =>
+		readSnapshotSection(records.snapshot),
+	);
 	const [blobContents, durationBlobs] = measure(() => readBlobSection(records.blobs));
 
 	return {
 		...snapshot,
-		...blobContents,
+		blobContents: blobContents.blobContents,
 		ops: records.deltas === undefined ? [] : readOpsSection(records.deltas),
 		latestSequenceNumber: records.lsn,
 		snapshotFormatV: 1,
@@ -298,6 +305,7 @@ export function parseCompactSnapshotResponse(
 			durationBlobs,
 			slowTreeStructureCount: snapshot.slowTreeStructureCount,
 			slowBlobStructureCount: blobContents.slowBlobStructureCount,
+			treeStructureCountWithGroupId: snapshot.treeStructureCountWithGroupId,
 		},
 	};
 }

@@ -5,21 +5,19 @@
 
 import { TypedEventEmitter } from "@fluid-internal/client-utils";
 import { IDisposable } from "@fluidframework/core-interfaces";
+import { ConnectionMode } from "@fluidframework/driver-definitions";
 import {
-	IAnyDriverError,
 	IDocumentDeltaConnection,
 	IDocumentDeltaConnectionEvents,
-} from "@fluidframework/driver-definitions";
-import {
-	ConnectionMode,
+	IAnyDriverError,
 	IClientConfiguration,
 	IDocumentMessage,
 	INack,
-	ISequencedDocumentMessage,
 	ISignalClient,
-	ISignalMessage,
 	ITokenClaims,
-} from "@fluidframework/protocol-definitions";
+	ISequencedDocumentMessage,
+	ISignalMessage,
+} from "@fluidframework/driver-definitions/internal";
 
 // This is coppied from alfred.  Probably should clean this up.
 const DefaultServiceConfiguration: IClientConfiguration = {

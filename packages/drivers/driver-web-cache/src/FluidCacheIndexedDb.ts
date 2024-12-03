@@ -4,9 +4,10 @@
  */
 
 import { ITelemetryBaseLogger } from "@fluidframework/core-interfaces";
-import { ICacheEntry } from "@fluidframework/odsp-driver-definitions";
-import { createChildLogger } from "@fluidframework/telemetry-utils";
+import { ICacheEntry } from "@fluidframework/odsp-driver-definitions/internal";
+import { createChildLogger } from "@fluidframework/telemetry-utils/internal";
 import { DBSchema, DeleteDBCallbacks, IDBPDatabase, deleteDB, openDB } from "idb";
+
 import { FluidCacheErrorEvent } from "./fluidCacheTelemetry.js";
 
 // The name of the database that we use for caching Fluid info.
@@ -75,6 +76,7 @@ export function getFluidCacheIndexedDbInstance(
  * Deletes the indexed DB instance.
  *
  * @remarks Warning this can throw an error in Firefox incognito, where accessing storage is prohibited.
+ * @legacy
  * @alpha
  */
 export function deleteFluidCacheIndexDbInstance(

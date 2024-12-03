@@ -4,7 +4,6 @@
  */
 
 /**
- * @deprecated This functionality was not meant to be exported and will be removed in a future release
  * @internal
  */
 export abstract class SortedSet<T, U extends string | number> {
@@ -20,7 +19,7 @@ export abstract class SortedSet<T, U extends string | number> {
 		return this.keySortedItems;
 	}
 
-	public addOrUpdate(newItem: T, update?: (existingItem: T, newItem: T) => void) {
+	public addOrUpdate(newItem: T, update?: (existingItem: T, newItem: T) => void): void {
 		const position = this.findItemPosition(newItem);
 		if (position.exists) {
 			update?.(this.keySortedItems[position.index], newItem);

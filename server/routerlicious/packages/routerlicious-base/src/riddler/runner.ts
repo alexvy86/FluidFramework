@@ -11,10 +11,12 @@ import {
 	IWebServerFactory,
 	IWebServer,
 	ICache,
+	IReadinessCheck,
 } from "@fluidframework/server-services-core";
 import { LumberEventName, Lumberjack } from "@fluidframework/server-services-telemetry";
 import { runnerHttpServerStop } from "@fluidframework/server-services-shared";
 import { Provider } from "nconf";
+import type { ITenantKeyGenerator } from "@fluidframework/server-services-utils";
 import * as app from "./app";
 import { ITenantRepository } from "./mongoTenantRepository";
 
@@ -22,8 +24,8 @@ import { ITenantRepository } from "./mongoTenantRepository";
  * @internal
  */
 export class RiddlerRunner implements IRunner {
-	private server: IWebServer;
-	private runningDeferred: Deferred<void>;
+	private server?: IWebServer;
+	private runningDeferred?: Deferred<void>;
 	private stopped: boolean = false;
 	private readonly runnerMetric = Lumberjack.newLumberMetric(LumberEventName.RiddlerRunner);
 
@@ -38,15 +40,18 @@ export class RiddlerRunner implements IRunner {
 		private readonly secretManager: ISecretManager,
 		private readonly fetchTenantKeyMetricInterval: number,
 		private readonly riddlerStorageRequestMetricInterval: number,
+		private readonly tenantKeyGenerator: ITenantKeyGenerator,
+		private readonly startupCheck: IReadinessCheck,
 		private readonly cache?: ICache,
 		private readonly config?: Provider,
+		private readonly readinessCheck?: IReadinessCheck,
 	) {}
 
 	// eslint-disable-next-line @typescript-eslint/promise-function-async
 	public start(): Promise<void> {
 		this.runningDeferred = new Deferred<void>();
 
-		const usingClusterModule: boolean | undefined = this.config.get("riddler:useNodeCluster");
+		const usingClusterModule: boolean | undefined = this.config?.get("riddler:useNodeCluster");
 		// Don't include application logic in primary thread when Node.js cluster module is enabled.
 		const includeAppLogic = !(cluster.isPrimary && usingClusterModule);
 
@@ -61,13 +66,16 @@ export class RiddlerRunner implements IRunner {
 				this.secretManager,
 				this.fetchTenantKeyMetricInterval,
 				this.riddlerStorageRequestMetricInterval,
+				this.tenantKeyGenerator,
+				this.startupCheck,
 				this.cache,
+				this.readinessCheck,
 			);
 			riddler.set("port", this.port);
 
 			this.server = this.serverFactory.create(riddler);
 		} else {
-			this.server = this.serverFactory.create(null);
+			this.server = this.serverFactory.create(undefined);
 		}
 
 		const httpServer = this.server.httpServer;
@@ -78,6 +86,9 @@ export class RiddlerRunner implements IRunner {
 
 		this.stopped = false;
 
+		if (this.startupCheck.setReady) {
+			this.startupCheck.setReady();
+		}
 		return this.runningDeferred.promise;
 	}
 
@@ -138,8 +149,8 @@ export class RiddlerRunner implements IRunner {
 	 * Event listener for HTTP server "listening" event.
 	 */
 	private onListening() {
-		const addr = this.server.httpServer.address();
-		const bind = typeof addr === "string" ? `pipe ${addr}` : `port ${addr.port}`;
+		const addr = this.server?.httpServer?.address();
+		const bind = typeof addr === "string" ? `pipe ${addr}` : `port ${addr?.port}`;
 		Lumberjack.info(`Listening on ${bind}`);
 	}
 }

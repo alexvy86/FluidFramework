@@ -4,21 +4,25 @@
  */
 
 import { strict as assert } from "assert";
-import type { ISharedCell, SharedCell } from "@fluidframework/cell";
-import { ConfigTypes, IConfigProviderBase, IFluidHandle } from "@fluidframework/core-interfaces";
-import {
-	ITestObjectProvider,
-	ITestContainerConfig,
-	DataObjectFactoryType,
-	ITestFluidObject,
-	ChannelFactoryRegistry,
-	getContainerEntryPointBackCompat,
-} from "@fluidframework/test-utils";
-import { describeCompat } from "@fluid-private/test-version-utils";
 
-import { ContainerRuntime } from "@fluidframework/container-runtime";
-import { Serializable } from "@fluidframework/datastore-definitions";
-import { IContainer } from "@fluidframework/container-definitions";
+import { describeCompat } from "@fluid-private/test-version-utils";
+import type { ISharedCell } from "@fluidframework/cell/internal";
+import { IContainer } from "@fluidframework/container-definitions/internal";
+import { IContainerRuntime } from "@fluidframework/container-runtime-definitions/internal";
+import {
+	ConfigTypes,
+	IConfigProviderBase,
+	IFluidHandle,
+} from "@fluidframework/core-interfaces";
+import { Serializable } from "@fluidframework/datastore-definitions/internal";
+import {
+	ChannelFactoryRegistry,
+	DataObjectFactoryType,
+	ITestContainerConfig,
+	ITestFluidObject,
+	ITestObjectProvider,
+	getContainerEntryPointBackCompat,
+} from "@fluidframework/test-utils/internal";
 
 const cellId = "cellKey";
 
@@ -48,17 +52,17 @@ describeCompat("SharedCell", "FullCompat", (getTestObjectProvider, apis) => {
 		// Create a Container for the first client.
 		const container1 = await provider.makeTestContainer(testContainerConfig);
 		dataObject1 = await getContainerEntryPointBackCompat<ITestFluidObject>(container1);
-		sharedCell1 = await dataObject1.getSharedObject<SharedCell>(cellId);
+		sharedCell1 = await dataObject1.getSharedObject<ISharedCell>(cellId);
 
 		// Load the Container that was created by the first client.
 		const container2 = await provider.loadTestContainer(testContainerConfig);
 		const dataObject2 = await getContainerEntryPointBackCompat<ITestFluidObject>(container2);
-		sharedCell2 = await dataObject2.getSharedObject<SharedCell>(cellId);
+		sharedCell2 = await dataObject2.getSharedObject<ISharedCell>(cellId);
 
 		// Load the Container that was created by the first client.
 		const container3 = await provider.loadTestContainer(testContainerConfig);
 		const dataObject3 = await getContainerEntryPointBackCompat<ITestFluidObject>(container3);
-		sharedCell3 = await dataObject3.getSharedObject<SharedCell>(cellId);
+		sharedCell3 = await dataObject3.getSharedObject<ISharedCell>(cellId);
 
 		// Set a starting value in the cell
 		sharedCell1.set(initialCellValue);
@@ -314,8 +318,8 @@ describeCompat("SharedCell orderSequentially", "NoCompat", (getTestObjectProvide
 
 	let container: IContainer;
 	let dataObject: ITestFluidObject;
-	let sharedCell: SharedCell;
-	let containerRuntime: ContainerRuntime;
+	let sharedCell: ISharedCell;
+	let containerRuntime: IContainerRuntime;
 	let changedEventData: Serializable<unknown>[];
 
 	const configProvider = (settings: Record<string, ConfigTypes>): IConfigProviderBase => ({
@@ -335,8 +339,8 @@ describeCompat("SharedCell orderSequentially", "NoCompat", (getTestObjectProvide
 		};
 		container = await provider.makeTestContainer(configWithFeatureGates);
 		dataObject = (await container.getEntryPoint()) as ITestFluidObject;
-		sharedCell = await dataObject.getSharedObject<SharedCell>(cellId);
-		containerRuntime = dataObject.context.containerRuntime as ContainerRuntime;
+		sharedCell = await dataObject.getSharedObject<ISharedCell>(cellId);
+		containerRuntime = dataObject.context.containerRuntime as IContainerRuntime;
 		changedEventData = [];
 		sharedCell.on("valueChanged", (value) => {
 			changedEventData.push(value);

@@ -3,17 +3,18 @@
  * Licensed under the MIT License.
  */
 
-import { type IAudience, type IContainer } from "@fluidframework/container-definitions";
-import { type IFluidLoadable } from "@fluidframework/core-interfaces";
-import { type IClient } from "@fluidframework/protocol-definitions";
+import type { IAudience } from "@fluidframework/container-definitions";
+import type { IContainer } from "@fluidframework/container-definitions/internal";
+import type { IFluidLoadable } from "@fluidframework/core-interfaces";
+import type { IClient } from "@fluidframework/driver-definitions";
 
-import { type AudienceClientMetadata } from "./AudienceMetadata.js";
-import { type ContainerKey, type FluidObjectId, type HasContainerKey } from "./CommonInterfaces.js";
+import type { AudienceClientMetadata } from "./AudienceMetadata.js";
+import type { ContainerKey, FluidObjectId, HasContainerKey } from "./CommonInterfaces.js";
 import { ContainerStateChangeKind } from "./Container.js";
-import { type ContainerStateMetadata } from "./ContainerMetadata.js";
-import { type ContainerDevtoolsFeatureFlags } from "./Features.js";
-import { type IContainerDevtools } from "./IContainerDevtools.js";
-import { type AudienceChangeLogEntry, type ConnectionStateChangeLogEntry } from "./Logs.js";
+import type { ContainerStateMetadata } from "./ContainerMetadata.js";
+import type { ContainerDevtoolsFeatureFlags } from "./Features.js";
+import type { IContainerDevtools } from "./IContainerDevtools.js";
+import type { AudienceChangeLogEntry, ConnectionStateChangeLogEntry } from "./Logs.js";
 import {
 	DataVisualizerGraph,
 	type FluidObjectNode,
@@ -48,7 +49,7 @@ import {
 
 /**
  * Properties for registering a {@link @fluidframework/container-definitions#IContainer} with the Devtools.
- * @internal
+ * @alpha
  */
 export interface ContainerDevtoolsProps extends HasContainerKey {
 	/**
@@ -235,7 +236,10 @@ export class ContainerDevtools implements IContainerDevtools, HasContainerKey {
 		this.postAudienceStateChange();
 	};
 
-	private readonly audienceMemberRemovedHandler = (clientId: string, client: IClient): void => {
+	private readonly audienceMemberRemovedHandler = (
+		clientId: string,
+		client: IClient,
+	): void => {
 		this._audienceChangeLog.push({
 			clientId,
 			client,
@@ -288,7 +292,9 @@ export class ContainerDevtools implements IContainerDevtools, HasContainerKey {
 		[DisconnectContainer.MessageType]: async (untypedMessage) => {
 			const message = untypedMessage as DisconnectContainer.Message;
 			if (message.data.containerKey === this.containerKey) {
-				this.container.disconnect(/* TODO: Specify devtools reason here once it is supported */);
+				this.container.disconnect(
+					/* TODO: Specify devtools reason here once it is supported */
+				);
 				return true;
 			}
 			return false;
@@ -344,7 +350,11 @@ export class ContainerDevtools implements IContainerDevtools, HasContainerKey {
 	private readonly windowMessageHandler = (
 		event: MessageEvent<Partial<ISourcedDevtoolsMessage>>,
 	): void => {
-		handleIncomingWindowMessage(event, this.inboundMessageHandlers, this.messageLoggingOptions);
+		handleIncomingWindowMessage(
+			event,
+			this.inboundMessageHandlers,
+			this.messageLoggingOptions,
+		);
 	};
 
 	/**
@@ -534,13 +544,10 @@ export class ContainerDevtools implements IContainerDevtools, HasContainerKey {
 	private getSupportedFeatures(): ContainerDevtoolsFeatureFlags {
 		return {
 			// If no container data was provided to the devtools, we cannot support data visualization.
-			"containerDataVisualization": this.containerData !== undefined,
-
-			// Required for backwards compatibility with the extension through v0.0.3
-			"container-data": this.containerData !== undefined,
+			containerDataVisualization: this.containerData !== undefined,
 
 			// TODO: When ready to enable feature set it to this.containerData !== undefined
-			"containerDataEditing": false,
+			containerDataEditing: false,
 		};
 	}
 
@@ -559,7 +566,9 @@ export class ContainerDevtools implements IContainerDevtools, HasContainerKey {
 		};
 	}
 
-	private async getRootDataVisualizations(): Promise<Record<string, RootHandleNode> | undefined> {
+	private async getRootDataVisualizations(): Promise<
+		Record<string, RootHandleNode> | undefined
+	> {
 		return this.dataVisualizer?.renderRootHandles() ?? undefined;
 	}
 

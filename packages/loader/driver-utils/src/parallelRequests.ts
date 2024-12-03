@@ -5,11 +5,23 @@
 
 import { performance } from "@fluid-internal/client-utils";
 import { ITelemetryBaseProperties } from "@fluidframework/core-interfaces";
-import { assert, Deferred } from "@fluidframework/core-utils";
-import { IDeltasFetchResult, IStream, IStreamResult } from "@fluidframework/driver-definitions";
-import { ISequencedDocumentMessage } from "@fluidframework/protocol-definitions";
-import { ITelemetryLoggerExt, PerformanceEvent } from "@fluidframework/telemetry-utils";
-import { canRetryOnError, createGenericNetworkError, getRetryDelayFromError } from "./network.js";
+import { assert, Deferred } from "@fluidframework/core-utils/internal";
+import {
+	IDeltasFetchResult,
+	IStream,
+	IStreamResult,
+	ISequencedDocumentMessage,
+} from "@fluidframework/driver-definitions/internal";
+import {
+	ITelemetryLoggerExt,
+	PerformanceEvent,
+} from "@fluidframework/telemetry-utils/internal";
+
+import {
+	canRetryOnError,
+	createGenericNetworkError,
+	getRetryDelayFromError,
+} from "./network.js";
 import { logNetworkFailure } from "./networkUtils.js";
 // For now, this package is versioned and released in unison with the specific drivers
 import { pkgVersion as driverVersion } from "./packageVersion.js";
@@ -199,13 +211,7 @@ export class ParallelRequests<T> {
 
 			this.requests++;
 
-			const promise = this.requestCallback(
-				this.requests,
-				from,
-				to,
-				this.to !== undefined,
-				{},
-			);
+			const promise = this.requestCallback(this.requests, from, to, this.to !== undefined, {});
 
 			// dispatch any prior received data
 			this.dispatch();
@@ -434,9 +440,7 @@ async function getSingleOpBatch(
 
 		try {
 			// Issue async request for deltas
-			const { messages, partialResult } = await get(
-				{ ...props, retry } /* telemetry props */,
-			);
+			const { messages, partialResult } = await get({ ...props, retry } /* telemetry props */);
 
 			// If we got messages back, return them.  Return regardless of whether we got messages back if we didn't
 			// specify a "to", since we don't have an expectation of how many to receive.

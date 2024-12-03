@@ -4,10 +4,9 @@
  */
 
 import { Flags } from "@oclif/core";
-import chalk from "chalk";
+import chalk from "picocolors";
 
-import { BaseCommand } from "../../base";
-import { Repository } from "../../library";
+import { BaseCommand, Repository } from "../../library/index.js";
 
 /**
  * An object containing merge status between two branches.
@@ -101,7 +100,7 @@ export default class MergeInfoCommand extends BaseCommand<typeof MergeInfoComman
 
 		const revs = rawRevs.split(/\r?\n/);
 
-		const [b1Log, b2Log] = [chalk.bold.blue(branch1), chalk.bold.blue(branch2)];
+		const [b1Log, b2Log] = [chalk.bold(chalk.blue(branch1)), chalk.bold(chalk.blue(branch2))];
 
 		this.logHr();
 		this.log(

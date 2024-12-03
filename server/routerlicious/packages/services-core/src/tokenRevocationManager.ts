@@ -2,7 +2,12 @@
  * Copyright (c) Microsoft Corporation and contributors. All rights reserved.
  * Licensed under the MIT License.
  */
-import { NetworkError, INetworkErrorDetails } from "@fluidframework/server-services-client";
+
+import {
+	NetworkError,
+	INetworkErrorDetails,
+	isNetworkError,
+} from "@fluidframework/server-services-client";
 
 /**
  * @internal
@@ -74,8 +79,17 @@ export class TokenRevocationError extends NetworkError {
 }
 
 /**
+ * @internal
+ * @deprecated Please use NetworkError (server/routerlicious/packages/services-client/src/error.ts) with internalErrorCode set to "TokenRevoked"
+ */
+export function isTokenRevokedError(error: unknown): error is TokenRevokedError {
+	return isNetworkError(error) && (error as TokenRevokedError).errorType === "TokenRevoked";
+}
+
+/**
  * Indicate that a connect is rejected/dropped because the token has been revoked.
  * @internal
+ * @deprecated Please use NetworkError (server/routerlicious/packages/services-client/src/error.ts) with internalErrorCode set to "TokenRevoked"
  */
 export class TokenRevokedError extends NetworkError {
 	public readonly errorType: string = "TokenRevoked";

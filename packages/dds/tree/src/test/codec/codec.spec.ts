@@ -3,9 +3,11 @@
  * Licensed under the MIT License.
  */
 
-import { strict as assert } from "assert";
+import { strict as assert } from "node:assert";
+
 import { Type } from "@sinclair/typebox";
-import { IJsonCodec, withSchemaValidation } from "../../codec/index.js";
+
+import { type IJsonCodec, withSchemaValidation } from "../../codec/index.js";
 import { typeboxValidator } from "../../external-utilities/index.js";
 
 describe("Codec APIs", () => {

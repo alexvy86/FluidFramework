@@ -2,6 +2,7 @@
  * Copyright (c) Microsoft Corporation and contributors. All rights reserved.
  * Licensed under the MIT License.
  */
+
 import {
 	ApiClass,
 	ApiDeclaredItem,
@@ -17,6 +18,8 @@ import {
 	type HeritageType,
 	type IResolveDeclarationReferenceResult,
 	type TypeParameter,
+	ApiPropertyItem,
+	ApiVariable,
 } from "@microsoft/api-extractor-model";
 import {
 	type DocNode,
@@ -26,7 +29,8 @@ import {
 	type DocSection,
 } from "@microsoft/tsdoc";
 
-import { type Heading } from "../../Heading.js";
+import type { Heading } from "../../Heading.js";
+import type { Logger } from "../../Logging.js";
 import {
 	type DocumentationNode,
 	DocumentationNodeType,
@@ -43,7 +47,6 @@ import {
 	SpanNode,
 	UnorderedListNode,
 } from "../../documentation-domain/index.js";
-import { type Logger } from "../../Logging.js";
 import {
 	type ApiFunctionLike,
 	injectSeparator,
@@ -62,7 +65,8 @@ import {
 } from "../ApiItemTransformUtilities.js";
 import { transformTsdocSection } from "../TsdocNodeTransforms.js";
 import { getTsdocNodeTransformationOptions } from "../Utilities.js";
-import { type ApiItemTransformationConfiguration } from "../configuration/index.js";
+import type { ApiItemTransformationConfiguration } from "../configuration/index.js";
+
 import { createParametersSummaryTable, createTypeParametersSummaryTable } from "./TableHelpers.js";
 
 /**
@@ -197,6 +201,17 @@ export function createHeritageTypesParagraph(
 		}
 	}
 
+	// Render type information for properties and variables
+	let renderedTypeSpan: SpanNode | undefined;
+	if (apiItem instanceof ApiPropertyItem) {
+		renderedTypeSpan = createTypeSpan(apiItem.propertyTypeExcerpt, config);
+	} else if (apiItem instanceof ApiVariable) {
+		renderedTypeSpan = createTypeSpan(apiItem.variableTypeExcerpt, config);
+	}
+	if (renderedTypeSpan !== undefined) {
+		contents.push(new ParagraphNode([renderedTypeSpan]));
+	}
+
 	// Render type parameters if there are any.
 	if (ApiTypeParameterListMixin.isBaseClassOf(apiItem) && apiItem.typeParameters.length > 0) {
 		const renderedTypeParameters = createTypeParametersSection(
@@ -217,6 +232,28 @@ export function createHeritageTypesParagraph(
 	}
 
 	return new ParagraphNode(contents);
+}
+
+/**
+ * Renders a labeled type-information entry.
+ *
+ * @remarks Displayed as `Type: <type>`. Type excerpt will be rendered with the appropriate hyperlinks for other types in the API model.
+ *
+ * @param excerpt - The type excerpt to be displayed.
+ * @param config - See {@link ApiItemTransformationConfiguration}.
+ */
+function createTypeSpan(
+	excerpt: Excerpt,
+	config: Required<ApiItemTransformationConfiguration>,
+): SpanNode | undefined {
+	if (!excerpt.isEmpty) {
+		const renderedLabel = SpanNode.createFromPlainText(`Type: `, { bold: true });
+		const renderedExcerpt = createExcerptSpanWithHyperlinks(excerpt, config);
+		if (renderedExcerpt !== undefined) {
+			return new SpanNode([renderedLabel, renderedExcerpt]);
+		}
+	}
+	return undefined;
 }
 
 /**

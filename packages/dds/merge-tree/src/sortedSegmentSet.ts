@@ -9,7 +9,6 @@ import { ISegment } from "./mergeTreeNodes.js";
 import { SortedSet } from "./sortedSet.js";
 
 /**
- * @deprecated This functionality was not meant to be exported and will be removed in a future release
  * @internal
  */
 export type SortedSegmentSetItem =
@@ -27,7 +26,6 @@ export type SortedSegmentSetItem =
  * the segments changes. This invariant allows us to ensure the segments stay
  * ordered and unique, and that new segments can be inserted into that order.
  *
- * @deprecated This functionality was not meant to be exported and will be removed in a future release
  * @internal
  */
 // eslint-disable-next-line import/no-deprecated

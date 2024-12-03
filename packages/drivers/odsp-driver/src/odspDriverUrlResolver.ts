@@ -4,15 +4,19 @@
  */
 
 import { IRequest } from "@fluidframework/core-interfaces";
-import { assert } from "@fluidframework/core-utils";
+import { assert } from "@fluidframework/core-utils/internal";
 import {
 	DriverHeader,
 	IContainerPackageInfo,
 	IResolvedUrl,
 	IUrlResolver,
-} from "@fluidframework/driver-definitions";
-import { NonRetryableError } from "@fluidframework/driver-utils";
-import { IOdspResolvedUrl, OdspErrorTypes } from "@fluidframework/odsp-driver-definitions";
+} from "@fluidframework/driver-definitions/internal";
+import { NonRetryableError } from "@fluidframework/driver-utils/internal";
+import {
+	IOdspResolvedUrl,
+	OdspErrorTypes,
+} from "@fluidframework/odsp-driver-definitions/internal";
+
 import { ClpCompliantAppHeader } from "./contractsPublic.js";
 import { createOdspUrl } from "./createOdspUrl.js";
 import { getHashedDocumentId } from "./odspPublicUtils.js";
@@ -26,9 +30,8 @@ function getUrlBase(
 	itemId: string,
 	fileVersion?: string,
 ): string {
-	const siteOrigin = new URL(siteUrl).origin;
 	const version = fileVersion ? `versions/${fileVersion}/` : "";
-	return `${getApiRoot(siteOrigin)}/drives/${driveId}/items/${itemId}/${version}`;
+	return `${getApiRoot(new URL(siteUrl))}/drives/${driveId}/items/${itemId}/${version}`;
 }
 
 function getSnapshotUrl(
@@ -90,6 +93,7 @@ const isFluidPackage = (pkg: Record<string, unknown>): boolean =>
 /**
  * Resolver to resolve urls like the ones created by createOdspUrl which is driver inner
  * url format. Ex: `${siteUrl}?driveId=${driveId}&itemId=${itemId}&path=${path}`
+ * @legacy
  * @alpha
  */
 export class OdspDriverUrlResolver implements IUrlResolver {
@@ -142,9 +146,8 @@ export class OdspDriverUrlResolver implements IUrlResolver {
 				isClpCompliantApp: request.headers?.[ClpCompliantAppHeader.isClpCompliantApp],
 			};
 		}
-		const { siteUrl, driveId, itemId, path, containerPackageName, fileVersion } = decodeOdspUrl(
-			request.url,
-		);
+		const { siteUrl, driveId, itemId, path, containerPackageName, fileVersion } =
+			decodeOdspUrl(request.url);
 		const hashedDocumentId = await getHashedDocumentId(driveId, itemId);
 		assert(!hashedDocumentId.includes("/"), 0x0a8 /* "Docid should not contain slashes!!" */);
 
@@ -158,12 +161,7 @@ export class OdspDriverUrlResolver implements IUrlResolver {
 			odspResolvedUrl: true,
 			endpoints: {
 				snapshotStorageUrl: getSnapshotUrl(siteUrl, driveId, itemId, fileVersion),
-				attachmentPOSTStorageUrl: getAttachmentPOSTUrl(
-					siteUrl,
-					driveId,
-					itemId,
-					fileVersion,
-				),
+				attachmentPOSTStorageUrl: getAttachmentPOSTUrl(siteUrl, driveId, itemId, fileVersion),
 				attachmentGETStorageUrl: getAttachmentGETUrl(siteUrl, driveId, itemId, fileVersion),
 				deltaStorageUrl: getDeltaStorageUrl(siteUrl, driveId, itemId, fileVersion),
 			},
@@ -233,7 +231,7 @@ export class OdspDriverUrlResolver implements IUrlResolver {
 	}
 }
 
-function decodeOdspUrl(url: string): {
+export function decodeOdspUrl(url: string): {
 	siteUrl: string;
 	driveId: string;
 	itemId: string;

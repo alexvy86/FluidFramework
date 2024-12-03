@@ -7,6 +7,7 @@ import type { Static, TSchema } from "@sinclair/typebox";
 // This export is documented as supported in typebox's documentation.
 // eslint-disable-next-line import/no-internal-modules
 import { TypeCompiler } from "@sinclair/typebox/compiler";
+
 import type { JsonValidator } from "../codec/index.js";
 
 /**
@@ -18,7 +19,7 @@ import type { JsonValidator } from "../codec/index.js";
  *
  * Defining this validator in its own file also helps to ensure it is tree-shakeable.
  *
- * @internal
+ * @alpha
  */
 export const typeboxValidator: JsonValidator = {
 	compile: <Schema extends TSchema>(schema: Schema) => {

@@ -9,7 +9,7 @@ import { UnassignedSequenceNumber } from "./constants.js";
 import { MergeTree } from "./mergeTree.js";
 import { MergeTreeMaintenanceType } from "./mergeTreeDeltaCallback.js";
 import {
-	IMergeBlock,
+	type MergeBlock,
 	IMergeNode,
 	ISegment,
 	Marker,
@@ -21,26 +21,32 @@ import {
 import { matchProperties } from "./properties.js";
 
 export const zamboniSegmentsMax = 2;
-function underflow(node: IMergeBlock) {
+function underflow(node: MergeBlock): boolean {
 	return node.childCount < MaxNodesInBlock / 2;
 }
 
 export function zamboniSegments(
 	mergeTree: MergeTree,
 	zamboniSegmentsMaxCount = zamboniSegmentsMax,
-) {
+): void {
 	if (!mergeTree.collabWindow.collaborating) {
 		return;
 	}
 
 	for (let i = 0; i < zamboniSegmentsMaxCount; i++) {
 		let segmentToScour = mergeTree.segmentsToScour.peek()?.value;
+
+		segmentToScour?.segment?.propertyManager?.updateMsn(mergeTree.collabWindow.minSeq);
+
 		if (!segmentToScour || segmentToScour.maxSeq > mergeTree.collabWindow.minSeq) {
 			break;
 		}
 		segmentToScour = mergeTree.segmentsToScour.get()!;
 		// Only skip scouring if needs scour is explicitly false, not true or undefined
-		if (segmentToScour?.segment?.parent && segmentToScour.segment.parent.needsScour !== false) {
+		if (
+			segmentToScour?.segment?.parent &&
+			segmentToScour.segment.parent.needsScour !== false
+		) {
 			const block = segmentToScour.segment.parent;
 			const childrenCopy: IMergeNode[] = [];
 			scourNode(block, childrenCopy, mergeTree);
@@ -69,14 +75,14 @@ export function zamboniSegments(
 }
 
 // Interior node with all node children
-export function packParent(parent: IMergeBlock, mergeTree: MergeTree) {
+export function packParent(parent: MergeBlock, mergeTree: MergeTree): void {
 	const children = parent.children;
 	let childIndex: number;
-	let childBlock: IMergeBlock;
+	let childBlock: MergeBlock;
 	const holdNodes: IMergeNode[] = [];
 	for (childIndex = 0; childIndex < parent.childCount; childIndex++) {
 		// Debug assert not isLeaf()
-		childBlock = children[childIndex] as IMergeBlock;
+		childBlock = children[childIndex] as MergeBlock;
 		scourNode(childBlock, holdNodes, mergeTree);
 		// Will replace this block with a packed block
 		childBlock.parent = undefined;
@@ -93,7 +99,7 @@ export function packParent(parent: IMergeBlock, mergeTree: MergeTree) {
 		}
 		const baseNodesInBlockCount = Math.floor(totalNodeCount / childCount);
 		let remainderCount = totalNodeCount % childCount;
-		const packedBlocks = new Array<IMergeBlock>(MaxNodesInBlock);
+		const packedBlocks: IMergeNode[] = Array.from({ length: MaxNodesInBlock });
 		let childrenPackedCount = 0;
 		for (let nodeIndex = 0; nodeIndex < childCount; nodeIndex++) {
 			let nodeCount = baseNodesInBlockCount;
@@ -127,13 +133,14 @@ export function packParent(parent: IMergeBlock, mergeTree: MergeTree) {
 	}
 }
 
-function scourNode(node: IMergeBlock, holdNodes: IMergeNode[], mergeTree: MergeTree) {
+function scourNode(node: MergeBlock, holdNodes: IMergeNode[], mergeTree: MergeTree): void {
 	// The previous segment is tracked while scouring for the purposes of merging adjacent segments
 	// when possible.
 	let prevSegment: ISegment | undefined;
 	for (let k = 0; k < node.childCount; k++) {
-		const childNode = node.children[k];
-		if (!childNode.isLeaf() || !childNode.segmentGroups.empty) {
+		// TODO Non null asserting, why is this not null?
+		const childNode = node.children[k]!;
+		if (!childNode.isLeaf() || childNode.segmentGroups?.empty === false) {
 			holdNodes.push(childNode);
 			prevSegment = undefined;
 			continue;
@@ -188,7 +195,7 @@ function scourNode(node: IMergeBlock, holdNodes: IMergeNode[], mergeTree: MergeT
 					);
 
 					segment.parent = undefined;
-					segment.trackingCollection.trackingGroups.forEach((tg) => tg.unlink(segment));
+					for (const tg of segment.trackingCollection.trackingGroups) tg.unlink(segment);
 				} else {
 					holdNodes.push(segment);
 					prevSegment = segmentHasPositiveLength ? segment : undefined;

@@ -4,17 +4,17 @@
  */
 
 import { OptionsMatrix } from "@fluid-private/test-pairwise-generator";
-import { ILoaderOptions } from "@fluidframework/container-definitions";
-import { IContainerRuntimeOptions } from "@fluidframework/container-runtime";
+import { ILoaderOptions } from "@fluidframework/container-definitions/internal";
+import { IContainerRuntimeOptions } from "@fluidframework/container-runtime/internal";
 import { ConfigTypes } from "@fluidframework/core-interfaces";
 
 /** Type modeling the structure of the testConfig.json file */
-export interface ITestConfig {
-	profiles: { [name: string]: ILoadTestConfig | undefined };
+export interface TestConfigurationFileContents {
+	profiles: { [profileName: string]: TestConfiguration };
 }
 
 /** Type modeling the profile sub-structure of the testConfig.json file */
-export interface ILoadTestConfig {
+export interface TestConfiguration {
 	opRatePerMin: number;
 	progressIntervalMs: number;
 	numClients: number;
@@ -22,7 +22,6 @@ export interface ILoadTestConfig {
 	totalSignalsSendCount?: number;
 	readWriteCycleMs: number;
 	signalsPerMin?: number;
-	futureOpRatePerMin?: number;
 	faultInjectionMs?: {
 		min: number;
 		max: number;
@@ -104,6 +103,21 @@ export interface ILoadTestConfig {
 		/**
 		 * How many clients should send large ops if `opSizeinBytes` is specified.
 		 * By default, only one client will send large ops.
+		 */
+		numClients?: number;
+	};
+	virtualization?: {
+		/**
+		 * Once every `createRate` ops, a virtualized dataStore will be created
+		 */
+		createRate?: number;
+		/**
+		 * Once every `loadRate` ops, a virtualized dataStore will be loaded
+		 */
+		loadRate?: number;
+		/**
+		 * How many clients should create/load virtual data stores if `createRate` is specified.
+		 * By default, only one client will send create/load virtual data stores.
 		 */
 		numClients?: number;
 	};

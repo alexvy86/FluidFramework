@@ -28,7 +28,7 @@
 		"operationsDbEndpoint": "mongodb://mongodb:27017",
 		"globalDbEndpoint": "mongodb://mongodb:27017",
 		"globalDbEnabled": false,
-		"expireAfterSeconds": -1,
+		"expireAfterSeconds": 9000,
 		"createCosmosDBIndexes": false,
 		"directConnection": true,
 		"softDeletionRetentionPeriodMs": 2592000000,
@@ -60,13 +60,15 @@
 			"rdkafkaConsumeTimeout": 5,
 			"rdkafkaMaxConsumerCommitRetries": 10
 		},
-		"customRestartOnKafkaErrorCodes": [-195, -192, -187, -185, -181, 14]
+		"customRestartOnKafkaErrorCodes": [-195, -192, -187, -185, -181, 14],
+		"seekTimeoutAfterPause": 1000
 	},
 	"zookeeper": {
 		"endpoint": "zookeeper:2181"
 	},
 	"storage": {
 		"enableWholeSummaryUpload": false,
+		"ephemeralDocumentTTLSec": 86400,
 		"storageUrl": "http://gitrest:3000"
 	},
 	"checkpoints": {
@@ -161,10 +163,17 @@
 			"shouldDisableDefaultNamespace": false
 		},
 		"socketIo": {
-			"perMessageDeflate": false
+			"perMessageDeflate": false,
+			"gracefulShutdownEnabled": false,
+			"pingPongLatencyTrackingEnabled": false
 		},
 		"jwtTokenCache": {
 			"enable": true
+		},
+		"enableCollaborationSessionTracking": false,
+		"enableCollaborationSessionPruning": false,
+		"redisCollaborationSessionManagerOptions": {
+			"maxScanBatchSize": 800
 		}
 	},
 	"client": {
@@ -187,7 +196,9 @@
 			"maxMessages": 500
 		},
 		"restartOnCheckpointFailure": true,
-		"enableEphemeralContainerSummaryCleanup": true
+		"enableEphemeralContainerSummaryCleanup": true,
+		"enableLeaveOpNoClientServerMetadata": false,
+		"noOpConsolidationTimeout": 250
 	},
 	"scribe": {
 		"kafkaClientId": "scribe",
@@ -216,7 +227,8 @@
 	},
 	"usage": {
 		"clientConnectivityCountingEnabled": false,
-		"signalUsageCountingEnabled": false
+		"signalUsageCountingEnabled": false,
+		"httpUsageCountingEnabled": false
 	},
 	"shared": {
 		"transientTenants": [],
@@ -260,7 +272,17 @@
 		"maxDbBatchSize": 1000,
 		"restartOnCheckpointFailure": true,
 		"logSavedOpsTimeIntervalMs": 60000,
-		"opsCountTelemetryEnabled": true
+		"opsCountTelemetryEnabled": true,
+		"circuitBreakerEnabled": false,
+		"circuitBreakerOptions": {
+			"errorThresholdPercentage": 0.001,
+			"resetTimeout": 30000,
+			"timeout": false,
+			"rollingCountTimeout": 1000,
+			"rollingCountBuckets": 1000,
+			"fallbackToRestartTimeoutMs": 180000,
+			"filterOnErrors": []
+		}
 	},
 	"copier": {
 		"topic": "rawdeltas",
@@ -278,7 +300,13 @@
 		"maxRetriesPerRequest": 20,
 		"enableAutoPipelining": false,
 		"enableOfflineQueue": true,
-		"enableClustering": false
+		"enableClustering": false,
+		"retryDelayOnMoved": 100,
+		"maxRedirections": 16,
+		"retryStrategyParams": {
+			"delayPerAttemptMs": 50,
+			"maxDelayMs": 2000
+		}
 	},
 	"redisForTenantCache": {
 		"host": "redis",
@@ -289,7 +317,13 @@
 		"maxRetriesPerRequest": 20,
 		"enableAutoPipelining": false,
 		"enableOfflineQueue": true,
-		"enableClustering": false
+		"enableClustering": false,
+		"retryDelayOnMoved": 100,
+		"maxRedirections": 16,
+		"retryStrategyParams": {
+			"delayPerAttemptMs": 50,
+			"maxDelayMs": 2000
+		}
 	},
 	"redis2": {
 		"host": "redis",
@@ -300,7 +334,13 @@
 		"maxRetriesPerRequest": 20,
 		"enableAutoPipelining": false,
 		"enableOfflineQueue": true,
-		"enableClustering": false
+		"enableClustering": false,
+		"retryDelayOnMoved": 100,
+		"maxRedirections": 16,
+		"retryStrategyParams": {
+			"delayPerAttemptMs": 50,
+			"maxDelayMs": 2000
+		}
 	},
 	"redisForThrottling": {
 		"host": "redis",
@@ -311,7 +351,13 @@
 		"maxRetriesPerRequest": 20,
 		"enableAutoPipelining": false,
 		"enableOfflineQueue": true,
-		"enableClustering": false
+		"enableClustering": false,
+		"retryDelayOnMoved": 100,
+		"maxRedirections": 16,
+		"retryStrategyParams": {
+			"delayPerAttemptMs": 50,
+			"maxDelayMs": 2000
+		}
 	},
 	"error": {
 		"track": false,

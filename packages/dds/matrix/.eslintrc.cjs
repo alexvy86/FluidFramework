@@ -4,10 +4,7 @@
  */
 
 module.exports = {
-	extends: [
-		require.resolve("@fluidframework/eslint-config-fluid/minimal-deprecated"),
-		"prettier",
-	],
+	extends: [require.resolve("@fluidframework/eslint-config-fluid"), "prettier"],
 
 	parserOptions: {
 		project: ["./tsconfig.json", "./src/test/tsconfig.json"],
@@ -15,6 +12,7 @@ module.exports = {
 	rules: {
 		"@typescript-eslint/no-shadow": "off",
 		"space-before-function-paren": "off", // Off because it conflicts with typescript-formatter
+		"@fluid-internal/fluid/no-unchecked-record-access": "warn",
 	},
 	overrides: [
 		{
@@ -22,7 +20,7 @@ module.exports = {
 			files: ["*.spec.ts", "src/test/**"],
 			rules: {
 				// Test files are run in node only so additional node libraries can be used.
-				"import/no-nodejs-modules": ["error", { allow: ["assert", "path"] }],
+				"import/no-nodejs-modules": ["error", { allow: ["node:assert", "node:path"] }],
 			},
 		},
 	],

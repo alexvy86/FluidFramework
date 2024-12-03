@@ -3,7 +3,8 @@
  * Licensed under the MIT License.
  */
 
-import { assert, Deferred } from "@fluidframework/core-utils";
+import { assert, Deferred } from "@fluidframework/core-utils/internal";
+
 import {
 	IConnectableRuntime,
 	ISummaryCancellationToken,
@@ -12,6 +13,7 @@ import {
 
 /**
  * Similar to AbortController, but using promise instead of events
+ * @legacy
  * @alpha
  */
 export interface ICancellableSummarizerController extends ISummaryCancellationToken {

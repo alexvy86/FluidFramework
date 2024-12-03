@@ -4,7 +4,9 @@
  */
 
 import { strict as assert } from "assert";
+
 import { SinonFakeTimers, useFakeTimers } from "sinon";
+
 import { MapWithExpiration } from "../mapWithExpiration.js";
 
 describe("MapWithExpiration", () => {
@@ -51,7 +53,10 @@ describe("MapWithExpiration", () => {
 	}
 
 	/** Asserts that actual has each key in expected (and elsewhere we assert that .keys matches) */
-	function assertHas(actual: MapWithExpiration<number, string>, expected: Map<number, string>) {
+	function assertHas(
+		actual: MapWithExpiration<number, string>,
+		expected: Map<number, string>,
+	) {
 		for (const k of expected.keys()) {
 			assert(actual.has(k), "'has' mismatch");
 		}
@@ -230,12 +235,7 @@ describe("MapWithExpiration", () => {
 					for (const map of maps) {
 						map.set(1, "one");
 						map.forEach(
-							function (
-								this: any,
-								value: string,
-								key: number,
-								m: Map<number, string>,
-							) {
+							function (this: any, value: string, key: number, m: Map<number, string>) {
 								assert.equal(this, "BOUND", "Incorrect value for 'this'");
 							}.bind("BOUND"),
 							thisArg,
@@ -281,24 +281,26 @@ describe("MapWithExpiration", () => {
 			},
 		);
 
-		// In ESM the the 'this' value is 'undefined', but in CJS it is '{__esModule: true}'.
-		// Therefore, we exempt the test value 'undefined' from the below assertion.
-		if (this !== undefined) {
-			testForEachCases("Arrow functions don't pick up thisArg", (maps, thisArgs) => {
-				for (const thisArg of thisArgs) {
-					for (const map of maps) {
-						map.set(1, "one");
-						map.forEach(() => {
-							assert.notEqual(
-								this,
-								thisArg,
-								"Expected 'this' to be unchanged for arrow fn",
-							);
-						}, thisArg);
-					}
+		testForEachCases("Arrow functions don't pick up thisArg", (maps, thisArgs) => {
+			const testCaseRunner = new (class {
+				runTestCase(map: Map<any, any>, thisArg: any) {
+					map.set(1, "one");
+
+					// eslint-disable-next-line @typescript-eslint/no-this-alias
+					const thisOutside = this;
+
+					map.forEach(() => {
+						assert.equal(this, thisOutside, "Expected 'this' to be unchanged for arrow fn");
+					}, thisArg);
 				}
-			});
-		}
+			})();
+
+			for (const thisArg of thisArgs) {
+				for (const map of maps) {
+					testCaseRunner.runTestCase(map, thisArg);
+				}
+			}
+		});
 	});
 
 	it("toString", () => {

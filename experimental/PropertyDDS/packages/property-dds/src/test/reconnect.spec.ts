@@ -4,6 +4,7 @@
  */
 
 import { strict as assert } from "assert";
+
 import { DeterministicRandomGenerator } from "@fluid-experimental/property-common";
 import {
 	Float64Property,
@@ -15,9 +16,10 @@ import {
 	MockContainerRuntimeForReconnection,
 	MockFluidDataStoreRuntime,
 	MockStorage,
-} from "@fluidframework/test-runtime-utils";
+} from "@fluidframework/test-runtime-utils/internal";
 import { expect } from "chai";
 import { v5 as uuidv5 } from "uuid";
+
 import { SharedPropertyTree } from "../propertyTree.js";
 import { PropertyTreeFactory } from "../propertyTreeFactory.js";
 
@@ -143,11 +145,7 @@ describe("PropertyDDS", () => {
 										} else {
 											tree.root.insert(
 												key,
-												PropertyFactory.create(
-													"Float64",
-													undefined,
-													random.irandom(maxValue),
-												),
+												PropertyFactory.create("Float64", undefined, random.irandom(maxValue)),
 											);
 										}
 										tree.commit();
@@ -193,9 +191,7 @@ describe("PropertyDDS", () => {
 					containerRuntimeFactory.processAllMessages();
 
 					for (let j = 1; j < trees.length; j++) {
-						expect(trees[j - 1].root.serialize()).to.deep.equal(
-							trees[j].root.serialize(),
-						);
+						expect(trees[j - 1].root.serialize()).to.deep.equal(trees[j].root.serialize());
 					}
 				}).timeout(10000);
 			}

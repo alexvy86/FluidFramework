@@ -3,41 +3,32 @@
  * Licensed under the MIT License.
  */
 
-import { strict as assert } from "assert";
-import { validateAssertionError } from "@fluidframework/test-runtime-utils";
-import { noopValidator } from "../../codec/index.js";
+import { strict as assert } from "node:assert";
+
+import { validateAssertionError } from "@fluidframework/test-runtime-utils/internal";
+
 import {
-	CommitKind,
-	GraphCommit,
-	Revertible,
-	RevertibleStatus,
-	RevisionTag,
+	type GraphCommit,
+	type RevisionTag,
 	findAncestor,
 	findCommonAncestor,
 	rootFieldKey,
 } from "../../core/index.js";
 import {
 	DefaultChangeFamily,
-	DefaultChangeset,
-	DefaultEditBuilder,
+	type DefaultChangeset,
+	type DefaultEditBuilder,
 	cursorForJsonableTreeNode,
 } from "../../feature-libraries/index.js";
 import {
 	SharedTreeBranch,
-	SharedTreeBranchChange,
+	type SharedTreeBranchChange,
 	onForkTransitive,
 } from "../../shared-tree-core/index.js";
 import { brand, fail } from "../../util/index.js";
-import {
-	createTestUndoRedoStacks,
-	failCodec,
-	mintRevisionTag,
-	testRevisionTagCodec,
-} from "../utils.js";
+import { failCodecFamily, mintRevisionTag } from "../utils.js";
 
-const defaultChangeFamily = new DefaultChangeFamily(testRevisionTagCodec, failCodec, {
-	jsonValidator: noopValidator,
-});
+const defaultChangeFamily = new DefaultChangeFamily(failCodecFamily);
 
 type DefaultBranch = SharedTreeBranch<DefaultEditBuilder, DefaultChangeset>;
 
@@ -171,7 +162,6 @@ describe("Branches", () => {
 		// Create a parent branch and a child fork
 		const parent = create();
 		const child = parent.fork();
-		const stacks = createTestUndoRedoStacks(child);
 		// Apply a change to the parent
 		const tagParent = change(parent);
 		// Apply a change to the child
@@ -185,15 +175,6 @@ describe("Branches", () => {
 		child.rebaseOnto(parent);
 		assertBased(child, parent);
 		assertHistory(child, tagParent, tagChild, tagParent2, tagChild2);
-
-		// It should still be possible to revert the the child branch's revertibles
-		assert.equal(stacks.undoStack.length, 2);
-		// eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-		stacks.undoStack.pop()!.revert();
-		// eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-		stacks.undoStack.pop()!.revert();
-
-		stacks.unsubscribe();
 	});
 
 	it("emit a change event after each change", () => {
@@ -282,107 +263,10 @@ describe("Branches", () => {
 		assert.equal(changeEventCount, 2);
 	});
 
-	it("emit correct change events during and after committing a transaction", () => {
-		// Create a branch and count the change events emitted
-		let changeEventCount = 0;
-		let replaceEventCount = 0;
-		const branch = create(({ type }) => {
-			if (type === "append") {
-				changeEventCount += 1;
-			} else if (type === "replace") {
-				replaceEventCount += 1;
-			}
-		});
-		// Begin a transaction
-		branch.startTransaction();
-		// Ensure that the correct change is emitted when applying changes in a transaction
-		change(branch);
-		assert.equal(changeEventCount, 2);
-		change(branch);
-		assert.equal(changeEventCount, 4);
-		assert.equal(replaceEventCount, 0);
-		// Commit the transaction. No change event should be emitted since the commits, though squashed, are still equivalent
-		branch.commitTransaction();
-		assert.equal(changeEventCount, 4);
-		assert.equal(replaceEventCount, 2);
-	});
-
-	it("do not emit a change event after committing an empty transaction", () => {
-		// Create a branch and count the change events emitted
-		let changeEventCount = 0;
-		const branch = create(() => {
-			changeEventCount += 1;
-		});
-		// Start and immediately abort a transaction
-		branch.startTransaction();
-		branch.commitTransaction();
-		assert.equal(changeEventCount, 0);
-	});
-
-	it("emit a change event after aborting a transaction", () => {
-		// Create a branch and count the change events emitted
-		let changeEventCount = 0;
-		const branch = create(({ type }) => {
-			if (type === "remove") {
-				changeEventCount += 1;
-			}
-		});
-		// Begin a transaction
-		branch.startTransaction();
-		// Apply a couple of changes to the branch
-		change(branch);
-		change(branch);
-		// Ensure the the correct number of change events have been emitted so far
-		assert.equal(changeEventCount, 0);
-		// Abort the transaction. A new change event should be emitted since the state rolls back to before the transaction
-		branch.abortTransaction();
-		assert.equal(changeEventCount, 2);
-	});
-
-	it("do not emit a change event after aborting an empty transaction", () => {
-		// Create a branch and count the change events emitted
-		let changeEventCount = 0;
-		const branch = create(({ type }) => {
-			if (type === "remove") {
-				changeEventCount += 1;
-			}
-		});
-		// Start and immediately abort a transaction
-		branch.startTransaction();
-		branch.abortTransaction();
-		assert.equal(changeEventCount, 0);
-	});
-
-	it("do not emit a commitApplied event for commits within transactions", () => {
-		// Create a branch and count the change events emitted
-		let commitEventCount = 0;
-		const branch = create();
-		const unsubscribe = branch.on("commitApplied", () => {
-			commitEventCount += 1;
-		});
-		// Start and immediately abort a transaction
-		branch.startTransaction();
-		change(branch);
-		branch.abortTransaction();
-		assert.equal(commitEventCount, 0);
-		unsubscribe();
-	});
-
-	it("commitApplied event includes metadata about the commit", () => {
-		// Create a branch and count the change events emitted
-		const branch = create();
-		const unsubscribe = branch.on("commitApplied", ({ isLocal, kind }) => {
-			assert.equal(isLocal, true);
-			assert.equal(kind, CommitKind.Default);
-		});
-		change(branch);
-		unsubscribe();
-	});
-
 	it("emit a fork event after forking", () => {
 		let fork: DefaultBranch | undefined;
 		const branch = create();
-		branch.on("fork", (f) => (fork = f));
+		branch.events.on("fork", (f) => (fork = f));
 		// The fork event should return the new branch, just as the fork method does
 		assert.equal(branch.fork(), fork);
 		assert.equal(branch.fork(), fork);
@@ -391,7 +275,7 @@ describe("Branches", () => {
 	it("emit a dispose event after disposing", () => {
 		const branch = create();
 		let disposed = false;
-		branch.on("dispose", () => (disposed = true));
+		branch.events.on("dispose", () => (disposed = true));
 		branch.dispose();
 		assert.equal(disposed, true);
 	});
@@ -399,44 +283,8 @@ describe("Branches", () => {
 	it("can be read after disposal", () => {
 		const branch = create();
 		branch.dispose();
-		// These methods are valid to call after disposal
+		// Getting the head is valid after disposal
 		branch.getHead();
-		branch.isTransacting();
-	});
-
-	describe("do not include rebased-over changes in a transaction", () => {
-		it("when the transaction started on a commit known only to the local branch", () => {
-			const branch = create();
-			const fork = branch.fork();
-
-			change(branch);
-
-			change(fork);
-			fork.startTransaction();
-			change(fork);
-			change(fork);
-			fork.rebaseOnto(branch);
-			const [commits] = fork.commitTransaction() ?? [[]];
-			assert.equal(commits.length, 2);
-		});
-
-		it("when the transaction started on the commit the branch forked from", () => {
-			// i.e., the branch was created via .fork() and immediately started a transaction before any
-			// changes were applied.
-			const branch = create();
-			const fork = branch.fork();
-
-			change(branch);
-
-			fork.startTransaction();
-			change(fork);
-			change(fork);
-			fork.rebaseOnto(branch);
-			change(branch);
-			fork.rebaseOnto(branch);
-			const [commits] = fork.commitTransaction() ?? [[]];
-			assert.equal(commits.length, 2);
-		});
 	});
 
 	it("cannot be mutated after disposal", () => {
@@ -448,138 +296,80 @@ describe("Branches", () => {
 		assertDisposed(() => branch.fork());
 		assertDisposed(() => branch.rebaseOnto(fork));
 		assertDisposed(() => branch.merge(branch.fork()));
-		assertDisposed(() => branch.startTransaction());
-		assertDisposed(() => branch.commitTransaction());
-		assertDisposed(() => branch.abortTransaction());
-		assertDisposed(() => branch.abortTransaction());
 		assertDisposed(() => fork.merge(branch));
 	});
 
-	it("correctly report whether they are in the middle of a transaction", () => {
-		// Create a branch and test `isTransacting()` during two transactions, one nested within the other
+	it("can remove commits", () => {
 		const branch = create();
-		assert.equal(branch.isTransacting(), false);
-		branch.startTransaction();
-		assert.equal(branch.isTransacting(), true);
-		branch.startTransaction();
-		assert.equal(branch.isTransacting(), true);
-		branch.abortTransaction();
-		assert.equal(branch.isTransacting(), true);
-		branch.commitTransaction();
-		assert.equal(branch.isTransacting(), false);
-	});
-
-	it("squash their commits when committing a transaction", () => {
-		// Create a new branch and start a transaction
-		const branch = create();
-		branch.startTransaction();
-		// Apply two changes to it
+		const originalHead = branch.getHead();
 		const tag1 = change(branch);
 		const tag2 = change(branch);
-		// Ensure that the commits are in the correct order with the correct tags
 		assertHistory(branch, tag1, tag2);
-		// Commit the transaction and ensure that there is now only one commit on the branch
-		branch.commitTransaction();
-		assert.equal(branch.getHead().parent?.revision, nullRevisionTag);
+		branch.removeAfter(originalHead);
+		assert.equal(branch.getHead(), originalHead);
 	});
 
-	it("rollback their commits when aborting a transaction", () => {
-		// Create a new branch and apply one change before starting a transaction
+	it("emit correct change events after a remove", () => {
+		let removeEventCount = 0;
+		const branch = create(({ type }) => {
+			if (type === "remove") {
+				removeEventCount += 1;
+			}
+		});
+		const originalHead = branch.getHead();
+		change(branch);
+		change(branch);
+		assert.equal(removeEventCount, 0);
+		branch.removeAfter(originalHead);
+		assert.equal(removeEventCount, 2);
+	});
+
+	it("can squash commits", () => {
 		const branch = create();
+		const originalHead = branch.getHead();
 		const tag1 = change(branch);
-		branch.startTransaction();
-		// Apply two more changes to it
 		const tag2 = change(branch);
-		const tag3 = change(branch);
-		// Ensure that the commits are in the correct order with the correct tags
-		assertHistory(branch, tag1, tag2, tag3);
-		// Abort the transaction and ensure that there is now only one commit on the branch
-		branch.abortTransaction();
-		assert.equal(branch.getHead().revision, tag1);
+		assertHistory(branch, tag1, tag2);
+		branch.squashAfter(originalHead);
+		assert.equal(branch.getHead().parent?.revision, originalHead.revision);
 	});
 
-	it("allow transactions to nest", () => {
-		// Create a new branch and open three transactions, applying one change in each
-		const branch = create();
-		branch.startTransaction();
+	it("emit correct change events during and after squashing", () => {
+		let replaceEventCount = 0;
+		const branch = create(({ type }) => {
+			if (type === "replace") {
+				replaceEventCount += 1;
+			}
+		});
+		const originalHead = branch.getHead();
 		change(branch);
-		branch.startTransaction();
 		change(branch);
-		branch.startTransaction();
-		change(branch);
-		// Commit the inner transaction, but abort the middle transaction so the inner one is moot
-		branch.commitTransaction();
-		branch.abortTransaction();
-		// Ensure that the branch has only one commit on it
-		assert.equal(branch.getHead().parent?.revision, nullRevisionTag);
-		// Abort the last transaction as well, and ensure that the branch has no commits on it
-		branch.abortTransaction();
-		assert.equal(branch.getHead().revision, nullRevisionTag);
+		assert.equal(replaceEventCount, 0);
+		branch.squashAfter(originalHead);
+		assert.equal(replaceEventCount, 2);
 	});
 
-	describe("all nested forks and transactions are disposed and aborted when transaction is", () => {
-		const setUpNestedForks = (rootBranch: DefaultBranch) => {
-			change(rootBranch);
-			rootBranch.startTransaction();
-			const fork1 = rootBranch.fork();
-			change(rootBranch);
-			rootBranch.startTransaction();
-			const fork2 = rootBranch.fork();
-			change(rootBranch);
-			const fork3 = rootBranch.fork();
-			change(fork3);
-			const fork4 = fork3.fork();
-			change(fork3);
-			fork3.startTransaction();
-			change(fork3);
-			const fork5 = fork3.fork();
-
-			return {
-				disposedForks: [fork2, fork3, fork4, fork5],
-				notDisposedForks: [fork1],
-			};
-		};
-
-		const assertNestedForks = (nestedForks: {
-			disposedForks: readonly DefaultBranch[];
-			notDisposedForks: readonly DefaultBranch[];
-		}) => {
-			nestedForks.disposedForks.forEach((fork) => {
-				assertDisposed(() => fork.fork());
-				assert.equal(fork.isTransacting(), false);
-			});
-			nestedForks.notDisposedForks.forEach((fork) => assertNotDisposed(() => fork.fork()));
-		};
-
-		it("commited", () => {
-			const rootBranch = create();
-			const nestedForks = setUpNestedForks(rootBranch);
-			rootBranch.commitTransaction();
-
-			assert.equal(rootBranch.isTransacting(), true);
-			assertNestedForks(nestedForks);
-
-			rootBranch.commitTransaction();
-			assertNestedForks({
-				disposedForks: nestedForks.notDisposedForks,
-				notDisposedForks: [],
-			});
+	it("do not emit a change event after squashing no commits", () => {
+		let changeEventCount = 0;
+		const branch = create(() => {
+			changeEventCount += 1;
 		});
+		branch.squashAfter(branch.getHead());
+		assert.equal(changeEventCount, 0);
+	});
 
-		it("aborted", () => {
-			const rootBranch = create();
-			const nestedForks = setUpNestedForks(rootBranch);
-			rootBranch.abortTransaction();
-
-			assert.equal(rootBranch.isTransacting(), true);
-			assertNestedForks(nestedForks);
-
-			rootBranch.abortTransaction();
-			assertNestedForks({
-				disposedForks: nestedForks.notDisposedForks,
-				notDisposedForks: [],
-			});
+	it("emit a change event after squashing only a single commit", () => {
+		// TODO#25379: It might be nice to _not_ emit an event in this case (and not actually replace the head)
+		// as an optimization, but code affecting op submission and transactions relies on the current behavior for now.
+		let changeEventCount = 0;
+		const branch = create(() => {
+			changeEventCount += 1;
 		});
+		const originalHead = branch.getHead();
+		change(branch);
+		changeEventCount = 0;
+		branch.squashAfter(originalHead);
+		assert.equal(changeEventCount, 2);
 	});
 
 	describe("transitive fork event", () => {
@@ -612,215 +402,13 @@ describe("Branches", () => {
 		it("registers listener on forks created inside of the listener", () => {
 			const branch = create();
 			let forkCount = 0;
-			onForkTransitive(branch, () => {
-				forkCount += 1;
-				assert(branch.hasListeners("fork"));
-				if (forkCount <= 1) {
-					branch.fork();
+			onForkTransitive(branch, (f) => {
+				if (forkCount++ === 0) {
+					f.fork();
 				}
 			});
 			branch.fork();
 			assert.equal(forkCount, 2);
-		});
-	});
-
-	describe("Revertibles", () => {
-		it("triggers a revertible event for changes made to the local branch", () => {
-			const branch = create();
-
-			const revertiblesCreated: Revertible[] = [];
-			const unsubscribe = branch.on("commitApplied", (_, getRevertible) => {
-				assert(getRevertible !== undefined, "commit should be revertible");
-				const revertible = getRevertible();
-				assert.equal(revertible.status, RevertibleStatus.Valid);
-				revertiblesCreated.push(revertible);
-			});
-
-			change(branch);
-
-			assert.equal(revertiblesCreated.length, 1);
-
-			change(branch);
-
-			assert.equal(revertiblesCreated.length, 2);
-
-			// Each revert also leads to the creation of a revertible event
-			revertiblesCreated[1].revert();
-
-			assert.equal(revertiblesCreated.length, 3);
-
-			unsubscribe();
-		});
-
-		it("only triggers a revertibleDisposed event for when a revertible is released", () => {
-			const branch = create();
-
-			const revertiblesCreated: Revertible[] = [];
-			const unsubscribe1 = branch.on("commitApplied", (_, getRevertible) => {
-				assert(getRevertible !== undefined, "commit should be revertible");
-				const revertible = getRevertible();
-				assert.equal(revertible.status, RevertibleStatus.Valid);
-				revertiblesCreated.push(revertible);
-			});
-			const revertiblesDisposed: Revertible[] = [];
-			const unsubscribe2 = branch.on("revertibleDisposed", (revertible) => {
-				assert.equal(revertible.status, RevertibleStatus.Disposed);
-				revertiblesDisposed.push(revertible);
-			});
-
-			change(branch);
-			change(branch);
-
-			assert.equal(revertiblesCreated.length, 2);
-			assert.equal(revertiblesDisposed.length, 0);
-
-			revertiblesCreated[0].release();
-
-			assert.equal(revertiblesDisposed.length, 1);
-			assert.equal(revertiblesDisposed[0], revertiblesCreated[0]);
-
-			// reverting does not release the revertible
-			revertiblesCreated[1].revert();
-			assert.equal(revertiblesDisposed.length, 1);
-
-			unsubscribe1();
-			unsubscribe2();
-		});
-
-		it("revertibles cannot be acquired outside of the commitApplied event callback", () => {
-			const branch = create();
-
-			let acquireRevertible;
-			const unsubscribe = branch.on("commitApplied", (_, getRevertible) => {
-				assert(getRevertible !== undefined, "commit should be revertible");
-				acquireRevertible = getRevertible;
-			});
-
-			change(branch);
-			assert(acquireRevertible !== undefined);
-			assert.throws(acquireRevertible);
-			unsubscribe();
-		});
-
-		it("revertibles cannot be acquired more than once", () => {
-			const branch = create();
-
-			const revertiblesCreated: Revertible[] = [];
-			const unsubscribe1 = branch.on("commitApplied", (_, getRevertible) => {
-				assert(getRevertible !== undefined, "commit should be revertible");
-				const revertible = getRevertible();
-				assert.equal(revertible.status, RevertibleStatus.Valid);
-				revertiblesCreated.push(revertible);
-			});
-			const unsubscribe2 = branch.on("commitApplied", (_, getRevertible) => {
-				assert(getRevertible !== undefined, "commit should be revertible");
-				assert.throws(getRevertible);
-			});
-
-			change(branch);
-			unsubscribe1();
-			unsubscribe2();
-		});
-
-		it("disposed revertibles cannot be released or reverted", () => {
-			const branch = create();
-
-			const revertiblesCreated: Revertible[] = [];
-			const unsubscribe = branch.on("commitApplied", (_, getRevertible) => {
-				assert(getRevertible !== undefined, "commit should be revertible");
-				const r = getRevertible();
-				assert.equal(r.status, RevertibleStatus.Valid);
-				revertiblesCreated.push(r);
-			});
-
-			change(branch);
-
-			assert.equal(revertiblesCreated.length, 1);
-			const revertible = revertiblesCreated[0];
-
-			revertible.release();
-			assert.equal(revertible.status, RevertibleStatus.Disposed);
-
-			assert.throws(() => revertible.release());
-			assert.throws(() => revertible.revert());
-
-			assert.equal(revertible.status, RevertibleStatus.Disposed);
-			unsubscribe();
-		});
-
-		it("commitApplied events have the correct commit kinds", () => {
-			const branch = create();
-
-			const revertiblesCreated: Revertible[] = [];
-			const commitKinds: CommitKind[] = [];
-			const unsubscribe = branch.on("commitApplied", ({ kind }, getRevertible) => {
-				assert(getRevertible !== undefined, "commit should be revertible");
-				const revertible = getRevertible();
-				assert.equal(revertible.status, RevertibleStatus.Valid);
-				revertiblesCreated.push(revertible);
-				commitKinds.push(kind);
-			});
-
-			change(branch);
-			revertiblesCreated[0].revert();
-			revertiblesCreated[1].revert();
-
-			assert.deepEqual(commitKinds, [CommitKind.Default, CommitKind.Undo, CommitKind.Redo]);
-
-			unsubscribe();
-		});
-
-		it("disposing of a branch also disposes of its revertibles", () => {
-			const branch = create();
-
-			const revertiblesCreated: Revertible[] = [];
-			const unsubscribe1 = branch.on("commitApplied", (_, getRevertible) => {
-				assert(getRevertible !== undefined, "commit should be revertible");
-				const r = getRevertible();
-				assert.equal(r.status, RevertibleStatus.Valid);
-				revertiblesCreated.push(r);
-			});
-
-			const revertiblesDisposed: Revertible[] = [];
-			const unsubscribe2 = branch.on("revertibleDisposed", (revertible) => {
-				assert.equal(revertible.status, RevertibleStatus.Disposed);
-				revertiblesDisposed.push(revertible);
-			});
-
-			change(branch);
-
-			assert.equal(revertiblesCreated.length, 1);
-			assert.equal(revertiblesDisposed.length, 0);
-
-			branch.dispose();
-
-			assert.equal(revertiblesCreated.length, 1);
-			assert.equal(revertiblesDisposed.length, 1);
-			assert.equal(revertiblesCreated[0], revertiblesDisposed[0]);
-
-			unsubscribe1();
-			unsubscribe2();
-		});
-
-		it.skip("triggers revertible events for each change merged into the local branch", () => {
-			const parentBranch = create();
-			const childBranch = parentBranch.fork();
-
-			let revertibleCount = 0;
-			const unsubscribe = parentBranch.on("commitApplied", () => {
-				revertibleCount += 1;
-			});
-
-			change(childBranch);
-			change(childBranch);
-
-			assert.equal(revertibleCount, 0);
-
-			parentBranch.merge(childBranch);
-
-			assert.equal(revertibleCount, 2);
-
-			unsubscribe();
 		});
 	});
 
@@ -835,12 +423,12 @@ describe("Branches", () => {
 
 		const branch = new SharedTreeBranch(initCommit, defaultChangeFamily, mintRevisionTag);
 		let head = branch.getHead();
-		branch.on("beforeChange", (c) => {
+		branch.events.on("beforeChange", (c) => {
 			// Check that the branch head never changes in the "before" event; it should only change after the "after" event.
 			assert.equal(branch.getHead(), head);
 			onChange?.(c);
 		});
-		branch.on("afterChange", (c) => {
+		branch.events.on("afterChange", (c) => {
 			head = branch.getHead();
 			onChange?.(c);
 		});

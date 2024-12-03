@@ -2,9 +2,11 @@
  * Copyright (c) Microsoft Corporation and contributors. All rights reserved.
  * Licensed under the MIT License.
  */
+
 import { expect } from "chai";
 
 import { CodeSpanNode, PlainTextNode } from "../../../documentation-domain/index.js";
+
 import { testRender } from "./Utilities.js";
 
 describe("CodeSpan Markdown rendering tests", () => {

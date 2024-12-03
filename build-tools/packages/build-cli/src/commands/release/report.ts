@@ -3,30 +3,8 @@
  * Licensed under the MIT License.
  */
 
-import { ux, Flags, Command } from "@oclif/core";
 import { strict as assert } from "node:assert";
-import chalk from "chalk";
-import { differenceInBusinessDays, formatDistanceToNow } from "date-fns";
-import { writeJson } from "fs-extra";
-import inquirer from "inquirer";
 import path from "node:path";
-import sortJson from "sort-json";
-import { table } from "table";
-
-import {
-	VersionDetails,
-	Context,
-	PackageVersionMap,
-	ReleaseReport,
-	ReportKind,
-	filterVersionsOlderThan,
-	getDisplayDate,
-	getDisplayDateRelative,
-	getFluidDependencies,
-	getRanges,
-	sortVersions,
-	toReportKind,
-} from "../../library";
 
 import {
 	ReleaseVersion,
@@ -36,11 +14,32 @@ import {
 	getPreviousVersions,
 	isVersionBumpType,
 } from "@fluid-tools/version-tools";
+import { rawlist } from "@inquirer/prompts";
+import { Command, Flags, ux } from "@oclif/core";
+import { differenceInBusinessDays, formatDistanceToNow } from "date-fns";
+import { writeJson } from "fs-extra/esm";
+import chalk from "picocolors";
+import sortJson from "sort-json";
+import { table } from "table";
 
-import { BaseCommand } from "../../base";
-import { releaseGroupFlag } from "../../flags";
-import { CommandLogger } from "../../logging";
-import { ReleaseGroup, ReleasePackage, isReleaseGroup } from "../../releaseGroups";
+import { releaseGroupFlag } from "../../flags.js";
+import {
+	BaseCommand,
+	Context,
+	PackageVersionMap,
+	ReleaseReport,
+	ReportKind,
+	VersionDetails,
+	filterVersionsOlderThan,
+	getDisplayDate,
+	getDisplayDateRelative,
+	getFluidDependencies,
+	getRanges,
+	sortVersions,
+	toReportKind,
+} from "../../library/index.js";
+import { CommandLogger } from "../../logging.js";
+import { ReleaseGroup, ReleasePackage, isReleaseGroup } from "../../releaseGroups.js";
 
 /**
  * Controls behavior when there is a list of releases and one needs to be selected.
@@ -106,8 +105,8 @@ export abstract class ReleaseReportBaseCommand<
 		return date === undefined
 			? false
 			: this.numberBusinessDaysToConsiderRecent === undefined
-			  ? true
-			  : differenceInBusinessDays(Date.now(), date) < this.numberBusinessDaysToConsiderRecent;
+				? true
+				: differenceInBusinessDays(Date.now(), date) < this.numberBusinessDaysToConsiderRecent;
 	}
 
 	/**
@@ -231,8 +230,6 @@ export abstract class ReleaseReportBaseCommand<
 		switch (latestReleaseChooseMode) {
 			case undefined:
 			case "interactive": {
-				let answer: inquirer.Answers | undefined;
-
 				const recentReleases =
 					this.numberBusinessDaysToConsiderRecent === undefined
 						? sortedByDate
@@ -250,9 +247,7 @@ export abstract class ReleaseReportBaseCommand<
 				if (recentReleases.length === 1) {
 					latestReleasedVersion = recentReleases[0];
 				} else if (recentReleases.length > 1) {
-					const question: inquirer.ListQuestion = {
-						type: "list",
-						name: "selectedPackageVersion",
+					const answer = await rawlist({
 						message: `Multiple versions of ${releaseGroupOrPackage} have been released. Select the one you want to include in the release report.`,
 						choices: recentReleases.map((v) => {
 							return {
@@ -261,13 +256,8 @@ export abstract class ReleaseReportBaseCommand<
 								short: v.version,
 							};
 						}),
-					};
-
-					answer = await inquirer.prompt(question);
-					const selectedVersion =
-						answer === undefined
-							? recentReleases[0].version
-							: (answer.selectedPackageVersion as string);
+					});
+					const selectedVersion = answer ?? recentReleases[0].version;
 					latestReleasedVersion = recentReleases.find((v) => v.version === selectedVersion);
 				}
 
@@ -386,6 +376,11 @@ export default class ReleaseReportCommand extends ReleaseReportBaseCommand<
 			char: "o",
 			description: "Output JSON report files to this directory.",
 		}),
+		baseFileName: Flags.string({
+			description:
+				"If provided, the output files will be named using this base name followed by the report kind (caret, simple, full, tilde, legacy-compat) and the .json extension. For example, if baseFileName is 'foo', the output files will be named 'foo.caret.json', 'foo.simple.json', etc.",
+			required: false,
+		}),
 		...ReleaseReportBaseCommand.flags,
 	};
 
@@ -402,10 +397,10 @@ export default class ReleaseReportCommand extends ReleaseReportBaseCommand<
 			flags.highest === true
 				? "version"
 				: flags.mostRecent === true
-				  ? "date"
-				  : flags.interactive
-					  ? "interactive"
-					  : this.defaultMode;
+					? "date"
+					: flags.interactive
+						? "interactive"
+						: this.defaultMode;
 		assert(mode !== undefined, `mode is undefined`);
 
 		this.releaseGroupName = flags.releaseGroup;
@@ -435,26 +430,26 @@ export default class ReleaseReportCommand extends ReleaseReportBaseCommand<
 		this.log(chalk.underline(chalk.bold(`Release Report`)));
 		if (mode === "inRepo" && flags.releaseGroup !== undefined) {
 			this.log(
-				`${chalk.yellow.bold("\nIMPORTANT")}: This report only includes the ${chalk.blue(
+				`${chalk.yellow(chalk.bold("\nIMPORTANT"))}: This report only includes the ${chalk.blue(
 					flags.releaseGroup,
 				)} release group (version ${chalk.blue(
 					context.getVersion(flags.releaseGroup),
 				)}) and its ${chalk.bold("direct Fluid dependencies")}.`,
 			);
 			this.log(
-				`${chalk.yellow.bold(
-					"IMPORTANT",
+				`${chalk.yellow(
+					chalk.bold("IMPORTANT"),
 				)}: The release version was determined by the in-repo version of the release group.`,
 			);
 		} else if (flags.releaseGroup === undefined) {
 			this.log(
-				`${chalk.yellow.bold("\nIMPORTANT")}: This report includes ${chalk.blue(
+				`${chalk.yellow(chalk.bold("\nIMPORTANT"))}: This report includes ${chalk.blue(
 					"all packages and release groups",
 				)} in the repo.`,
 			);
 		} else if (flags.releaseGroup !== undefined) {
 			this.log(
-				`${chalk.yellow.bold("\nIMPORTANT")}: This report only includes the ${chalk.blue(
+				`${chalk.yellow(chalk.bold("\nIMPORTANT"))}: This report only includes the ${chalk.blue(
 					flags.releaseGroup,
 				)} release group! ${chalk.bold("None of its dependencies are included.")}`,
 			);
@@ -463,7 +458,7 @@ export default class ReleaseReportCommand extends ReleaseReportBaseCommand<
 		switch (mode) {
 			case "interactive": {
 				this.log(
-					`${chalk.yellow.bold("IMPORTANT")}: Release versions were selected ${chalk.bold(
+					`${chalk.yellow(chalk.bold("IMPORTANT"))}: Release versions were selected ${chalk.bold(
 						"interactively",
 					)}.`,
 				);
@@ -472,7 +467,7 @@ export default class ReleaseReportCommand extends ReleaseReportBaseCommand<
 			}
 			case "date": {
 				this.log(
-					`${chalk.yellow.bold("IMPORTANT")}: The latest release version ${chalk.bold(
+					`${chalk.yellow(chalk.bold("IMPORTANT"))}: The latest release version ${chalk.bold(
 						"by date",
 					)} was selected.`,
 				);
@@ -481,7 +476,7 @@ export default class ReleaseReportCommand extends ReleaseReportBaseCommand<
 			}
 			case "version": {
 				this.log(
-					`${chalk.yellow.bold("IMPORTANT")}: The ${chalk.bold(
+					`${chalk.yellow(chalk.bold("IMPORTANT"))}: The ${chalk.bold(
 						"highest semver",
 					)} version was selected.`,
 				);
@@ -497,10 +492,51 @@ export default class ReleaseReportCommand extends ReleaseReportBaseCommand<
 		if (shouldOutputFiles) {
 			this.info(`Writing files to path: ${path.resolve(outputPath)}`);
 			const promises = [
-				writeReport(context, report, "simple", outputPath, flags.releaseGroup, this.logger),
-				writeReport(context, report, "full", outputPath, flags.releaseGroup, this.logger),
-				writeReport(context, report, "caret", outputPath, flags.releaseGroup, this.logger),
-				writeReport(context, report, "tilde", outputPath, flags.releaseGroup, this.logger),
+				writeReport(
+					context,
+					report,
+					"simple",
+					outputPath,
+					flags.releaseGroup,
+					flags.baseFileName,
+					this.logger,
+				),
+				writeReport(
+					context,
+					report,
+					"full",
+					outputPath,
+					flags.releaseGroup,
+					flags.baseFileName,
+					this.logger,
+				),
+				writeReport(
+					context,
+					report,
+					"caret",
+					outputPath,
+					flags.releaseGroup,
+					flags.baseFileName,
+					this.logger,
+				),
+				writeReport(
+					context,
+					report,
+					"tilde",
+					outputPath,
+					flags.releaseGroup,
+					flags.baseFileName,
+					this.logger,
+				),
+				writeReport(
+					context,
+					report,
+					"legacy-compat",
+					outputPath,
+					flags.releaseGroup,
+					flags.baseFileName,
+					this.logger,
+				),
 			];
 
 			await Promise.all(promises);
@@ -530,7 +566,12 @@ export default class ReleaseReportCommand extends ReleaseReportBaseCommand<
 
 			const isNewRelease = this.isRecentReleaseByDate(latestDate);
 			const scheme = detectVersionScheme(latestVer);
-			const ranges = getRanges(latestVer);
+
+			if (context.flubConfig.releaseReport === undefined) {
+				throw new Error(`releaseReport not found in config.`);
+			}
+
+			const ranges = getRanges(latestVer, context.flubConfig.releaseReport, pkgName);
 
 			// Expand the release group to its constituent packages.
 			if (isReleaseGroup(pkgName)) {
@@ -594,7 +635,7 @@ export default class ReleaseReportCommand extends ReleaseReportBaseCommand<
 			const bumpType = detectBumpType(prevVer ?? DEFAULT_MIN_VERSION, latestVer);
 			const displayBumpType = highlight(`${bumpType}`);
 
-			const displayVersionSection = chalk.grey(
+			const displayVersionSection = chalk.gray(
 				`${highlight(latestVer)} <-- ${displayPreviousVersion}`,
 			);
 
@@ -647,9 +688,14 @@ function generateReportFileName(
 	kind: ReportKind,
 	releaseVersion: ReleaseVersion,
 	releaseGroup?: ReleaseGroup,
+	baseFileName?: string,
 ): string {
 	if (releaseGroup === undefined && releaseVersion === undefined) {
 		throw new Error(`Both releaseGroup and releaseVersion were undefined.`);
+	}
+
+	if (baseFileName !== undefined) {
+		return `${baseFileName}.${kind}.json`;
 	}
 
 	return `fluid-framework-release-manifest.${releaseGroup ?? "all"}.${
@@ -667,15 +713,16 @@ async function writeReport(
 	kind: ReportKind,
 	dir: string,
 	releaseGroup?: ReleaseGroup,
+	baseFileName?: string,
 	log?: CommandLogger,
 ): Promise<void> {
 	const version =
 		releaseGroup === undefined
 			? // Use container-runtime as a proxy for the client release group.
-			  report["@fluidframework/container-runtime"].version
+				report["@fluidframework/container-runtime"].version
 			: context.getVersion(releaseGroup);
 
-	const reportName = generateReportFileName(kind, version, releaseGroup);
+	const reportName = generateReportFileName(kind, version, releaseGroup, baseFileName);
 	const reportPath = path.join(dir, reportName);
 	log?.info(`${kind} report written to ${reportPath}`);
 	const reportOutput = toReportKind(report, kind);

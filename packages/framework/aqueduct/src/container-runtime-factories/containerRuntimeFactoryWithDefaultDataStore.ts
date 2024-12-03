@@ -3,19 +3,22 @@
  * Licensed under the MIT License.
  */
 
-import {
-	type ContainerRuntime,
-	type IContainerRuntimeOptions,
-} from "@fluidframework/container-runtime";
-import { type IContainerRuntime } from "@fluidframework/container-runtime-definitions";
-import { type FluidObject, type IRequest, type IResponse } from "@fluidframework/core-interfaces";
-import { type RuntimeRequestHandler } from "@fluidframework/request-handler";
-import {
-	type IFluidDataStoreFactory,
-	type NamedFluidDataStoreRegistryEntries,
-} from "@fluidframework/runtime-definitions";
-import { RequestParser } from "@fluidframework/runtime-utils";
-import { type IFluidDependencySynthesizer } from "@fluidframework/synthesize";
+import type { IContainerRuntimeOptions } from "@fluidframework/container-runtime/internal";
+import type {
+	IContainerRuntime,
+	// eslint-disable-next-line import/no-deprecated
+	IContainerRuntimeWithResolveHandle_Deprecated,
+} from "@fluidframework/container-runtime-definitions/internal";
+import type { FluidObject, IRequest, IResponse } from "@fluidframework/core-interfaces";
+// eslint-disable-next-line import/no-deprecated
+import type { RuntimeRequestHandler } from "@fluidframework/request-handler/internal";
+import type {
+	IFluidDataStoreFactory,
+	NamedFluidDataStoreRegistryEntries,
+} from "@fluidframework/runtime-definitions/internal";
+import { RequestParser } from "@fluidframework/runtime-utils/internal";
+import type { IFluidDependencySynthesizer } from "@fluidframework/synthesize/internal";
+
 import { BaseContainerRuntimeFactory } from "./baseContainerRuntimeFactory.js";
 
 const defaultDataStoreId = "default";
@@ -30,6 +33,7 @@ async function getDefaultFluidObject(runtime: IContainerRuntime): Promise<FluidO
 
 /**
  * {@link ContainerRuntimeFactoryWithDefaultDataStore} construction properties.
+ * @legacy
  * @alpha
  */
 export interface ContainerRuntimeFactoryWithDefaultDataStoreProps {
@@ -46,13 +50,14 @@ export interface ContainerRuntimeFactoryWithDefaultDataStoreProps {
 	 * Request handlers for containers produced.
 	 * @deprecated Will be removed once Loader LTS version is "2.0.0-internal.7.0.0". Migrate all usage of IFluidRouter to the "entryPoint" pattern. Refer to Removing-IFluidRouter.md
 	 */
+	// eslint-disable-next-line import/no-deprecated
 	requestHandlers?: RuntimeRequestHandler[];
 	/**
-	 * The runtime options passed to the ContainerRuntime when instantiating it
+	 * The runtime options passed to the IContainerRuntime when instantiating it
 	 */
 	runtimeOptions?: IContainerRuntimeOptions;
 	/**
-	 * Function that will initialize the entryPoint of the ContainerRuntime instances
+	 * Function that will initialize the entryPoint of the IContainerRuntime instances
 	 * created with this factory
 	 */
 	provideEntryPoint?: (runtime: IContainerRuntime) => Promise<FluidObject>;
@@ -63,6 +68,7 @@ export interface ContainerRuntimeFactoryWithDefaultDataStoreProps {
  * the container with an empty URL.
  *
  * This factory should be exposed as fluidExport off the entry point to your module.
+ * @legacy
  * @alpha
  */
 export class ContainerRuntimeFactoryWithDefaultDataStore extends BaseContainerRuntimeFactory {
@@ -81,8 +87,9 @@ export class ContainerRuntimeFactoryWithDefaultDataStore extends BaseContainerRu
 		): Promise<IResponse | undefined> => {
 			const parser = RequestParser.create(request);
 			if (parser.pathParts.length === 0) {
-				// This cast is safe as ContainerRuntime.loadRuntime is called in the base class
-				return (runtime as ContainerRuntime).resolveHandle({
+				// This cast is safe as loadContainerRuntime is called in the base class
+				// eslint-disable-next-line import/no-deprecated
+				return (runtime as IContainerRuntimeWithResolveHandle_Deprecated).resolveHandle({
 					url: `/${defaultDataStoreId}${parser.query}`,
 					headers: request.headers,
 				});

@@ -3,7 +3,8 @@
  * Licensed under the MIT License.
  */
 
-import { ITelemetryLoggerExt } from '@fluidframework/telemetry-utils';
+import { ITelemetryLoggerExt } from '@fluidframework/telemetry-utils/internal';
+
 import { assertNotUndefined, fail } from './Common.js';
 import { PlaceValidationResult, RangeValidationResultKind } from './EditUtilities.js';
 import { SharedTreeEvent } from './EventTypes.js';
@@ -22,8 +23,7 @@ export function useFailedSequencedEditTelemetry(tree: SharedTree): { disable: ()
 		if (wasLocal && outcome.status !== EditStatus.Applied) {
 			logger.send({
 				category: 'generic',
-				eventName:
-					outcome.status === EditStatus.Malformed ? 'MalformedSharedTreeEdit' : 'InvalidSharedTreeEdit',
+				eventName: outcome.status === EditStatus.Malformed ? 'MalformedSharedTreeEdit' : 'InvalidSharedTreeEdit',
 			});
 		}
 	}

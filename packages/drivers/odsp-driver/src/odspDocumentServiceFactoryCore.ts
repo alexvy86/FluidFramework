@@ -4,16 +4,17 @@
  */
 
 import { ITelemetryBaseLogger } from "@fluidframework/core-interfaces";
-import { PromiseCache } from "@fluidframework/core-utils";
+import { PromiseCache } from "@fluidframework/core-utils/internal";
+import { ISummaryTree } from "@fluidframework/driver-definitions";
 import {
 	IDocumentService,
 	IDocumentServiceFactory,
 	IResolvedUrl,
-} from "@fluidframework/driver-definitions";
+} from "@fluidframework/driver-definitions/internal";
 import {
 	getDocAttributesFromProtocolSummary,
 	isCombinedAppAndProtocolSummary,
-} from "@fluidframework/driver-utils";
+} from "@fluidframework/driver-utils/internal";
 import {
 	HostStoragePolicy,
 	IFileEntry,
@@ -27,10 +28,11 @@ import {
 	SharingLinkScope,
 	TokenFetchOptions,
 	TokenFetcher,
-} from "@fluidframework/odsp-driver-definitions";
-import { ISummaryTree } from "@fluidframework/protocol-definitions";
-import { PerformanceEvent, createChildLogger } from "@fluidframework/telemetry-utils";
+} from "@fluidframework/odsp-driver-definitions/internal";
+import { PerformanceEvent, createChildLogger } from "@fluidframework/telemetry-utils/internal";
 import { v4 as uuid } from "uuid";
+
+import { useCreateNewModule } from "./createFile/index.js";
 import { ICacheAndTracker, createOdspCacheAndTracker } from "./epochTracker.js";
 import {
 	INonPersistentCache,
@@ -46,6 +48,7 @@ import {
 	getJoinSessionCacheKey,
 	getOdspResolvedUrl,
 	isNewFileInfo,
+	toInstrumentedOdspStorageTokenFetcher,
 	toInstrumentedOdspTokenFetcher,
 } from "./odspUtils.js";
 
@@ -55,6 +58,7 @@ import {
  *
  * This constructor should be used by environments that support dynamic imports and that wish
  * to leverage code splitting as a means to keep bundles as small as possible.
+ * @legacy
  * @alpha
  */
 export class OdspDocumentServiceFactoryCore
@@ -151,7 +155,6 @@ export class OdspDocumentServiceFactoryCore
 			fileEntry,
 			odspLogger,
 			clientIsSummarizer,
-			this.hostPolicy,
 		);
 
 		return PerformanceEvent.timedExecAsync(
@@ -166,55 +169,37 @@ export class OdspDocumentServiceFactoryCore
 					this.hostPolicy.enableSingleRequestForShareLinkWithCreate,
 			},
 			async (event) => {
-				const getStorageToken = toInstrumentedOdspTokenFetcher(
+				const getAuthHeader = toInstrumentedOdspStorageTokenFetcher(
 					odspLogger,
 					resolvedUrlData,
 					this.getStorageToken,
-					true /* throwOnNullToken */,
 				);
-				// We can delay load this module as this path will not be executed in load flows and create flow
-				// while only happens once in lifetime of a document happens in the background after creation of
-				// detached container.
-				const module = await import(
-					/* webpackChunkName: "createNewModule" */ "./createNewModule.js"
-				)
-					.then((m) => {
-						odspLogger.sendTelemetryEvent({ eventName: "createNewModuleLoaded" });
-						return m;
-					})
-					.catch((error) => {
-						odspLogger.sendErrorEvent(
-							{ eventName: "createNewModuleLoadFailed" },
-							error,
-						);
-						throw error;
-					});
-				const _odspResolvedUrl = isNewFileInfo(fileInfo)
-					? await module.createNewFluidFile(
-							getStorageToken,
-							fileInfo,
-							odspLogger,
-							createNewSummary,
-							cacheAndTracker.epochTracker,
-							fileEntry,
-							this.hostPolicy.cacheCreateNewSummary ?? true,
-							!!this.hostPolicy.sessionOptions
-								?.forceAccessTokenViaAuthorizationHeader,
-							odspResolvedUrl.isClpCompliantApp,
-							this.hostPolicy.enableSingleRequestForShareLinkWithCreate,
-					  )
-					: await module.createNewContainerOnExistingFile(
-							getStorageToken,
-							fileInfo,
-							odspLogger,
-							createNewSummary,
-							cacheAndTracker.epochTracker,
-							fileEntry,
-							this.hostPolicy.cacheCreateNewSummary ?? true,
-							!!this.hostPolicy.sessionOptions
-								?.forceAccessTokenViaAuthorizationHeader,
-							odspResolvedUrl.isClpCompliantApp,
-					  );
+				const _odspResolvedUrl = await useCreateNewModule(odspLogger, async (module) => {
+					return isNewFileInfo(fileInfo)
+						? module.createNewFluidFile(
+								getAuthHeader,
+								fileInfo,
+								odspLogger,
+								createNewSummary,
+								cacheAndTracker.epochTracker,
+								fileEntry,
+								this.hostPolicy.cacheCreateNewSummary ?? true,
+								!!this.hostPolicy.sessionOptions?.forceAccessTokenViaAuthorizationHeader,
+								odspResolvedUrl.isClpCompliantApp,
+								this.hostPolicy.enableSingleRequestForShareLinkWithCreate,
+							)
+						: module.createNewContainerOnExistingFile(
+								getAuthHeader,
+								fileInfo,
+								odspLogger,
+								createNewSummary,
+								cacheAndTracker.epochTracker,
+								fileEntry,
+								this.hostPolicy.cacheCreateNewSummary ?? true,
+								!!this.hostPolicy.sessionOptions?.forceAccessTokenViaAuthorizationHeader,
+								odspResolvedUrl.isClpCompliantApp,
+							);
+				});
 				const docService = this.createDocumentServiceCore(
 					_odspResolvedUrl,
 					odspLogger,
@@ -240,7 +225,9 @@ export class OdspDocumentServiceFactoryCore
 	 */
 	constructor(
 		private readonly getStorageToken: TokenFetcher<OdspResourceTokenFetchOptions>,
-		private readonly getWebsocketToken: TokenFetcher<OdspResourceTokenFetchOptions> | undefined,
+		private readonly getWebsocketToken:
+			| TokenFetcher<OdspResourceTokenFetchOptions>
+			| undefined,
 		protected persistedCache: IPersistedCache = new LocalPersistentCache(),
 		private readonly hostPolicy: HostStoragePolicy = {},
 	) {
@@ -291,25 +278,25 @@ export class OdspDocumentServiceFactoryCore
 				{ resolvedUrl: odspResolvedUrl, docId: odspResolvedUrl.hashedDocumentId },
 				extLogger,
 				clientIsSummarizer,
-				this.hostPolicy,
 			);
 
-		const storageTokenFetcher = toInstrumentedOdspTokenFetcher(
+		const storageTokenFetcher = toInstrumentedOdspStorageTokenFetcher(
 			extLogger,
 			resolvedUrlData,
 			this.getStorageToken,
-			true /* throwOnNullToken */,
 		);
 
 		const webSocketTokenFetcher =
 			this.getWebsocketToken === undefined
 				? undefined
 				: async (options: TokenFetchOptions): Promise<string | null> =>
+						// websocket expects a plain token
 						toInstrumentedOdspTokenFetcher(
 							extLogger,
 							resolvedUrlData,
 							this.getWebsocketToken!,
 							false /* throwOnNullToken */,
+							true /* returnPlainToken */,
 						)(options, "GetWebsocketToken");
 
 		return OdspDocumentService.create(
@@ -344,7 +331,7 @@ function getSharingLinkParams(
 				scope: SharingLinkScope[createLinkScope],
 				...(createLinkRole && SharingLinkRole[createLinkRole]
 					? // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-					  { role: SharingLinkRole[createLinkRole] }
+						{ role: SharingLinkRole[createLinkRole] }
 					: {}),
 			};
 		}

@@ -10,8 +10,7 @@ import {
 	TextSegment,
 	getTextAndMarkers,
 	reservedTileLabelsKey,
-} from "@fluidframework/sequence";
-
+} from "@fluidframework/sequence/internal";
 import React, { useEffect, useRef } from "react";
 import SimpleMDE from "simplemde";
 
@@ -71,10 +70,7 @@ class SmdeView {
 							smde.codemirror.posFromIndex(range.position),
 						);
 					} else if (Marker.is(segment)) {
-						smde.codemirror.replaceRange(
-							"\n",
-							smde.codemirror.posFromIndex(range.position),
-						);
+						smde.codemirror.replaceRange("\n", smde.codemirror.posFromIndex(range.position));
 					}
 				} else if (range.operation === MergeTreeDeltaType.REMOVE) {
 					if (TextSegment.is(segment)) {

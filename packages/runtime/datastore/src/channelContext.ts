@@ -3,30 +3,33 @@
  * Licensed under the MIT License.
  */
 
-import { IFluidHandle } from "@fluidframework/core-interfaces";
 import {
 	IChannel,
 	IChannelAttributes,
 	IChannelFactory,
 	IFluidDataStoreRuntime,
-} from "@fluidframework/datastore-definitions";
-import { IDocumentStorageService } from "@fluidframework/driver-definitions";
-import { readAndParse } from "@fluidframework/driver-utils";
-import { ISequencedDocumentMessage, ISnapshotTree } from "@fluidframework/protocol-definitions";
+} from "@fluidframework/datastore-definitions/internal";
+import {
+	IDocumentStorageService,
+	ISnapshotTree,
+} from "@fluidframework/driver-definitions/internal";
+import { readAndParse } from "@fluidframework/driver-utils/internal";
 import {
 	IExperimentalIncrementalSummaryContext,
-	IFluidDataStoreContext,
-	IGarbageCollectionData,
-	ISummarizeResult,
 	ISummaryTreeWithStats,
 	ITelemetryContext,
-} from "@fluidframework/runtime-definitions";
-import { addBlobToSummary } from "@fluidframework/runtime-utils";
+	IGarbageCollectionData,
+	IFluidDataStoreContext,
+	ISummarizeResult,
+	type IRuntimeMessageCollection,
+} from "@fluidframework/runtime-definitions/internal";
+import { addBlobToSummary } from "@fluidframework/runtime-utils/internal";
 import {
-	DataCorruptionError,
 	ITelemetryLoggerExt,
+	DataCorruptionError,
 	tagCodeArtifacts,
-} from "@fluidframework/telemetry-utils";
+} from "@fluidframework/telemetry-utils/internal";
+
 import { ChannelDeltaConnection } from "./channelDeltaConnection.js";
 import { ChannelStorageService } from "./channelStorageService.js";
 import { ISharedObjectRegistry } from "./dataStoreRuntime.js";
@@ -38,7 +41,11 @@ export interface IChannelContext {
 
 	setConnectionState(connected: boolean, clientId?: string);
 
-	processOp(message: ISequencedDocumentMessage, local: boolean, localOpMetadata?: unknown): void;
+	/**
+	 * Process messages for this channel context. The messages here are contiguous messages for this context in a batch.
+	 * @param messageCollection - The collection of messages to process.
+	 */
+	processMessages(messageCollection: IRuntimeMessageCollection): void;
 
 	summarize(
 		fullTree?: boolean,
@@ -77,7 +84,6 @@ export function createChannelServiceEndpoints(
 	connected: boolean,
 	submitFn: (content: any, localOpMetadata: unknown) => void,
 	dirtyFn: () => void,
-	addedGCOutboundReferenceFn: (srcHandle: IFluidHandle, outboundHandle: IFluidHandle) => void,
 	isAttachedAndVisible: () => boolean,
 	storageService: IDocumentStorageService,
 	logger: ITelemetryLoggerExt,
@@ -88,7 +94,6 @@ export function createChannelServiceEndpoints(
 		connected,
 		(message, localOpMetadata) => submitFn(message, localOpMetadata),
 		dirtyFn,
-		addedGCOutboundReferenceFn,
 		isAttachedAndVisible,
 	);
 	const objectStorage = new ChannelStorageService(tree, storageService, logger, extraBlobs);

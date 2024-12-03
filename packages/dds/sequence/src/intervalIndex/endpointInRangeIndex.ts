@@ -5,7 +5,8 @@
 
 /* eslint-disable import/no-deprecated */
 
-import { Client, PropertyAction, RedBlackTree } from "@fluidframework/merge-tree";
+import { Client, PropertyAction, RedBlackTree } from "@fluidframework/merge-tree/internal";
+
 import {
 	IIntervalHelpers,
 	ISerializableInterval,
@@ -13,9 +14,14 @@ import {
 	SequenceInterval,
 	sequenceIntervalHelpers,
 } from "../intervals/index.js";
-import { SharedString } from "../sharedString.js";
+import { ISharedString } from "../sharedString.js";
+
 import { IntervalIndex } from "./intervalIndex.js";
-import { HasComparisonOverride, compareOverrideables, forceCompare } from "./intervalIndexUtils.js";
+import {
+	HasComparisonOverride,
+	compareOverrideables,
+	forceCompare,
+} from "./intervalIndexUtils.js";
 
 /**
  * Collection of intervals.
@@ -40,27 +46,29 @@ export class EndpointInRangeIndex<TInterval extends ISerializableInterval>
 		private readonly client: Client,
 		private readonly helpers: IIntervalHelpers<TInterval>,
 	) {
-		this.intervalTree = new RedBlackTree<TInterval, TInterval>((a: TInterval, b: TInterval) => {
-			const compareEndsResult = a.compareEnd(b);
-			if (compareEndsResult !== 0) {
-				return compareEndsResult;
-			}
+		this.intervalTree = new RedBlackTree<TInterval, TInterval>(
+			(a: TInterval, b: TInterval) => {
+				const compareEndsResult = a.compareEnd(b);
+				if (compareEndsResult !== 0) {
+					return compareEndsResult;
+				}
 
-			const overrideablesComparison = compareOverrideables(
-				a as Partial<HasComparisonOverride>,
-				b as Partial<HasComparisonOverride>,
-			);
-			if (overrideablesComparison !== 0) {
-				return overrideablesComparison;
-			}
+				const overrideablesComparison = compareOverrideables(
+					a as Partial<HasComparisonOverride>,
+					b as Partial<HasComparisonOverride>,
+				);
+				if (overrideablesComparison !== 0) {
+					return overrideablesComparison;
+				}
 
-			const aId = a.getIntervalId();
-			const bId = b.getIntervalId();
-			if (aId !== undefined && bId !== undefined) {
-				return aId.localeCompare(bId);
-			}
-			return 0;
-		});
+				const aId = a.getIntervalId();
+				const bId = b.getIntervalId();
+				if (aId !== undefined && bId !== undefined) {
+					return aId.localeCompare(bId);
+				}
+				return 0;
+			},
+		);
 	}
 
 	public add(interval: TInterval): void {
@@ -110,7 +118,7 @@ export class EndpointInRangeIndex<TInterval extends ISerializableInterval>
  * @internal
  */
 export function createEndpointInRangeIndex(
-	sharedString: SharedString,
+	sharedString: ISharedString,
 ): IEndpointInRangeIndex<SequenceInterval> {
 	const client = (sharedString as unknown as { client: Client }).client;
 	return new EndpointInRangeIndex<SequenceInterval>(client, sequenceIntervalHelpers);

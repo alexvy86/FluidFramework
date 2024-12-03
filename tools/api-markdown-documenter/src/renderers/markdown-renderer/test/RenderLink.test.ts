@@ -2,9 +2,11 @@
  * Copyright (c) Microsoft Corporation and contributors. All rights reserved.
  * Licensed under the MIT License.
  */
+
 import { expect } from "chai";
 
 import { LinkNode, PlainTextNode } from "../../../documentation-domain/index.js";
+
 import { testRender } from "./Utilities.js";
 
 describe("Link Markdown rendering tests", () => {

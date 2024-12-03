@@ -3,9 +3,8 @@
  * Licensed under the MIT License.
  */
 
+import type { FluidUnknownObjectNode } from "@fluidframework/devtools-core/internal";
 import React from "react";
-
-import type { FluidUnknownObjectNode } from "@fluidframework/devtools-core";
 
 import type { DataVisualizationTreeProps } from "./CommonInterfaces.js";
 import { TreeHeader } from "./TreeHeader.js";
@@ -19,7 +18,9 @@ export type UnknownFluidObjectViewProps = DataVisualizationTreeProps<FluidUnknow
 /**
  * Render data with type VisualNodeKind.FluidUnknownObjectNode and render its children.
  */
-export function UnknownFluidObjectView(props: UnknownFluidObjectViewProps): React.ReactElement {
+export function UnknownFluidObjectView(
+	props: UnknownFluidObjectViewProps,
+): React.ReactElement {
 	const { label, node } = props;
 
 	const metadata = JSON.stringify(node.metadata);

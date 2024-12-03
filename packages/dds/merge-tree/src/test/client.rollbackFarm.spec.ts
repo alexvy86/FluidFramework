@@ -6,6 +6,7 @@
 /* eslint-disable @typescript-eslint/no-non-null-assertion */
 
 import { makeRandom } from "@fluid-private/stochastic-test-utils";
+
 import {
 	TestOperation,
 	annotateRange,
@@ -25,7 +26,7 @@ const defaultOptions = {
 	rounds: 10,
 	opsPerRound: 10,
 	operations: allOperations,
-	growthFunc: (input: number) => input * 2,
+	growthFunc: (input: number): number => input * 2,
 };
 
 describe("MergeTree.Client", () => {
@@ -34,11 +35,17 @@ describe("MergeTree.Client", () => {
 			const random = makeRandom(0xdeadbeef, 0xfeedbed, minLength, opsPerRollback);
 
 			// A: readonly, B: rollback, C: rollback + edit, D: edit
-			const clients = createClientsAtInitialState({ initialState: "" }, "A", "B", "C", "D");
+			const clients = createClientsAtInitialState(
+				{ initialState: "", options: { mergeTreeEnableAnnotateAdjust: true } },
+				"A",
+				"B",
+				"C",
+				"D",
+			);
 			let seq = 0;
 
 			for (let round = 0; round < defaultOptions.rounds; round++) {
-				clients.all.forEach((c) => c.updateMinSeq(seq));
+				for (const c of clients.all) c.updateMinSeq(seq);
 
 				const logger = new TestClientLogger(clients.all, `Round ${round}`);
 
@@ -70,6 +77,7 @@ describe("MergeTree.Client", () => {
 					const msg = rollbackMsgs.pop();
 					// TODO: The type here is probably MergeTreeDeltaType but
 					// omitting GROUP, given the typing of the rollback method.
+					// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
 					clients[msg![0].clientId!].rollback?.(
 						{ type: (msg![0].contents as { type?: unknown }).type },
 						msg![1],

@@ -4,27 +4,31 @@
  */
 
 import child_process from "child_process";
+
 import {
 	AzureClient,
-	// eslint-disable-next-line import/no-deprecated
-	AzureFunctionTokenProvider,
 	AzureLocalConnectionConfig,
 	AzureRemoteConnectionConfig,
 	ITokenProvider,
 	IUser,
 } from "@fluidframework/azure-client";
 import { ContainerSchema } from "@fluidframework/fluid-static";
-import { SharedMap } from "@fluidframework/map";
-import { InsecureTokenProvider } from "@fluidframework/test-runtime-utils";
+import { SharedMap } from "@fluidframework/map/internal";
+import { ITelemetryLoggerExt } from "@fluidframework/telemetry-utils/internal";
+import { InsecureTokenProvider } from "@fluidframework/test-runtime-utils/internal";
 import commander from "commander";
 import { v4 as uuid } from "uuid";
 
-import { ITelemetryLoggerExt } from "@fluidframework/telemetry-utils";
-import { AzureClientConnectionConfig, ContainerFactorySchema, IRunConfig } from "./interface.js";
+import { AzureFunctionTokenProvider } from "./AzureFunctionTokenProvider.js";
+import {
+	AzureClientConnectionConfig,
+	ContainerFactorySchema,
+	IRunConfig,
+} from "./interface.js";
 
 export interface AzureClientConfig {
-	userId?: string;
-	userName?: string;
+	id?: string;
+	name?: string;
 	logger?: ITelemetryLoggerExt;
 }
 
@@ -62,25 +66,23 @@ export function convertConfigToScriptParams<T extends IRunConfig>(config: T): st
 
 export function createAzureTokenProvider(
 	fnUrl: string,
-	userID?: string,
-	userName?: string,
-	// eslint-disable-next-line import/no-deprecated
+	id?: string,
+	name?: string,
 ): AzureFunctionTokenProvider {
-	// eslint-disable-next-line import/no-deprecated
 	return new AzureFunctionTokenProvider(`${fnUrl}/api/GetFrsToken`, {
-		userId: userID ?? "foo",
-		userName: userName ?? "bar",
+		id: id ?? "foo",
+		name: name ?? "bar",
 	});
 }
 
 export function createInsecureTokenProvider(
 	tenantKey: string,
-	userID?: string,
-	userName?: string,
+	id?: string,
+	name?: string,
 ): InsecureTokenProvider {
 	const user: IUser & { name: string } = {
-		id: userID ?? "foo",
-		name: userName ?? "bar",
+		id: id ?? "foo",
+		name: name ?? "bar",
 	};
 	return new InsecureTokenProvider(tenantKey, user);
 }
@@ -114,36 +116,36 @@ export async function createAzureClient(config: AzureClientConfig): Promise<Azur
 	const useAzure = connectionConfig.type === "remote";
 
 	if (!connectionConfig.endpoint) {
-		throw new Error("Missing FRS configuration: Relay Service Endpoint URL.");
+		throw new Error("Missing AFR configuration: Relay Service Endpoint URL.");
 	}
 
 	let connectionProps: AzureRemoteConnectionConfig | AzureLocalConnectionConfig;
 
 	if (useAzure) {
 		if (!connectionConfig.tenantId) {
-			throw new Error("Missing FRS configuration: Tenant ID.");
+			throw new Error("Missing AFR configuration: Tenant ID.");
 		}
 
 		let tokenProvider: ITokenProvider;
 		/* Insecure Token Provider */
 		if (!connectionConfig.useSecureTokenProvider) {
 			if (!connectionConfig.key) {
-				throw new Error("Missing FRS configuration: Tenant Primary Key.");
+				throw new Error("Missing AFR configuration: Tenant Primary Key.");
 			}
 			tokenProvider = createInsecureTokenProvider(
 				connectionConfig.key,
-				config.userId,
-				config.userName,
+				config.id,
+				config.name,
 			);
 		} else {
 			/* Secure Token Provider (Azure Function) */
 			if (!connectionConfig.functionUrl) {
-				throw new Error("Missing FRS configuration: Function URL.");
+				throw new Error("Missing AFR configuration: Function URL.");
 			}
 			tokenProvider = createAzureTokenProvider(
 				connectionConfig.functionUrl,
-				config.userId,
-				config.userName,
+				config.id,
+				config.name,
 			);
 		}
 		connectionProps = {

@@ -4,8 +4,12 @@
  */
 
 import { IRequest } from "@fluidframework/core-interfaces";
-import { assert } from "@fluidframework/core-utils";
-import { DriverHeader, IResolvedUrl, IUrlResolver } from "@fluidframework/driver-definitions";
+import { assert } from "@fluidframework/core-utils/internal";
+import {
+	DriverHeader,
+	IResolvedUrl,
+	IUrlResolver,
+} from "@fluidframework/driver-definitions/internal";
 import Axios from "axios";
 
 /**
@@ -134,7 +138,10 @@ export class InsecureUrlResolver implements IUrlResolver {
 		return response;
 	}
 
-	public async getAbsoluteUrl(resolvedUrl: IResolvedUrl, relativeUrl: string): Promise<string> {
+	public async getAbsoluteUrl(
+		resolvedUrl: IResolvedUrl,
+		relativeUrl: string,
+	): Promise<string> {
 		const parsedUrl = new URL(resolvedUrl.url);
 		const [, , documentId] = parsedUrl.pathname?.split("/") ?? [];
 		// eslint-disable-next-line @typescript-eslint/strict-boolean-expressions

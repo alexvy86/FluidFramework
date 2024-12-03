@@ -4,19 +4,36 @@
  */
 
 import { TypedEventEmitter } from "@fluid-internal/client-utils";
-import { assert } from "@fluidframework/core-utils";
-import * as api from "@fluidframework/driver-definitions";
-import { NetworkErrorBasic, RateLimiter, canRetryOnError } from "@fluidframework/driver-utils";
-import { IClient } from "@fluidframework/protocol-definitions";
-import { ITelemetryLoggerExt, PerformanceEvent, wrapError } from "@fluidframework/telemetry-utils";
-import io from "socket.io-client";
+import { assert } from "@fluidframework/core-utils/internal";
+import { IClient } from "@fluidframework/driver-definitions";
+import {
+	IDocumentServiceEvents,
+	IDocumentServicePolicies,
+	IDocumentDeltaConnection,
+	IDocumentDeltaStorageService,
+	IDocumentService,
+	IDocumentStorageService,
+	IDocumentStorageServicePolicies,
+	IResolvedUrl,
+} from "@fluidframework/driver-definitions/internal";
+import {
+	NetworkErrorBasic,
+	RateLimiter,
+	canRetryOnError,
+} from "@fluidframework/driver-utils/internal";
+import {
+	ITelemetryLoggerExt,
+	PerformanceEvent,
+	wrapError,
+} from "@fluidframework/telemetry-utils/internal";
+
 import { ICache } from "./cache.js";
 import { INormalizedWholeSnapshot } from "./contracts.js";
 import { ISnapshotTreeVersion } from "./definitions.js";
 import { DeltaStorageService, DocumentDeltaStorageService } from "./deltaStorageService.js";
 import { R11sDocumentDeltaConnection } from "./documentDeltaConnection.js";
 import { DocumentStorageService } from "./documentStorageService.js";
-import { RouterliciousErrorTypes } from "./errorUtils.js";
+import { RouterliciousErrorTypes, type IR11sError } from "./errorUtils.js";
 import { GitManager } from "./gitManager.js";
 import { Historian } from "./historian.js";
 import { NullBlobStorageService } from "./nullBlobStorageService.js";
@@ -28,37 +45,30 @@ import {
 	TokenFetcher,
 } from "./restWrapper.js";
 import { RestWrapper } from "./restWrapperBase.js";
+import type { IGetSessionInfoResponse } from "./sessionInfoManager.js";
+import { SocketIOClientStatic } from "./socketModule.js";
 import { ITokenProvider } from "./tokens.js";
-
-/**
- * Amount of time between discoveries within which we don't need to rediscover on re-connect.
- * Currently, R11s defines session length at 10 minutes. To avoid any weird unknown edge-cases though,
- * we set the limit to 5 minutes here.
- * In the future, we likely want to retrieve this information from service's "inactive session" definition.
- */
-const RediscoverAfterTimeSinceDiscoveryMs = 5 * 60000; // 5 minute
 
 /**
  * The DocumentService manages the Socket.IO connection and manages routing requests to connected
  * clients.
  */
-// eslint-disable-next-line import/namespace
 export class DocumentService
-	extends TypedEventEmitter<api.IDocumentServiceEvents>
-	implements api.IDocumentService
+	extends TypedEventEmitter<IDocumentServiceEvents>
+	// eslint-disable-next-line import/namespace
+	implements IDocumentService
 {
-	private lastDiscoveredAt: number = Date.now();
-	private discoverP: Promise<void> | undefined;
-
 	private storageManager: GitManager | undefined;
 	private noCacheStorageManager: GitManager | undefined;
+
+	private _policies: IDocumentServicePolicies | undefined;
 
 	public get resolvedUrl() {
 		return this._resolvedUrl;
 	}
 
 	constructor(
-		private _resolvedUrl: api.IResolvedUrl,
+		private _resolvedUrl: IResolvedUrl,
 		protected ordererUrl: string,
 		private deltaStorageUrl: string,
 		private deltaStreamUrl: string,
@@ -68,12 +78,12 @@ export class DocumentService
 		protected tenantId: string,
 		protected documentId: string,
 		protected ordererRestWrapper: RouterliciousOrdererRestWrapper,
-		private readonly documentStorageServicePolicies: api.IDocumentStorageServicePolicies,
+		private readonly documentStorageServicePolicies: IDocumentStorageServicePolicies,
 		private readonly driverPolicies: IRouterliciousDriverPolicies,
 		private readonly blobCache: ICache<ArrayBufferLike>,
 		private readonly wholeSnapshotTreeCache: ICache<INormalizedWholeSnapshot>,
 		private readonly shreddedSummaryTreeCache: ICache<ISnapshotTreeVersion>,
-		private readonly discoverFluidResolvedUrl: () => Promise<api.IResolvedUrl>,
+		private readonly getSessionInfo: () => Promise<IGetSessionInfoResponse>,
 		private storageRestWrapper: RouterliciousStorageRestWrapper,
 		private readonly storageTokenFetcher: TokenFetcher,
 		private readonly ordererTokenFetcher: TokenFetcher,
@@ -83,6 +93,10 @@ export class DocumentService
 
 	private documentStorageService: DocumentStorageService | undefined;
 
+	public get policies(): IDocumentServicePolicies | undefined {
+		return this._policies;
+	}
+
 	public dispose() {}
 
 	/**
@@ -90,7 +104,7 @@ export class DocumentService
 	 *
 	 * @returns returns the document storage service for routerlicious driver.
 	 */
-	public async connectToStorage(): Promise<api.IDocumentStorageService> {
+	public async connectToStorage(): Promise<IDocumentStorageService> {
 		if (this.documentStorageService !== undefined) {
 			return this.documentStorageService;
 		}
@@ -100,26 +114,19 @@ export class DocumentService
 		}
 
 		const getStorageManager = async (disableCache?: boolean): Promise<GitManager> => {
-			const shouldUpdateDiscoveredSessionInfo = this.shouldUpdateDiscoveredSessionInfo();
-			if (shouldUpdateDiscoveredSessionInfo) {
-				await this.refreshDiscovery();
-			}
-			if (
-				!this.storageManager ||
-				!this.noCacheStorageManager ||
-				shouldUpdateDiscoveredSessionInfo
-			) {
-				if (shouldUpdateDiscoveredSessionInfo) {
+			const refreshed = await this.refreshSessionInfoIfNeeded();
+			if (!this.storageManager || !this.noCacheStorageManager || refreshed) {
+				if (refreshed) {
 					const rateLimiter = new RateLimiter(
 						this.driverPolicies.maxConcurrentStorageRequests,
 					);
-					this.storageRestWrapper = await RouterliciousStorageRestWrapper.load(
+					this.storageRestWrapper = RouterliciousStorageRestWrapper.load(
 						this.tenantId,
 						this.storageTokenFetcher,
 						this.logger,
 						rateLimiter,
 						this.driverPolicies.enableRestLess,
-						this.storageUrl,
+						this.storageUrl /* baseUrl */,
 					);
 				}
 				const historian = new Historian(true, false, this.storageRestWrapper);
@@ -153,19 +160,16 @@ export class DocumentService
 	 *
 	 * @returns returns the document delta storage service for routerlicious driver.
 	 */
-	public async connectToDeltaStorage(): Promise<api.IDocumentDeltaStorageService> {
+	public async connectToDeltaStorage(): Promise<IDocumentDeltaStorageService> {
 		await this.connectToStorage();
 		assert(!!this.documentStorageService, 0x0b1 /* "Storage service not initialized" */);
 
 		const getRestWrapper = async (): Promise<RestWrapper> => {
-			const shouldUpdateDiscoveredSessionInfo = this.shouldUpdateDiscoveredSessionInfo();
+			const refreshed = await this.refreshSessionInfoIfNeeded();
 
-			if (shouldUpdateDiscoveredSessionInfo) {
-				await this.refreshDiscovery();
-				const rateLimiter = new RateLimiter(
-					this.driverPolicies.maxConcurrentOrdererRequests,
-				);
-				this.ordererRestWrapper = await RouterliciousOrdererRestWrapper.load(
+			if (refreshed) {
+				const rateLimiter = new RateLimiter(this.driverPolicies.maxConcurrentOrdererRequests);
+				this.ordererRestWrapper = RouterliciousOrdererRestWrapper.load(
 					this.ordererTokenFetcher,
 					this.logger,
 					rateLimiter,
@@ -196,12 +200,10 @@ export class DocumentService
 	 *
 	 * @returns returns the document delta stream service for routerlicious driver.
 	 */
-	public async connectToDeltaStream(client: IClient): Promise<api.IDocumentDeltaConnection> {
+	public async connectToDeltaStream(client: IClient): Promise<IDocumentDeltaConnection> {
 		const connect = async (refreshToken?: boolean) => {
 			let ordererToken = await this.ordererRestWrapper.getToken();
-			if (this.shouldUpdateDiscoveredSessionInfo()) {
-				await this.refreshDiscovery();
-			}
+			await this.refreshSessionInfoIfNeeded();
 
 			if (refreshToken) {
 				ordererToken = await PerformanceEvent.timedExecAsync(
@@ -249,7 +251,7 @@ export class DocumentService
 						this.tenantId,
 						this.documentId,
 						ordererToken.jwt,
-						io,
+						SocketIOClientStatic,
 						client,
 						this.deltaStreamUrl,
 						this.logger,
@@ -264,11 +266,26 @@ export class DocumentService
 		// Retry with new token on authorization error; otherwise, allow container layer to handle.
 		try {
 			const connection = await connect();
+			// Enable single-commit summaries via driver policy based on the enable_single_commit_summary flag which maybe provided by the service during connection.
+			// summarizeProtocolTree flag is used by the loader layer to attach protocol tree along with the summary required in the single-commit summaries.
+			const shouldSummarizeProtocolTree = (connection as R11sDocumentDeltaConnection).details
+				?.supportedFeatures?.enable_single_commit_summary
+				? true
+				: false;
+			this._policies = {
+				...this._policies,
+				summarizeProtocolTree: shouldSummarizeProtocolTree,
+			};
+
 			return connection;
 		} catch (error: any) {
-			if (error?.statusCode === 401) {
+			if (
+				typeof error === "object" &&
+				error !== null &&
+				(error as Partial<IR11sError>).errorType === RouterliciousErrorTypes.authorizationError
+			) {
 				// Fetch new token and retry once,
-				// otherwise 401 will be bubbled up as non-retriable AuthorizationError.
+				// otherwise 401/403 will be bubbled up as non-retriable AuthorizationError.
 				return connect(true /* refreshToken */);
 			}
 			throw error;
@@ -276,53 +293,20 @@ export class DocumentService
 	}
 
 	/**
-	 * Re-discover session URLs if necessary.
+	 * Refresh session info URLs if necessary.
+	 * @returns boolean - true if session info was refreshed
 	 */
-	private async refreshDiscovery(): Promise<void> {
-		if (!this.discoverP) {
-			this.discoverP = PerformanceEvent.timedExecAsync(
-				this.logger,
-				{
-					eventName: "RefreshDiscovery",
-				},
-				async () => this.refreshDiscoveryCore(),
-			);
+	private async refreshSessionInfoIfNeeded(): Promise<boolean> {
+		const response = await this.getSessionInfo();
+		if (!response.refreshed) {
+			return false;
 		}
-		return this.discoverP;
-	}
-
-	private async refreshDiscoveryCore(): Promise<void> {
-		const fluidResolvedUrl = await this.discoverFluidResolvedUrl();
+		const fluidResolvedUrl = response.resolvedUrl;
 		this._resolvedUrl = fluidResolvedUrl;
 		this.storageUrl = fluidResolvedUrl.endpoints.storageUrl;
 		this.ordererUrl = fluidResolvedUrl.endpoints.ordererUrl;
 		this.deltaStorageUrl = fluidResolvedUrl.endpoints.deltaStorageUrl;
-		this.deltaStreamUrl = fluidResolvedUrl.endpoints.deltaStreamUrl || this.ordererUrl;
-	}
-
-	/**
-	 * Whether enough time has passed since last disconnect to warrant a new discovery call on reconnect.
-	 */
-	private shouldUpdateDiscoveredSessionInfo(): boolean {
-		if (!this.driverPolicies.enableDiscovery) {
-			return false;
-		}
-		const now = Date.now();
-		// When connection is disconnected, we cannot know if session has moved or document has been deleted
-		// without re-doing discovery on the next attempt to connect.
-		// Disconnect event is not so reliable in local testing. To ensure re-discovery when necessary,
-		// re-discover if enough time has passed since last discovery.
-		const pastLastDiscoveryTimeThreshold =
-			now - this.lastDiscoveredAt > RediscoverAfterTimeSinceDiscoveryMs;
-		if (pastLastDiscoveryTimeThreshold) {
-			// Reset discover promise and refresh discovery.
-			this.lastDiscoveredAt = Date.now();
-			this.discoverP = undefined;
-			this.refreshDiscovery().catch(() => {
-				// Undo discovery time set on failure, so that next check refreshes.
-				this.lastDiscoveredAt = 0;
-			});
-		}
-		return pastLastDiscoveryTimeThreshold;
+		this.deltaStreamUrl = fluidResolvedUrl.endpoints.deltaStreamUrl ?? this.ordererUrl;
+		return true;
 	}
 }

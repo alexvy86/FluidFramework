@@ -115,11 +115,19 @@ export {
 	SetValueInternal_0_0_2,
 	TraitLocationInternal,
 } from './persisted-types/index.js';
-export { ReconciliationChange, ReconciliationEdit, ReconciliationPath } from './ReconciliationPath.js';
+export {
+	ReconciliationChange,
+	ReconciliationEdit,
+	ReconciliationPath,
+} from './ReconciliationPath.js';
 export { Revision } from './RevisionValueCache.js';
 export { RevisionView, TransactionView } from './RevisionView.js';
 export { TreeNodeHandle } from './TreeNodeHandle.js';
-export { getTraitLocationOfRange, placeFromStablePlace, rangeFromStableRange } from './TreeViewUtilities.js';
+export {
+	getTraitLocationOfRange,
+	placeFromStablePlace,
+	rangeFromStableRange,
+} from './TreeViewUtilities.js';
 export {
 	SharedTreeArgs,
 	SharedTreeOptions,
@@ -180,3 +188,5 @@ export {
 	SharedTreeShim,
 	SharedTreeShimFactory,
 } from './migration-shim/index.js';
+
+export { IRevertible, IUndoConsumer, SharedTreeUndoRedoHandler } from './UndoRedoHandler.js';

@@ -2,14 +2,15 @@
  * Copyright (c) Microsoft Corporation and contributors. All rights reserved.
  * Licensed under the MIT License.
  */
+
 import * as services from "@fluidframework/server-services";
 import * as core from "@fluidframework/server-services-core";
 import { Lumberjack } from "@fluidframework/server-services-telemetry";
 import * as utils from "@fluidframework/server-services-utils";
 import { Provider } from "nconf";
-import * as Redis from "ioredis";
 import * as winston from "winston";
 import { IAlfredTenant } from "@fluidframework/server-services-client";
+import { RedisClientConnectionManager } from "@fluidframework/server-services-utils";
 import { Constants } from "../utils";
 import { AlfredRunner } from "./runner";
 import {
@@ -19,6 +20,8 @@ import {
 	DocumentDeleteService,
 } from "./services";
 import { IAlfredResourcesCustomizations } from ".";
+import { IReadinessCheck } from "@fluidframework/server-services-core";
+import { closeRedisClientConnections, StartupCheck } from "@fluidframework/server-services-shared";
 
 /**
  * @internal
@@ -42,11 +45,15 @@ export class AlfredResources implements core.IResources {
 		public documentsCollectionName: string,
 		public documentRepository: core.IDocumentRepository,
 		public documentDeleteService: IDocumentDeleteService,
+		public startupCheck: IReadinessCheck,
+		public redisClientConnectionManagers: utils.IRedisClientConnectionManager[],
 		public tokenRevocationManager?: core.ITokenRevocationManager,
 		public revokedTokenChecker?: core.IRevokedTokenChecker,
 		public serviceMessageResourceManager?: core.IServiceMessageResourceManager,
 		public clusterDrainingChecker?: core.IClusterDrainingChecker,
 		public enableClientIPLogging?: boolean,
+		public readinessCheck?: IReadinessCheck,
+		public fluidAccessTokenGenerator?: core.IFluidAccessTokenGenerator,
 	) {
 		const httpServerConfig: services.IHttpServerConfig = config.get("system:httpServer");
 		const nodeClusterConfig: Partial<services.INodeClusterConfig> | undefined = config.get(
@@ -67,11 +74,15 @@ export class AlfredResources implements core.IResources {
 		const serviceMessageManagerP = this.serviceMessageResourceManager
 			? this.serviceMessageResourceManager.close()
 			: Promise.resolve();
+		const redisClientConnectionManagersP = closeRedisClientConnections(
+			this.redisClientConnectionManagers,
+		);
 		await Promise.all([
 			producerClosedP,
 			mongoClosedP,
 			tokenRevocationManagerP,
 			serviceMessageManagerP,
+			redisClientConnectionManagersP,
 		]);
 	}
 }
@@ -94,7 +105,13 @@ export class AlfredResourcesFactory implements core.IResourcesFactory<AlfredReso
 		const kafkaReplicationFactor = config.get("kafka:lib:replicationFactor");
 		const kafkaMaxBatchSize = config.get("kafka:lib:maxBatchSize");
 		const kafkaSslCACertFilePath: string = config.get("kafka:lib:sslCACertFilePath");
+		const kafkaProducerGlobalAdditionalConfig = config.get(
+			"kafka:lib:producerGlobalAdditionalConfig",
+		);
 		const eventHubConnString: string = config.get("kafka:lib:eventHubConnString");
+		const oauthBearerConfig = config.get("kafka:lib:oauthBearerConfig");
+		// List of Redis client connection managers that need to be closed on dispose
+		const redisClientConnectionManagers: utils.IRedisClientConnectionManager[] = [];
 
 		const producer = services.createProducer(
 			kafkaLibrary,
@@ -108,6 +125,8 @@ export class AlfredResourcesFactory implements core.IResourcesFactory<AlfredReso
 			kafkaMaxBatchSize,
 			kafkaSslCACertFilePath,
 			eventHubConnString,
+			kafkaProducerGlobalAdditionalConfig,
+			oauthBearerConfig,
 		);
 
 		const redisConfig = config.get("redis");
@@ -115,47 +134,39 @@ export class AlfredResourcesFactory implements core.IResourcesFactory<AlfredReso
 
 		// Redis connection for client manager and single-use JWTs.
 		const redisConfig2 = config.get("redis2");
-		const redisOptions2: Redis.RedisOptions = {
-			host: redisConfig2.host,
-			port: redisConfig2.port,
-			password: redisConfig2.pass,
-			connectTimeout: redisConfig2.connectTimeout,
-			enableReadyCheck: true,
-			maxRetriesPerRequest: redisConfig2.maxRetriesPerRequest,
-			enableOfflineQueue: redisConfig2.enableOfflineQueue,
-			retryStrategy: utils.getRedisClusterRetryStrategy({
-				delayPerAttemptMs: 50,
-				maxDelayMs: 2000,
-			}),
-		};
-		if (redisConfig2.enableAutoPipelining) {
-			/**
-			 * When enabled, all commands issued during an event loop iteration are automatically wrapped in a
-			 * pipeline and sent to the server at the same time. This can improve performance by 30-50%.
-			 * More info: https://github.com/luin/ioredis#autopipelining
-			 */
-			redisOptions2.enableAutoPipelining = true;
-			redisOptions2.autoPipeliningIgnoredCommands = ["ping"];
-		}
-		if (redisConfig2.tls) {
-			redisOptions2.tls = {
-				servername: redisConfig2.host,
-			};
-		}
 
-		const redisClientForJwtCache: Redis.default | Redis.Cluster = utils.getRedisClient(
-			redisOptions2,
-			redisConfig2.slotsRefreshTimeout,
-			redisConfig2.enableClustering,
-		);
-		const redisJwtCache = new services.RedisCache(redisClientForJwtCache);
+		const retryDelays = {
+			retryDelayOnFailover: 100,
+			retryDelayOnClusterDown: 100,
+			retryDelayOnTryAgain: 100,
+			retryDelayOnMoved: redisConfig2.retryDelayOnMoved ?? 100,
+			maxRedirections: redisConfig2.maxRedirections ?? 16,
+		};
+
+		const redisClientConnectionManagerForJwtCache =
+			customizations?.redisClientConnectionManagerForJwtCache
+				? customizations.redisClientConnectionManagerForJwtCache
+				: new RedisClientConnectionManager(
+						undefined,
+						redisConfig2,
+						redisConfig2.enableClustering,
+						redisConfig2.slotsRefreshTimeout,
+						retryDelays,
+				  );
+		redisClientConnectionManagers.push(redisClientConnectionManagerForJwtCache);
+		const redisJwtCache = new services.RedisCache(redisClientConnectionManagerForJwtCache);
 
 		// Database connection for global db if enabled
 		let globalDbMongoManager;
 		const globalDbEnabled = config.get("mongo:globalDbEnabled") as boolean;
 		const factory = await services.getDbFactory(config);
 		if (globalDbEnabled) {
-			globalDbMongoManager = new core.MongoManager(factory, false, null, true);
+			globalDbMongoManager = new core.MongoManager(
+				factory,
+				false,
+				undefined /* retryDelayMs */,
+				true /* global */,
+			);
 		}
 
 		// Database connection for operations db
@@ -198,7 +209,9 @@ export class AlfredResourcesFactory implements core.IResourcesFactory<AlfredReso
 		const defaultTTLInSeconds = 864000;
 		const checkpointsTTLSeconds =
 			config.get("checkpoints:checkpointsTTLInSeconds") ?? defaultTTLInSeconds;
-		await checkpointsCollection.createTTLIndex({ _ts: 1 }, checkpointsTTLSeconds);
+		if (checkpointsCollection.createTTLIndex !== undefined) {
+			await checkpointsCollection.createTTLIndex({ _ts: 1 }, checkpointsTTLSeconds);
+		}
 
 		const nodeCollectionName = config.get("mongo:collectionNames:nodes");
 
@@ -209,48 +222,27 @@ export class AlfredResourcesFactory implements core.IResourcesFactory<AlfredReso
 
 		// Redis connection for throttling.
 		const redisConfigForThrottling = config.get("redisForThrottling");
-		const redisOptionsForThrottling: Redis.RedisOptions = {
-			host: redisConfigForThrottling.host,
-			port: redisConfigForThrottling.port,
-			password: redisConfigForThrottling.pass,
-			connectTimeout: redisConfigForThrottling.connectTimeout,
-			enableReadyCheck: true,
-			maxRetriesPerRequest: redisConfigForThrottling.maxRetriesPerRequest,
-			enableOfflineQueue: redisConfigForThrottling.enableOfflineQueue,
-			retryStrategy: utils.getRedisClusterRetryStrategy({
-				delayPerAttemptMs: 50,
-				maxDelayMs: 2000,
-			}),
-		};
-		if (redisConfigForThrottling.enableAutoPipelining) {
-			/**
-			 * When enabled, all commands issued during an event loop iteration are automatically wrapped in a
-			 * pipeline and sent to the server at the same time. This can improve performance by 30-50%.
-			 * More info: https://github.com/luin/ioredis#autopipelining
-			 */
-			redisOptionsForThrottling.enableAutoPipelining = true;
-			redisOptionsForThrottling.autoPipeliningIgnoredCommands = ["ping"];
-		}
-		if (redisConfigForThrottling.tls) {
-			redisOptionsForThrottling.tls = {
-				servername: redisConfigForThrottling.host,
-			};
-		}
 		const redisParamsForThrottling = {
 			expireAfterSeconds: redisConfigForThrottling.keyExpireAfterSeconds as
 				| number
 				| undefined,
 		};
 
-		const redisClientForThrottling: Redis.default | Redis.Cluster = utils.getRedisClient(
-			redisOptionsForThrottling,
-			redisConfigForThrottling.slotsRefreshTimeout,
-			redisConfigForThrottling.enableClustering,
-		);
+		const redisClientConnectionManagerForThrottling =
+			customizations?.redisClientConnectionManagerForThrottling
+				? customizations.redisClientConnectionManagerForThrottling
+				: new RedisClientConnectionManager(
+						undefined,
+						redisConfigForThrottling,
+						redisConfigForThrottling.enableClustering,
+						redisConfigForThrottling.slotsRefreshTimeout,
+						retryDelays,
+				  );
+		redisClientConnectionManagers.push(redisClientConnectionManagerForThrottling);
 
 		const redisThrottleAndUsageStorageManager =
 			new services.RedisThrottleAndUsageStorageManager(
-				redisClientForThrottling,
+				redisClientConnectionManagerForThrottling,
 				redisParamsForThrottling,
 			);
 
@@ -346,6 +338,9 @@ export class AlfredResourcesFactory implements core.IResourcesFactory<AlfredReso
 		);
 
 		const enableWholeSummaryUpload = config.get("storage:enableWholeSummaryUpload") as boolean;
+		const ephemeralDocumentTTLSec = config.get("storage:ephemeralDocumentTTLSec") as
+			| number
+			| undefined;
 		const opsCollection = await databaseManager.getDeltaCollection(undefined, undefined);
 		const storagePerDocEnabled = (config.get("storage:perDocEnabled") as boolean) ?? false;
 		const storageNameAllocator = storagePerDocEnabled
@@ -357,6 +352,7 @@ export class AlfredResourcesFactory implements core.IResourcesFactory<AlfredReso
 			enableWholeSummaryUpload,
 			opsCollection,
 			storageNameAllocator,
+			ephemeralDocumentTTLSec,
 		);
 
 		const enableClientIPLogging = config.get("alfred:enableClientIPLogging") ?? false;
@@ -394,6 +390,7 @@ export class AlfredResourcesFactory implements core.IResourcesFactory<AlfredReso
 				Lumberjack.error("Failed to initialize token revocation manager", undefined, error);
 			});
 		}
+		const startupCheck = new StartupCheck();
 
 		return new AlfredResources(
 			config,
@@ -411,11 +408,15 @@ export class AlfredResourcesFactory implements core.IResourcesFactory<AlfredReso
 			documentsCollectionName,
 			documentRepository,
 			documentDeleteService,
+			startupCheck,
+			redisClientConnectionManagers,
 			tokenRevocationManager,
 			revokedTokenChecker,
 			serviceMessageResourceManager,
 			customizations?.clusterDrainingChecker,
 			enableClientIPLogging,
+			customizations?.readinessCheck,
+			customizations?.fluidAccessTokenGenerator,
 		);
 	}
 }
@@ -439,11 +440,14 @@ export class AlfredRunnerFactory implements core.IRunnerFactory<AlfredResources>
 			resources.producer,
 			resources.documentRepository,
 			resources.documentDeleteService,
+			resources.startupCheck,
 			resources.tokenRevocationManager,
 			resources.revokedTokenChecker,
-			null,
+			undefined,
 			resources.clusterDrainingChecker,
 			resources.enableClientIPLogging,
+			resources.readinessCheck,
+			resources.fluidAccessTokenGenerator,
 		);
 	}
 }

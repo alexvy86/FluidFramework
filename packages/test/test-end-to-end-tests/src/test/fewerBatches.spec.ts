@@ -4,21 +4,29 @@
  */
 
 import { strict as assert } from "assert";
+
 import { describeCompat, itExpects } from "@fluid-private/test-version-utils";
-import { IContainer } from "@fluidframework/container-definitions";
-import type { ISharedMap } from "@fluidframework/map";
-import { IDocumentMessage, ISequencedDocumentMessage } from "@fluidframework/protocol-definitions";
+import { IContainer, IRuntime } from "@fluidframework/container-definitions/internal";
+import { ConfigTypes, IConfigProviderBase } from "@fluidframework/core-interfaces";
 import {
+	IDocumentMessage,
+	ISequencedDocumentMessage,
+} from "@fluidframework/driver-definitions/internal";
+import type { ISharedMap } from "@fluidframework/map/internal";
+import {
+	FlushMode,
+	FlushModeExperimental,
+} from "@fluidframework/runtime-definitions/internal";
+import {
+	toIDeltaManagerFull,
 	ChannelFactoryRegistry,
 	DataObjectFactoryType,
 	ITestContainerConfig,
 	ITestFluidObject,
 	ITestObjectProvider,
 	waitForContainerConnection,
-} from "@fluidframework/test-utils";
-import { FlushMode, FlushModeExperimental } from "@fluidframework/runtime-definitions";
-import { ContainerRuntime } from "@fluidframework/container-runtime";
-import { ConfigTypes, IConfigProviderBase } from "@fluidframework/core-interfaces";
+} from "@fluidframework/test-utils/internal";
+
 describeCompat("Fewer batches", "NoCompat", (getTestObjectProvider, apis) => {
 	const { SharedMap } = apis.dds;
 
@@ -58,6 +66,13 @@ describeCompat("Fewer batches", "NoCompat", (getTestObjectProvider, apis) => {
 		const configWithFeatureGates = {
 			...containerConfig,
 			loaderProps: { configProvider: configProvider(featureGates) },
+			// This test counts number of ops and observes them at the container level.
+			// It has certain assumptions about count and shape of those ops.
+			// Disable op chunking to make sure test have full control over op stream, and thus can rely on those assumptions.
+			runtimeOptions: {
+				chunkSizeInBytes: Number.POSITIVE_INFINITY, // disable
+				...containerConfig.runtimeOptions,
+			},
 		};
 
 		// Create a Container for the first client.
@@ -72,9 +87,12 @@ describeCompat("Fewer batches", "NoCompat", (getTestObjectProvider, apis) => {
 		await waitForContainerConnection(localContainer);
 		await waitForContainerConnection(remoteContainer);
 
-		localContainer.deltaManager.outbound.on("op", (batch: IDocumentMessage[]) => {
-			capturedBatches.push(batch);
-		});
+		toIDeltaManagerFull(localContainer.deltaManager).outbound.on(
+			"op",
+			(batch: IDocumentMessage[]) => {
+				capturedBatches.push(batch);
+			},
+		);
 		await provider.ensureSynchronized();
 	};
 
@@ -99,6 +117,7 @@ describeCompat("Fewer batches", "NoCompat", (getTestObjectProvider, apis) => {
 				...testContainerConfig,
 				runtimeOptions: {
 					flushMode: test.flushMode,
+					chunkSizeInBytes: Number.POSITIVE_INFINITY, // disable
 				},
 			});
 
@@ -223,7 +242,7 @@ describeCompat("Fewer batches", "NoCompat", (getTestObjectProvider, apis) => {
 		Promise.resolve()
 			.then(() => {
 				(localContainer.deltaManager as any).lastProcessedSequenceNumber += 1;
-				(dataObject1.context.containerRuntime as ContainerRuntime).process(op, false);
+				(dataObject1.context.containerRuntime as unknown as IRuntime).process(op, false);
 				dataObject1map.set("key2", "value2");
 			})
 			.catch(() => {});

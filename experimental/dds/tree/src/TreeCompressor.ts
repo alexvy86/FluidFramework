@@ -3,7 +3,8 @@
  * Licensed under the MIT License.
  */
 
-import { assert } from '@fluidframework/core-utils';
+import { assert } from '@fluidframework/core-utils/internal';
+
 import { Mutable, fail } from './Common.js';
 import { isDetachedSequenceId } from './Identifiers.js';
 import type { Definition, DetachedSequenceId, InternedStringId, OpSpaceNodeId, TraitLabel } from './Identifiers.js';
@@ -173,9 +174,7 @@ export class InterningTreeCompressor<TPlaceholder extends DetachedSequenceId | n
 					| CompressedPlaceholderTree<TId, TPlaceholder>
 				)[];
 
-				const decompressedTraits = compressedChildren.map((child) =>
-					this.decompressI(child, interner, idNormalizer)
-				);
+				const decompressedTraits = compressedChildren.map((child) => this.decompressI(child, interner, idNormalizer));
 
 				const label =
 					typeof maybeCompressedLabel === 'string'

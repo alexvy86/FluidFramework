@@ -5,8 +5,9 @@
 
 import type { DocumentNode, DocumentationNode } from "../../documentation-domain/index.js";
 import { DocumentWriter } from "../DocumentWriter.js";
-import { type RenderConfiguration, defaultRenderers } from "./configuration/index.js";
+
 import { type RenderContext, getContextWithDefaults } from "./RenderContext.js";
+import { type RenderConfiguration, defaultRenderers } from "./configuration/index.js";
 
 /**
  * Renders a {@link DocumentNode} as Markdown, and returns the resulting file contents as a `string`.
@@ -27,11 +28,6 @@ export function renderDocument(document: DocumentNode, config: RenderConfigurati
 
 	// Trim any leading and trailing whitespace
 	let renderedDocument = writer.getText().trim();
-
-	if (document.frontMatter !== undefined) {
-		// Join body contents with front-matter, separated by a blank line.
-		renderedDocument = [document.frontMatter, "", renderedDocument].join("\n");
-	}
 
 	// Ensure file ends with a single newline.
 	renderedDocument = [renderedDocument, ""].join("\n");

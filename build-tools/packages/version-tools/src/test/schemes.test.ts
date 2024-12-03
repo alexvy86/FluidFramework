@@ -85,6 +85,12 @@ describe("detectVersionScheme", () => {
 		assert.strictEqual(detectVersionScheme(input), expected);
 	});
 
+	it("detects ~2.0.0-internal.1.0.0 is semver", () => {
+		const input = `~2.0.0-internal.1.0.0`;
+		const expected = "semver";
+		assert.strictEqual(detectVersionScheme(input), expected);
+	});
+
 	it("detects 1.2.1001 is semver", () => {
 		const input = `1.2.1001`;
 		const expected = "semver";
@@ -93,6 +99,12 @@ describe("detectVersionScheme", () => {
 
 	it("detects 0.0.0-105091-test is semver", () => {
 		const input = `0.0.0-105091-test`;
+		const expected = "semver";
+		assert.strictEqual(detectVersionScheme(input), expected);
+	});
+
+	it("detects 2.1.0-281035-test is semver", () => {
+		const input = `2.1.0-281035-test`;
 		const expected = "semver";
 		assert.strictEqual(detectVersionScheme(input), expected);
 	});

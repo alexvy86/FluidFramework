@@ -3,16 +3,18 @@
  * Licensed under the MIT License.
  */
 
-import {
+import type {
 	OpSpaceCompressedId,
 	SessionId,
 	SessionSpaceCompressedId,
 } from "@fluidframework/id-compressor";
 import { Type } from "@sinclair/typebox";
+
 import {
-	Brand,
-	NestedMap,
-	RangeMap,
+	type Brand,
+	type NestedMap,
+	type RangeMap,
+	brand,
 	brandedNumberType,
 	brandedStringType,
 } from "../../util/index.js";
@@ -28,7 +30,6 @@ export const SessionIdSchema = brandedStringType<SessionId>();
  *
  * The constant 'root' is reserved for the trunk base: minting a SessionSpaceCompressedId is not
  * possible on readonly clients. These clients generally don't need ids, but  must be done at tree initialization time.
- * @internal
  */
 export type RevisionTag = SessionSpaceCompressedId | "root";
 export type EncodedRevisionTag = Brand<OpSpaceCompressedId, "EncodedRevisionTag"> | "root";
@@ -41,14 +42,12 @@ export const RevisionTagSchema = Type.Union([
  * An ID which is unique within a revision of a `ModularChangeset`.
  * A `ModularChangeset` which is a composition of multiple revisions may contain duplicate `ChangesetLocalId`s,
  * but they are unique when qualified by the revision of the change they are used in.
- * @internal
  */
 export type ChangesetLocalId = Brand<number, "ChangesetLocalId">;
 
 /**
  * A globally unique ID for an atom of change, or a node associated with the atom of change.
- * @internal
- *
+ * *
  * @privateRemarks
  * TODO: Rename this to be more general.
  */
@@ -67,12 +66,10 @@ export interface ChangeAtomId {
 export type EncodedChangeAtomId = [ChangesetLocalId, EncodedRevisionTag] | ChangesetLocalId;
 
 /**
- * @internal
  */
 export type ChangeAtomIdMap<T> = NestedMap<RevisionTag | undefined, ChangesetLocalId, T>;
 
 /**
- * @internal
  */
 export type ChangeAtomIdRangeMap<T> = Map<RevisionTag | undefined, RangeMap<T>>;
 
@@ -83,15 +80,67 @@ export function areEqualChangeAtomIds(a: ChangeAtomId, b: ChangeAtomId): boolean
 	return a.localId === b.localId && a.revision === b.revision;
 }
 
+export function areEqualChangeAtomIdOpts(
+	a: ChangeAtomId | undefined,
+	b: ChangeAtomId | undefined,
+): boolean {
+	if (a === undefined || b === undefined) {
+		return a === b;
+	}
+
+	return areEqualChangeAtomIds(a, b);
+}
+
 /**
  * @returns a ChangeAtomId with the given revision and local ID.
  */
-export function makeChangeAtomId(localId: ChangesetLocalId, revision?: RevisionTag): ChangeAtomId {
+export function makeChangeAtomId(
+	localId: ChangesetLocalId,
+	revision?: RevisionTag,
+): ChangeAtomId {
 	return revision === undefined ? { localId } : { localId, revision };
 }
 
 export function asChangeAtomId(id: ChangesetLocalId | ChangeAtomId): ChangeAtomId {
 	return typeof id === "object" ? id : { localId: id };
+}
+
+export function taggedAtomId(
+	id: ChangeAtomId,
+	revision: RevisionTag | undefined,
+): ChangeAtomId {
+	return makeChangeAtomId(id.localId, id.revision ?? revision);
+}
+
+export function taggedOptAtomId(
+	id: ChangeAtomId | undefined,
+	revision: RevisionTag | undefined,
+): ChangeAtomId | undefined {
+	if (id === undefined) {
+		return undefined;
+	}
+	return taggedAtomId(id, revision);
+}
+
+export function offsetChangeAtomId(id: ChangeAtomId, offset: number): ChangeAtomId {
+	return { ...id, localId: brand(id.localId + offset) };
+}
+
+export function replaceAtomRevisions(
+	id: ChangeAtomId,
+	oldRevisions: Set<RevisionTag | undefined>,
+	newRevision: RevisionTag | undefined,
+): ChangeAtomId {
+	return oldRevisions.has(id.revision) ? atomWithRevision(id, newRevision) : id;
+}
+
+function atomWithRevision(id: ChangeAtomId, revision: RevisionTag | undefined): ChangeAtomId {
+	const updated = { ...id, revision };
+	if (revision === undefined) {
+		delete updated.revision;
+	}
+
+	return updated;
 }
 
 /**
@@ -104,8 +153,6 @@ export interface GraphCommit<TChange> {
 	readonly change: TChange;
 	/** The parent of this commit, on whose change this commit's change is based */
 	readonly parent?: GraphCommit<TChange>;
-	/** The inverse of this commit */
-	inverse?: TChange;
 }
 
 /**
@@ -114,28 +161,28 @@ export interface GraphCommit<TChange> {
  * @public
  */
 export enum CommitKind {
-	/** A commit corresponding to a change that is not the result of an undo/redo. */
+	/** A commit corresponding to a change that is not the result of an undo/redo from this client. */
 	Default,
-	/** A commit that is the result of an undo. */
+	/** A commit that is the result of an undo from this client. */
 	Undo,
-	/** A commit that is the result of a redo. */
+	/** A commit that is the result of a redo from this client. */
 	Redo,
 }
 
 /**
  * Information about a commit that has been applied.
  *
- * @public
+ * @sealed @public
  */
 export interface CommitMetadata {
 	/**
 	 * A {@link CommitKind} enum value describing whether the commit represents an Edit, an Undo, or a Redo.
 	 */
-	kind: CommitKind;
+	readonly kind: CommitKind;
 	/**
 	 * Indicates whether the commit is a local edit
 	 */
-	isLocal: boolean;
+	readonly isLocal: boolean;
 }
 
 /**

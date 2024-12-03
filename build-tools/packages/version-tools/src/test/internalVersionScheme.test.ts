@@ -10,6 +10,7 @@ import {
 	detectInternalVersionConstraintType,
 	fromInternalScheme,
 	getVersionRange,
+	isInternalTestVersion,
 	isInternalVersionRange,
 	isInternalVersionScheme,
 	toInternalScheme,
@@ -126,66 +127,37 @@ describe("internalScheme", () => {
 			assert.isFalse(result);
 		});
 
-		it(">=2.0.0-internal.1.0.0 <2.0.0-internal.1.1.0 is internal", () => {
-			const input = `>=2.0.0-internal.1.0.0 <2.0.0-internal.1.1.0`;
-			assert.isTrue(isInternalVersionRange(input));
-		});
-
-		it(">=2.0.0-rc.1.0.0 <2.0.0-rc.1.1.0 is internal", () => {
-			const input = `>=2.0.0-rc.1.0.0 <2.0.0-rc.1.1.0`;
-			assert.isTrue(isInternalVersionRange(input));
-		});
-
-		// This test case should fail but it doesn't. "Fluid internal version ranges" should always have a prerelease
-		// identifier that matches between the upper and lower bound. It's skipped because I think the case it guards
-		// against isn't likely, so I don't think it's worth the cost of fixing it.
-		//
-		// The reason the code behaves wrong is because it only checks the lower bound of the range to see if it's an
-		// internal version. If the lower bound version is internal, then the function returns true.
-		it.skip(">=2.0.0-internal.1.0.0 <2.0.0-rc.1.1.0 is not internal", () => {
-			const input = `>=2.0.0-internal.1.0.0 <2.0.0-rc.1.1.0`;
-			assert.isFalse(isInternalVersionRange(input));
-		});
-
-		it(">=2.0.0-internal.2.2.1 <2.0.0-internal.3.0.0 is internal", () => {
-			const input = `>=2.0.0-internal.2.2.1 <2.0.0-internal.3.0.0`;
-			assert.isTrue(isInternalVersionRange(input));
-		});
-
-		it(">=2.0.0-alpha.2.2.1 <2.0.0-alpha.3.0.0 is not internal", () => {
-			const input = `>=2.0.0-alpha.2.2.1 <2.0.0-alpha.3.0.0`;
-			assert.isFalse(isInternalVersionRange(input));
-		});
-
-		it(">=2.0.0-alpha.2.2.1 <2.0.0-alpha.3.0.0 is internal when allowAnyPrereleaseId is true", () => {
-			const input = `>=2.0.0-alpha.2.2.1 <2.0.0-alpha.3.0.0`;
-			assert.isTrue(isInternalVersionRange(input, true));
-		});
-
-		it(">=2.0.0-dev.2.2.1.12345 <2.0.0-dev.3.0.0 is internal when allowAnyPrereleaseId is true", () => {
-			const input = `>=2.0.0-dev.2.2.1.12345 <2.0.0-dev.3.0.0`;
-			assert.isTrue(isInternalVersionRange(input, true));
-		});
-
-		it(">=1.0.0 <2.0.0 is not internal", () => {
-			const input = `>=1.0.0 <2.0.0`;
-			assert.isFalse(isInternalVersionRange(input));
-		});
-
-		it(">=2.0.0-2.2.1 <2.0.0-3.0.0 is not internal", () => {
-			const input = `>=2.0.0-2.2.1 <2.0.0-3.0.0`;
-			assert.isFalse(isInternalVersionRange(input));
-		});
-
-		it("^2.0.0-internal.2.2.1 is not internal", () => {
-			const input = `^2.0.0-internal.2.2.1`;
-			assert.isFalse(isInternalVersionRange(input));
-		});
-
-		it("~2.0.0-internal.2.2.1 is not internal", () => {
-			const input = `~2.0.0-internal.2.2.1`;
-			assert.isFalse(isInternalVersionRange(input));
-		});
+		const cases: [
+			isInternal: boolean,
+			input: string,
+			allowAnyPrereleaseId: boolean | undefined,
+		][] = [
+			[true, ">=2.0.0-internal.1.0.0 <2.0.0-internal.1.1.0", undefined],
+			[true, ">=2.0.0-rc.1.0.0 <2.0.0-rc.1.1.0", undefined],
+			[false, ">=2.0.0-internal.1.0.0 <2.0.0-rc.1.1.0", undefined],
+			[
+				true,
+				">=2.0.0-internal.1.0.0 <2.0.0-internal.1.1.0 || >=2.0.0-rc.1.0.0 <2.0.0-rc.1.1.0",
+				undefined,
+			],
+			[false, ">=2.0.0-internal.1.0.0 <2.0.0-internal.1.1.0 || >=1.0.0 <2.0.0", undefined],
+			[true, ">=2.0.0-internal.2.2.1 <2.0.0-internal.3.0.0", undefined],
+			[false, ">=2.0.0-alpha.2.2.1 <2.0.0-alpha.3.0.0", undefined],
+			[true, ">=2.0.0-alpha.2.2.1 <2.0.0-alpha.3.0.0", true],
+			[true, ">=2.0.0-dev.2.2.1.12345 <2.0.0-dev.3.0.0", true],
+			[false, ">=1.0.0 <2.0.0", undefined],
+			[false, ">=2.0.0-2.2.1 <2.0.0-3.0.0", undefined],
+			[false, "^2.0.0-internal.2.2.1", undefined],
+			[false, "~2.0.0-internal.2.2.1", undefined],
+		];
+		for (const [isInternal, input, allowAnyPrereleaseId] of cases) {
+			it(`${input} is ${isInternal ? "" : "not "}internal${
+				allowAnyPrereleaseId ? " when allowAnyPrereleaseId is true" : ""
+			}`, () =>
+				(isInternal ? assert.isTrue : assert.isFalse)(
+					isInternalVersionRange(input, allowAnyPrereleaseId),
+				));
+		}
 	});
 
 	describe("converting FROM internal scheme", () => {
@@ -346,9 +318,30 @@ describe("internalScheme", () => {
 	});
 
 	describe("detect constraint types", () => {
+		it("exact constraint", () => {
+			const input = `2.0.0-internal.1.0.23`;
+			const expected = `exact`;
+			const result = detectInternalVersionConstraintType(input);
+			assert.strictEqual(result, expected);
+		});
+
 		it("patch constraint", () => {
 			const input = `>=2.0.0-internal.1.0.23 <2.0.0-internal.1.1.0`;
 			const expected = `patch`;
+			const result = detectInternalVersionConstraintType(input);
+			assert.strictEqual(result, expected);
+		});
+
+		it("narrow patch constraint", () => {
+			const input = `>=2.0.0-internal.1.0.23 <2.0.0-internal.1.0.25`;
+			const expected = `patch`;
+			const result = detectInternalVersionConstraintType(input);
+			assert.strictEqual(result, expected);
+		});
+
+		it('exact "patch" constraint', () => {
+			const input = `>=2.0.0-internal.1.0.23 <2.0.0-internal.1.0.24`;
+			const expected = `exact`;
 			const result = detectInternalVersionConstraintType(input);
 			assert.strictEqual(result, expected);
 		});
@@ -393,6 +386,62 @@ describe("internalScheme", () => {
 			assert.throws(() =>
 				detectInternalVersionConstraintType("workspace:~2.0.0-internal.1.0.23"),
 			);
+		});
+	});
+
+	describe("checking test version scheme", () => {
+		it("0.0.0-285010-test is a valid test version", () => {
+			const input = `0.0.0-285010-test`;
+			const result = isInternalTestVersion(input);
+			assert.isTrue(result);
+		});
+
+		it("0.0.0-test-285010 is not a valid test version", () => {
+			const input = `0.0.0-test-285010`;
+			const result = isInternalTestVersion(input);
+			assert.isFalse(result);
+		});
+
+		it("2.1.0-test-285010 is not a valid test version", () => {
+			const input = `2.1.0-test-285010`;
+			const result = isInternalTestVersion(input);
+			assert.isFalse(result);
+		});
+
+		it("2.1.0-285010-test is not a valid test version", () => {
+			const input = `2.1.0-285010-test`;
+			const result = isInternalTestVersion(input);
+			assert.isFalse(result);
+		});
+
+		it("2.1.0-285010 is a prerelease version but not a test version", () => {
+			const input = `2.1.0-285010`;
+			const result = isInternalTestVersion(input);
+			assert.isFalse(result);
+		});
+
+		it("2.1.0 is a release version but not a test version", () => {
+			const input = `2.1.0`;
+			const result = isInternalTestVersion(input);
+			assert.isFalse(result);
+		});
+
+		it("2.0.0-internal.1.0.0 is internal scheme but not a test version", () => {
+			const input = `2.0.0-internal.1.0.0`;
+			const result = isInternalTestVersion(input);
+			assert.isFalse(result);
+		});
+
+		it("2.0.0-rc.1.0.0 is internal scheme but not a test version", () => {
+			const input = `2.0.0-rc.1.0.0`;
+			const result = isInternalTestVersion(input);
+			assert.isFalse(result);
+		});
+
+		it("2.0.0-dev.1.1.0.123 is an internal dev version but not a test version", () => {
+			const input = `2.0.0-dev.1.1.0.123`;
+			const result = isInternalTestVersion(input);
+			assert.isFalse(result);
 		});
 	});
 });

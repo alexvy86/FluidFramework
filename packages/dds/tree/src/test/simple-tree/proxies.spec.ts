@@ -3,25 +3,40 @@
  * Licensed under the MIT License.
  */
 
-import { strict as assert } from "assert";
-import { MockHandle } from "@fluidframework/test-runtime-utils";
-import { NodeFromSchema, SchemaFactory, TreeArrayNode } from "../../simple-tree/index.js";
-// TODO: test other things from "proxies" file.
-// eslint-disable-next-line import/no-internal-modules
-import { isTreeNode } from "../../simple-tree/proxies.js";
+import { strict as assert } from "node:assert";
+
+import { MockHandle } from "@fluidframework/test-runtime-utils/internal";
+
+// TODO: import and unit test other things from "proxies" file.
+
+import { MockNodeKeyManager } from "../../feature-libraries/index.js";
+import {
+	type booleanSchema,
+	type InsertableTreeNodeFromImplicitAllowedTypes,
+	type NodeFromSchema,
+	type NodeKind,
+	SchemaFactory,
+	TreeArrayNode,
+	type TreeNodeSchema,
+	TreeViewConfiguration,
+} from "../../simple-tree/index.js";
+import type { requireAssignableTo } from "../../util/index.js";
+import { getView } from "../utils.js";
+
 import { hydrate, pretty } from "./utils.js";
 
 describe("simple-tree proxies", () => {
 	const sb = new SchemaFactory("test");
 
 	const childSchema = sb.object("object", {
-		content: sb.number,
+		content: sb.required(sb.number, { key: "storedContentKey" }),
 	});
 
 	const schema = sb.object("parent", {
 		object: childSchema,
 		list: sb.array(sb.number),
 		map: sb.map("map", sb.string),
+		optionalFlag: sb.optional(sb.boolean),
 	});
 
 	const initialTree = {
@@ -53,17 +68,6 @@ describe("simple-tree proxies", () => {
 		const mapProxyAgain = root.map;
 		assert.equal(mapProxyAgain, mapProxy);
 	});
-
-	it("isTreeNode", () => {
-		// Non object
-		assert(!isTreeNode(5));
-		// Non node object
-		assert(!isTreeNode({}));
-		// Unhydrated node:
-		assert(isTreeNode(new childSchema({ content: 5 })));
-		// Hydrated node:
-		assert(isTreeNode(hydrate(schema, initialTree)));
-	});
 });
 
 // TODO: nest these tests in the top level block to reduce total number of top level test suites
@@ -81,7 +85,7 @@ describe("SharedTreeObject", () => {
 	const schema = sb.object("parent", {
 		content: sb.number,
 		child: numberChild,
-		optional: sb.optional(numberChild),
+		optional: sb.optional(numberChild, { key: "storedOptionalKey" }),
 		polyValue: [sb.number, sb.string],
 		polyChild: [numberChild, stringChild],
 		polyValueChild: [sb.number, numberChild],
@@ -158,6 +162,22 @@ describe("SharedTreeObject", () => {
 		root.optional = undefined;
 		assert.equal(root.optional, undefined);
 	});
+
+	it("returns the stable id under the identifier field kind.", () => {
+		const schemaWithIdentifier = sb.object("parent", {
+			identifier: sb.identifier,
+		});
+		const nodeKeyManager = new MockNodeKeyManager();
+		const id = nodeKeyManager.stabilizeNodeKey(nodeKeyManager.generateLocalNodeKey());
+		const config = new TreeViewConfiguration({ schema: schemaWithIdentifier });
+
+		const view = getView(config, nodeKeyManager);
+		view.initialize({ identifier: id });
+		const { root } = view;
+
+		type _ = requireAssignableTo<typeof root.identifier, string>;
+		assert.equal(root.identifier, id);
+	});
 });
 
 describe("ArrayNode Proxy", () => {
@@ -233,23 +253,9 @@ describe("ArrayNode Proxy", () => {
 		}
 	});
 
-	it("Json stringify", () => {
-		// JSON.stringify uses ownKeys and getOwnPropertyDescriptor
-
-		assert.equal(JSON.stringify(hydrate(StructurallyNamedNumberArray, [])), "[]");
-		assert.equal(JSON.stringify(hydrate(StructurallyNamedNumberArray, [1, 2, 3])), "[1,2,3]");
-		assert.equal(JSON.stringify(hydrate(NumberArray, [])), "{}");
-		assert.equal(JSON.stringify(hydrate(NumberArray, [1, 2, 3])), `{"0":1,"1":2,"2":3}`);
-
-		assert.equal(
-			JSON.stringify(hydrate(CustomizedArray, [1, 2, 3])),
-			`{"0":1,"1":2,"2":3,"extra":"foo"}`,
-		);
-	});
-
 	describe("inserting nodes created by factory", () => {
 		const obj = schemaFactory.object("Obj", { id: schemaFactory.string });
-		const schema = schemaFactory.array(obj);
+		const schema = schemaFactory.array([obj, schemaFactory.number]);
 
 		it("insertAtStart()", () => {
 			const root = hydrate(schema, [{ id: "B" }]);
@@ -279,6 +285,25 @@ describe("ArrayNode Proxy", () => {
 			root.insertAt(1); // Check that we can do a "no-op" change (a change which does not change the tree's content).
 			assert.equal(newItem, root[1]); // Check that the inserted and read proxies are the same object
 			assert.deepEqual(root, [{ id: "A" }, newItem, { id: "C" }]);
+		});
+
+		it("multiple primitives", () => {
+			const root = hydrate(schema, []);
+			assert.deepEqual(root, []);
+			root.insertAt(0, 42, 43);
+			assert.deepEqual(root, [42, 43]);
+		});
+
+		it("multiple objects", () => {
+			const root = hydrate(schema, []);
+			assert.deepEqual(root, []);
+			const newItemA = new obj({ id: "A" });
+			const newItemB = new obj({ id: "B" });
+			root.insertAt(0, newItemA, newItemB);
+			// Check that the inserted and read proxies are the same object
+			assert.equal(newItemA, root[0]);
+			assert.equal(newItemB, root[1]);
+			assert.deepEqual(root, [newItemA, newItemB]);
 		});
 
 		it("at()", () => {
@@ -366,6 +391,12 @@ describe("ArrayNode Proxy", () => {
 
 		it("booleans", () => {
 			const root = hydrate(schema, initialTree);
+			const a = root.booleans;
+			type T = InsertableTreeNodeFromImplicitAllowedTypes<
+				TreeNodeSchema<"com.fluidframework.leaf.boolean", NodeKind.Leaf, boolean, boolean>
+			>;
+
+			type T2 = InsertableTreeNodeFromImplicitAllowedTypes<typeof booleanSchema>;
 			root.booleans.insertAtStart(true);
 			root.booleans.insertAt(1, false);
 			root.booleans.insertAtEnd(true);
@@ -393,56 +424,6 @@ describe("ArrayNode Proxy", () => {
 			const allowsHandles: typeof root.handles | typeof root.poly = root.poly;
 			allowsHandles.insertAtEnd(handle);
 			assert.deepEqual(root.poly, [42, "s", true, handle]);
-		});
-	});
-
-	describe("removing items", () => {
-		const _ = new SchemaFactory("test");
-		const schema = _.array(_.number);
-
-		it("removeAt()", () => {
-			const list = hydrate(schema, [0, 1, 2]);
-			assert.deepEqual(list, [0, 1, 2]);
-			list.removeAt(1);
-			assert.deepEqual(list, [0, 2]);
-		});
-
-		it("removeRange()", () => {
-			const list = hydrate(schema, [0, 1, 2, 3]);
-			assert.deepEqual(list, [0, 1, 2, 3]);
-			list.removeRange(/* start: */ 1, /* end: */ 3);
-			assert.deepEqual(list, [0, 3]);
-		});
-
-		it("removeRange() - all", () => {
-			const list = hydrate(schema, [0, 1, 2, 3]);
-			assert.deepEqual(list, [0, 1, 2, 3]);
-			list.removeRange(/* start: */ 1, /* end: */ 3);
-			assert.deepEqual(list, [0, 3]);
-			list.removeRange();
-			assert.deepEqual(list, []);
-		});
-
-		it("removeRange() - past end", () => {
-			const list = hydrate(schema, [0, 1, 2, 3]);
-			assert.deepEqual(list, [0, 1, 2, 3]);
-			list.removeRange(/* start: */ 1, /* end: */ 3);
-			assert.deepEqual(list, [0, 3]);
-			list.removeRange(1, Infinity);
-			assert.deepEqual(list, [0]);
-		});
-
-		it("removeRange() - empty range", () => {
-			const list = hydrate(schema, [0, 1, 2, 3]);
-			assert.deepEqual(list, [0, 1, 2, 3]);
-			list.removeRange(2, 2);
-			assert.deepEqual(list, [0, 1, 2, 3]);
-		});
-
-		it("removeRange() - empty list", () => {
-			const list = hydrate(schema, []);
-			assert.deepEqual(list, []);
-			assert.throws(() => list.removeRange());
 		});
 	});
 
@@ -501,8 +482,8 @@ describe("ArrayNode Proxy", () => {
 						index <= start
 							? index // If the index is <= start, it is unmodified
 							: index >= end
-							? index - moved.length // If the index is >= end, subtract the number of moved items.
-							: start, // If the index is inside the moved window, slide it left to the starting position.
+								? index - moved.length // If the index is >= end, subtract the number of moved items.
+								: start, // If the index is inside the moved window, slide it left to the starting position.
 						/* deleteCount: */ 0,
 						...moved,
 					);
@@ -682,103 +663,5 @@ describe("ArrayNode Proxy", () => {
 				);
 			});
 		});
-	});
-});
-
-describe("SharedTreeMap", () => {
-	const sb = new SchemaFactory("test");
-
-	const object = sb.object("object", { content: sb.number });
-
-	const schema = sb.object("parent", {
-		map: sb.map(sb.string),
-		objectMap: sb.map(object),
-	});
-
-	const initialTree = {
-		map: new Map([
-			["foo", "Hello"],
-			["bar", "World"],
-		]),
-		objectMap: new Map(),
-	};
-
-	it("entries", () => {
-		const root = hydrate(schema, initialTree);
-		assert.deepEqual(Array.from(root.map.entries()), [
-			["foo", "Hello"],
-			["bar", "World"],
-		]);
-	});
-
-	it("keys", () => {
-		const root = hydrate(schema, initialTree);
-		assert.deepEqual(Array.from(root.map.keys()), ["foo", "bar"]);
-	});
-
-	it("values", () => {
-		const root = hydrate(schema, initialTree);
-		assert.deepEqual(Array.from(root.map.values()), ["Hello", "World"]);
-	});
-
-	it("iteration", () => {
-		const root = hydrate(schema, initialTree);
-		const result = [];
-		for (const entry of root.map) {
-			result.push(entry);
-		}
-
-		assert.deepEqual(result, [
-			["foo", "Hello"],
-			["bar", "World"],
-		]);
-	});
-
-	it("has", () => {
-		const root = hydrate(schema, initialTree);
-		assert.equal(root.map.has("foo"), true);
-		assert.equal(root.map.has("bar"), true);
-		assert.equal(root.map.has("baz"), false);
-	});
-
-	it("set", () => {
-		const root = hydrate(schema, initialTree);
-		// Insert new value
-		root.map.set("baz", "42");
-		assert.equal(root.map.size, 3);
-		assert(root.map.has("baz"));
-		assert.equal(root.map.get("baz"), "42");
-
-		// Override existing value
-		root.map.set("baz", "37");
-		root.map.set("baz", "37"); // Check that we can do a "no-op" change (a change which does not change the tree's content).
-		assert.equal(root.map.size, 3);
-		assert(root.map.has("baz"));
-		assert.equal(root.map.get("baz"), "37");
-
-		// "Un-set" existing value
-		root.map.set("baz", undefined);
-		assert.equal(root.map.size, 2);
-		assert(!root.map.has("baz"));
-	});
-
-	it("set object", () => {
-		const root = hydrate(schema, initialTree);
-		const o = new object({ content: 42 });
-		root.objectMap.set("foo", o);
-		assert.equal(root.objectMap.get("foo"), o); // Check that the inserted and read proxies are the same object
-		assert.equal(root.objectMap.get("foo")?.content, o.content);
-	});
-
-	it("delete", () => {
-		const root = hydrate(schema, initialTree);
-		// Delete existing value
-		root.map.delete("bar");
-		assert.equal(root.map.size, 1);
-		assert(!root.map.has("bar"));
-
-		// Delete non-present value
-		root.map.delete("baz");
-		assert.equal(root.map.size, 1);
 	});
 });

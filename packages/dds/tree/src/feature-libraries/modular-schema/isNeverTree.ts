@@ -3,18 +3,20 @@
  * Licensed under the MIT License.
  */
 
-import { assert } from "@fluidframework/core-utils";
+import { assert } from "@fluidframework/core-utils/internal";
+
 import {
 	LeafNodeStoredSchema,
 	MapNodeStoredSchema,
 	ObjectNodeStoredSchema,
-	TreeFieldStoredSchema,
-	TreeNodeStoredSchema,
-	TreeStoredSchema,
+	type TreeFieldStoredSchema,
+	type TreeNodeStoredSchema,
+	type TreeStoredSchema,
+	Multiplicity,
 } from "../../core/index.js";
 import { fail } from "../../util/index.js";
-import { Multiplicity } from "../multiplicity.js";
-import { FullSchemaPolicy } from "./fieldKind.js";
+
+import type { FullSchemaPolicy } from "./fieldKind.js";
 
 /**
  * @internal
@@ -35,8 +37,8 @@ export function isNeverFieldRecursive(
 	parentTypeStack: Set<TreeNodeStoredSchema>,
 ): boolean {
 	if (
-		(policy.fieldKinds.get(field.kind.identifier) ?? fail("missing field kind"))
-			.multiplicity === Multiplicity.Single &&
+		(policy.fieldKinds.get(field.kind) ?? fail("missing field kind")).multiplicity ===
+			Multiplicity.Single &&
 		field.types !== undefined
 	) {
 		for (const type of field.types) {
@@ -94,10 +96,8 @@ export function isNeverTreeRecursive(
 		parentTypeStack.add(treeNode);
 		if (treeNode instanceof MapNodeStoredSchema) {
 			return (
-				(
-					policy.fieldKinds.get(treeNode.mapFields.kind.identifier) ??
-					fail("missing field kind")
-				).multiplicity === Multiplicity.Single
+				(policy.fieldKinds.get(treeNode.mapFields.kind) ?? fail("missing field kind"))
+					.multiplicity === Multiplicity.Single
 			);
 		} else if (treeNode instanceof ObjectNodeStoredSchema) {
 			for (const field of treeNode.objectNodeFields.values()) {

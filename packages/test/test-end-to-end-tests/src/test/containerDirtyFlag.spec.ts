@@ -4,20 +4,23 @@
  */
 
 import assert from "assert";
-import { IContainer, IHostLoader } from "@fluidframework/container-definitions";
-import type { ISharedMap } from "@fluidframework/map";
+
+import { describeCompat } from "@fluid-private/test-version-utils";
+import { IContainer, IHostLoader } from "@fluidframework/container-definitions/internal";
+import { IContainerExperimental } from "@fluidframework/container-loader/internal";
+import { ConfigTypes, IConfigProviderBase } from "@fluidframework/core-interfaces";
+import type { ISharedMap } from "@fluidframework/map/internal";
+import { toDeltaManagerInternal } from "@fluidframework/runtime-utils/internal";
 import {
 	ChannelFactoryRegistry,
-	createAndAttachContainer,
-	ITestFluidObject,
-	ITestContainerConfig,
-	ITestObjectProvider,
 	DataObjectFactoryType,
+	ITestContainerConfig,
+	ITestFluidObject,
+	ITestObjectProvider,
+	toIDeltaManagerFull,
+	createAndAttachContainer,
 	waitForContainerConnection,
-} from "@fluidframework/test-utils";
-import { describeCompat } from "@fluid-private/test-version-utils";
-import { IContainerExperimental } from "@fluidframework/container-loader";
-import { ConfigTypes, IConfigProviderBase } from "@fluidframework/core-interfaces";
+} from "@fluidframework/test-utils/internal";
 
 const configProvider = (settings: Record<string, ConfigTypes>): IConfigProviderBase => ({
 	getRawConfig: (name: string): ConfigTypes => settings[name],
@@ -49,7 +52,8 @@ describeCompat("Container dirty flag", "NoCompat", (getTestObjectProvider, apis)
 
 	// load container, pause, create (local) ops from callback, then optionally send ops before closing container
 	const getPendingOps = async (args: ITestObjectProvider, send: boolean, cb: MapCallback) => {
-		const container: IContainerExperimental = await args.loadTestContainer(testContainerConfig);
+		const container: IContainerExperimental =
+			await args.loadTestContainer(testContainerConfig);
 		await waitForContainerConnection(container);
 		const dataStore = (await container.getEntryPoint()) as ITestFluidObject;
 		const map = await dataStore.getSharedObject<ISharedMap>(mapId);
@@ -60,7 +64,10 @@ describeCompat("Container dirty flag", "NoCompat", (getTestObjectProvider, apis)
 
 		await args.ensureSynchronized();
 		await args.opProcessingController.pauseProcessing(container);
-		assert(dataStore.runtime.deltaManager.outbound.paused);
+		const deltaManagerFull = toIDeltaManagerFull(
+			toDeltaManagerInternal(dataStore.runtime.deltaManager),
+		);
+		assert(deltaManagerFull.outbound.paused);
 
 		await cb(container, dataStore, map);
 

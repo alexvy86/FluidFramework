@@ -3,46 +3,54 @@
  * Licensed under the MIT License.
  */
 
-import { assert } from "@fluidframework/core-utils";
-import { ICodecOptions } from "../../codec/index.js";
-import { IdAllocator, idAllocatorFromMaxId } from "../../util/index.js";
-import { RevisionTagCodec } from "../rebase/index.js";
-import { FieldKey } from "../schema-stored/index.js";
-import { ProtoNodes, Root } from "./delta.js";
-import { DetachedFieldIndex, ForestRootId } from "./detachedFieldIndex.js";
-import { PlaceIndex, Range } from "./pathTree.js";
-import { DeltaVisitor, visitDelta } from "./visitDelta.js";
+import { assert } from "@fluidframework/core-utils/internal";
+
+import type { ICodecOptions } from "../../codec/index.js";
+import { type IdAllocator, idAllocatorFromMaxId } from "../../util/index.js";
+import type { RevisionTag, RevisionTagCodec } from "../rebase/index.js";
+import type { FieldKey } from "../schema-stored/index.js";
+
+import type { ProtoNodes, Root } from "./delta.js";
+import { DetachedFieldIndex } from "./detachedFieldIndex.js";
+import type { ForestRootId } from "./detachedFieldIndexTypes.js";
+import type { NodeIndex, PlaceIndex, Range } from "./pathTree.js";
+import { type DeltaVisitor, visitDelta } from "./visitDelta.js";
+import type { IIdCompressor } from "@fluidframework/id-compressor";
 
 export function makeDetachedFieldIndex(
 	prefix: string = "Temp",
 	revisionTagCodec: RevisionTagCodec,
+	idCompressor: IIdCompressor,
 	options?: ICodecOptions,
 ): DetachedFieldIndex {
 	return new DetachedFieldIndex(
 		prefix,
 		idAllocatorFromMaxId() as IdAllocator<ForestRootId>,
 		revisionTagCodec,
+		idCompressor,
 		options,
 	);
 }
 
 export function applyDelta(
 	delta: Root,
+	latestRevision: RevisionTag | undefined,
 	deltaProcessor: { acquireVisitor: () => DeltaVisitor },
 	detachedFieldIndex: DetachedFieldIndex,
 ): void {
 	const visitor = deltaProcessor.acquireVisitor();
-	visitDelta(delta, visitor, detachedFieldIndex);
+	visitDelta(delta, visitor, detachedFieldIndex, latestRevision);
 	visitor.free();
 }
 
 export function announceDelta(
 	delta: Root,
+	latestRevision: RevisionTag | undefined,
 	deltaProcessor: { acquireVisitor: () => DeltaVisitor & AnnouncedVisitor },
 	detachedFieldIndex: DetachedFieldIndex,
 ): void {
 	const visitor = deltaProcessor.acquireVisitor();
-	visitDelta(delta, combineVisitors([visitor], [visitor]), detachedFieldIndex);
+	visitDelta(delta, combineVisitors([visitor], [visitor]), detachedFieldIndex, latestRevision);
 	visitor.free();
 }
 
@@ -107,7 +115,6 @@ export function combineVisitors(
 /**
  * Visitor that is notified of changes before, after, and when changes are made.
  * Must be freed after use.
- * @internal
  */
 export interface AnnouncedVisitor extends DeltaVisitor {
 	/**
@@ -119,6 +126,65 @@ export interface AnnouncedVisitor extends DeltaVisitor {
 	afterAttach(source: FieldKey, destination: Range): void;
 	beforeDetach(source: Range, destination: FieldKey): void;
 	afterDetach(source: PlaceIndex, count: number, destination: FieldKey): void;
-	beforeReplace(newContent: FieldKey, oldContent: Range, oldContentDestination: FieldKey): void;
+	beforeReplace(
+		newContent: FieldKey,
+		oldContent: Range,
+		oldContentDestination: FieldKey,
+	): void;
 	afterReplace(newContentSource: FieldKey, newContent: Range, oldContent: FieldKey): void;
+}
+
+/**
+ * Creates an announced visitor with only the provided functions and uses a no op for the rest.
+ * This is provided to make some of the delta visitor definitions cleaner.
+ */
+export function createAnnouncedVisitor(visitorFunctions: {
+	free?: () => void;
+	create?: (content: ProtoNodes, destination: FieldKey) => void;
+	afterCreate?: (content: ProtoNodes, destination: FieldKey) => void;
+	beforeDestroy?: (field: FieldKey, count: number) => void;
+	destroy?: (detachedField: FieldKey, count: number) => void;
+	beforeAttach?: (source: FieldKey, count: number, destination: PlaceIndex) => void;
+	attach?: (source: FieldKey, count: number, destination: PlaceIndex) => void;
+	afterAttach?: (source: FieldKey, destination: Range) => void;
+	beforeDetach?: (source: Range, destination: FieldKey) => void;
+	afterDetach?: (source: PlaceIndex, count: number, destination: FieldKey) => void;
+	detach?: (source: Range, destination: FieldKey) => void;
+	beforeReplace?: (
+		newContent: FieldKey,
+		oldContent: Range,
+		oldContentDestination: FieldKey,
+	) => void;
+	replace?: (
+		newContentSource: FieldKey,
+		range: Range,
+		oldContentDestination: FieldKey,
+	) => void;
+	afterReplace?: (newContentSource: FieldKey, newContent: Range, oldContent: FieldKey) => void;
+	enterNode?: (index: NodeIndex) => void;
+	exitNode?: (index: NodeIndex) => void;
+	enterField?: (key: FieldKey) => void;
+	exitField?: (key: FieldKey) => void;
+}): AnnouncedVisitor {
+	const noOp = (): void => {};
+	return {
+		free: visitorFunctions.free ?? noOp,
+		create: visitorFunctions.create ?? noOp,
+		afterCreate: visitorFunctions.afterCreate ?? noOp,
+		beforeDestroy: visitorFunctions.beforeDestroy ?? noOp,
+		destroy: visitorFunctions.destroy ?? noOp,
+		beforeAttach: visitorFunctions.beforeAttach ?? noOp,
+		attach: visitorFunctions.attach ?? noOp,
+		afterAttach: visitorFunctions.afterAttach ?? noOp,
+		beforeDetach: visitorFunctions.beforeDetach ?? noOp,
+		detach: visitorFunctions.detach ?? noOp,
+		afterDetach: visitorFunctions.afterDetach ?? noOp,
+		beforeReplace: visitorFunctions.beforeReplace ?? noOp,
+		replace: visitorFunctions.replace ?? noOp,
+		afterReplace: visitorFunctions.afterReplace ?? noOp,
+		enterNode: visitorFunctions.enterNode ?? noOp,
+		exitNode: visitorFunctions.exitNode ?? noOp,
+		enterField: visitorFunctions.enterField ?? noOp,
+		exitField: visitorFunctions.exitField ?? noOp,
+	};
 }

@@ -3,22 +3,22 @@
  * Licensed under the MIT License.
  */
 
-import { strict as assert } from "assert";
+import { strict as assert } from "node:assert";
 
-import { Static, Type } from "@sinclair/typebox";
+import { type Static, Type } from "@sinclair/typebox";
+
+import { unionOptions } from "../../../../codec/index.js";
+import type {
+	Counter,
+	DeduplicationTable,
+	// eslint-disable-next-line import/no-internal-modules
+} from "../../../../feature-libraries/chunked-forest/codec/chunkCodecUtilities.js";
 import {
 	IdentifierToken,
 	Shape,
 	handleShapesAndIdentifiers,
 	// eslint-disable-next-line import/no-internal-modules
 } from "../../../../feature-libraries/chunked-forest/codec/chunkEncodingGeneric.js";
-
-import { unionOptions } from "../../../../codec/index.js";
-import {
-	Counter,
-	DeduplicationTable,
-	// eslint-disable-next-line import/no-internal-modules
-} from "../../../../feature-libraries/chunked-forest/codec/chunkCodecUtilities.js";
 
 export const Constant = Type.Literal(0);
 

@@ -8,14 +8,6 @@ import { normal, randomColor, rnd } from "./rnd.js";
 /**
  * @internal
  */
-export interface IArrayish<T>
-	extends ArrayLike<T>,
-		Pick<T[], "push" | "pop" | "map">,
-		Iterable<T> {}
-
-/**
- * @internal
- */
 export interface IBubble {
 	x: number;
 	y: number;
@@ -28,9 +20,10 @@ export interface IBubble {
  * @internal
  */
 export interface IClient {
-	clientId: string;
-	color: string;
-	bubbles: IBubble[];
+	readonly clientId: string;
+	readonly color: string;
+	// Mark `IBubble[]` as read-only, as SharedTree ArrayNodes are not compatible with JavaScript arrays for writing purposes.
+	readonly bubbles: readonly IBubble[];
 }
 
 /**
@@ -38,13 +31,14 @@ export interface IClient {
  */
 export interface IAppState {
 	readonly localClient: IClient;
-	readonly clients: IArrayish<IClient>;
+	readonly clients: Iterable<IClient>;
 	readonly width: number;
 	readonly height: number;
 	setSize(width?: number, height?: number);
 	increaseBubbles(): void;
 	decreaseBubbles(): void;
 	applyEdits(): void;
+	runTransaction(inner: () => void);
 }
 
 // eslint-disable-next-line jsdoc/require-description
@@ -65,16 +59,27 @@ export function makeBubble(stageWidth: number, stageHeight: number): IBubble {
 	};
 }
 
-// eslint-disable-next-line jsdoc/require-description
 /**
+ * Simple mutable type implementing IClient.
+ */
+export interface SimpleClient extends IClient {
+	clientId: string;
+	readonly color: string;
+	readonly bubbles: IBubble[];
+}
+
+/**
+ * Creates a SimpleClient with random values.
  * @internal
  */
-export const makeClient = (
+export function makeClient(
 	stageWidth: number,
 	stageHeight: number,
 	numBubbles: number,
-): IClient => ({
-	clientId: "pending",
-	color: randomColor(),
-	bubbles: Array.from({ length: numBubbles }).map(() => makeBubble(stageWidth, stageHeight)),
-});
+): SimpleClient {
+	return {
+		clientId: "pending",
+		color: randomColor(),
+		bubbles: Array.from({ length: numBubbles }).map(() => makeBubble(stageWidth, stageHeight)),
+	};
+}

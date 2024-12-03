@@ -3,11 +3,11 @@
  * Licensed under the MIT License.
  */
 
-export { Attributor, type IAttributor, OpStreamAttributor } from "./attributor.js";
+export { type IAttributor } from "./attributor.js";
+export { mixinAttributor, getRuntimeAttributor } from "./mixinAttributor.js";
 export {
-	createRuntimeAttributor,
+	attributorDataStoreAlias,
 	enableOnNewFileKey,
 	type IProvideRuntimeAttributor,
 	IRuntimeAttributor,
-	mixinAttributor,
-} from "./mixinAttributor.js";
+} from "./attributorContracts.js";

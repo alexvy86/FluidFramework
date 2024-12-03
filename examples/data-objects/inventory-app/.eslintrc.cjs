@@ -4,10 +4,7 @@
  */
 
 module.exports = {
-	extends: [
-		require.resolve("@fluidframework/eslint-config-fluid/minimal-deprecated"),
-		"prettier",
-	],
+	extends: [require.resolve("@fluidframework/eslint-config-fluid"), "prettier"],
 	rules: {
 		"import/no-internal-modules": [
 			"error",
@@ -15,5 +12,8 @@ module.exports = {
 				allow: ["/view/**"],
 			},
 		],
+		// TODO: AB#18875 - Re-enable react/no-deprecated once we replace uses of the deprecated ReactDOM.render()
+		// with the new React 18 createRoot().
+		"react/no-deprecated": "off",
 	},
 };

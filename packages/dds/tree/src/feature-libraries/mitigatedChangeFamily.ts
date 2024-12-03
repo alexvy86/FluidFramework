@@ -3,11 +3,12 @@
  * Licensed under the MIT License.
  */
 
-import {
+import type {
 	ChangeFamily,
 	ChangeFamilyEditor,
 	ChangeRebaser,
 	RevisionMetadataSource,
+	RevisionTag,
 	TaggedChange,
 } from "../core/index.js";
 
@@ -31,8 +32,11 @@ export function makeMitigatedChangeFamily<TEditor extends ChangeFamilyEditor, TC
 	onError: (error: unknown) => void,
 ): ChangeFamily<TEditor, TChange> {
 	return {
-		buildEditor: (changeReceiver: (change: TChange) => void): TEditor => {
-			return unmitigatedChangeFamily.buildEditor(changeReceiver);
+		buildEditor: (
+			mintRevisionTag: () => RevisionTag,
+			changeReceiver: (change: TaggedChange<TChange>) => void,
+		): TEditor => {
+			return unmitigatedChangeFamily.buildEditor(mintRevisionTag, changeReceiver);
 		},
 		rebaser: makeMitigatedRebaser(unmitigatedChangeFamily.rebaser, fallbackChange, onError),
 		codecs: unmitigatedChangeFamily.codecs,
@@ -57,15 +61,25 @@ export function makeMitigatedRebaser<TChange>(
 		compose: (changes: TaggedChange<TChange>[]): TChange => {
 			return withFallback(() => unmitigatedRebaser.compose(changes));
 		},
-		invert: (changes: TaggedChange<TChange>, isRollback: boolean): TChange => {
-			return withFallback(() => unmitigatedRebaser.invert(changes, isRollback));
+		invert: (
+			changes: TaggedChange<TChange>,
+			isRollback: boolean,
+			revision: RevisionTag,
+		): TChange => {
+			return withFallback(() => unmitigatedRebaser.invert(changes, isRollback, revision));
 		},
 		rebase: (
-			change: TChange,
+			change: TaggedChange<TChange>,
 			over: TaggedChange<TChange>,
 			revisionMetadata: RevisionMetadataSource,
 		): TChange => {
 			return withFallback(() => unmitigatedRebaser.rebase(change, over, revisionMetadata));
 		},
+		changeRevision: (
+			change: TChange,
+			newRevision: RevisionTag | undefined,
+			rollbackOf?: RevisionTag,
+		): TChange =>
+			withFallback(() => unmitigatedRebaser.changeRevision(change, newRevision, rollbackOf)),
 	};
 }

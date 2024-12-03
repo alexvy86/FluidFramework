@@ -2,7 +2,8 @@
  * Copyright (c) Microsoft Corporation and contributors. All rights reserved.
  * Licensed under the MIT License.
  */
-import { type DocumentationNode, type SingleLineDocumentationNode } from "./DocumentationNode.js";
+
+import type { DocumentationNode, SingleLineDocumentationNode } from "./DocumentationNode.js";
 import { LineBreakNode } from "./LineBreakNode.js";
 import { PlainTextNode } from "./PlainTextNode.js";
 

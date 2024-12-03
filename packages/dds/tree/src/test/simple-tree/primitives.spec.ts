@@ -3,12 +3,14 @@
  * Licensed under the MIT License.
  */
 
-import { strict as assert } from "assert";
+import { strict as assert } from "node:assert";
+
 import {
-	ImplicitFieldSchema,
-	InsertableTreeFieldFromImplicitField,
+	type ImplicitFieldSchema,
+	type InsertableTreeFieldFromImplicitField,
 	SchemaFactory,
 } from "../../simple-tree/index.js";
+
 import { hydrate, pretty } from "./utils.js";
 
 const schemaFactory = new SchemaFactory("Test");
@@ -26,7 +28,7 @@ describe("Primitives", () => {
 	 * @param schema - Schema to use for the test (must include the type of 'value'.)
 	 * @param value - The value to be written/read/verified.
 	 */
-	function checkExact<TSchema extends ImplicitFieldSchema>(
+	function checkExact<const TSchema extends ImplicitFieldSchema>(
 		schema: TSchema,
 		value: InsertableTreeFieldFromImplicitField<TSchema>,
 	) {
@@ -43,9 +45,9 @@ describe("Primitives", () => {
 		});
 
 		// TODO: Consider improving coverage with more variations:
-		// - reading/writting an object field
-		// - reading/writting a list element
-		// - reading/writting a map entry
+		// - reading/writing an object field
+		// - reading/writing a list element
+		// - reading/writing a map entry
 		// - optional
 	}
 
@@ -57,7 +59,7 @@ describe("Primitives", () => {
 	 * @param value - The value to be coerced.
 	 * @returns The coerced value.
 	 */
-	function getCoercedValue(value: any): unknown {
+	function getCoercedValue(value: unknown): unknown {
 		const coercedValue = JSON.parse(JSON.stringify(value));
 
 		// Paranoid check that the given value is in fact coerced.
@@ -73,7 +75,7 @@ describe("Primitives", () => {
 	 * @param schema - Schema to use for the test (must include the coerced type of 'value'.)
 	 * @param value - The value to be written/read/verified.
 	 */
-	function checkCoerced<TSchema extends ImplicitFieldSchema>(
+	function checkCoerced<const TSchema extends ImplicitFieldSchema>(
 		schema: TSchema,
 		value: InsertableTreeFieldFromImplicitField<TSchema>,
 	) {
@@ -91,9 +93,9 @@ describe("Primitives", () => {
 		});
 
 		// TODO: Consider improving coverage with more variations:
-		// - reading/writting an object field
-		// - reading/writting a list element
-		// - reading/writting a map entry
+		// - reading/writing an object field
+		// - reading/writing a list element
+		// - reading/writing a map entry
 		// - optional
 	}
 
@@ -104,7 +106,7 @@ describe("Primitives", () => {
 	 * @param schema - Schema to use for the test (must include the coerced type of 'value'.)
 	 * @param value - The value to be written/read/verified.
 	 */
-	function checkThrows<TSchema extends ImplicitFieldSchema>(
+	function checkThrows<const TSchema extends ImplicitFieldSchema>(
 		schema: TSchema,
 		value: InsertableTreeFieldFromImplicitField<TSchema>,
 	) {
@@ -155,7 +157,7 @@ describe("Primitives", () => {
 
 			// JSON coerces non-finite numbers to 'null'.  If 'null' violates schema,
 			// this must throw a TypeError.
-			[-Infinity, NaN, Infinity].forEach((value) => {
+			[Number.NEGATIVE_INFINITY, Number.NaN, Number.POSITIVE_INFINITY].forEach((value) => {
 				checkThrows(schema, value);
 			});
 
@@ -168,8 +170,10 @@ describe("Primitives", () => {
 		describe("with schema [_.number, _.null]", () => {
 			// JSON coerces non-finite numbers to 'null'.  This succeeds when 'null' is
 			// permitted by schema.
-			const schema = [schemaFactory.number, schemaFactory.null];
-			[-Infinity, NaN, Infinity].forEach((value) => checkCoerced(schema, value));
+			const schema = [schemaFactory.number, schemaFactory.null] as const;
+			[Number.NEGATIVE_INFINITY, Number.NaN, Number.POSITIVE_INFINITY].forEach((value) =>
+				checkCoerced(schema, value),
+			);
 		});
 	});
 

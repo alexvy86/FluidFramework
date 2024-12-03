@@ -3,7 +3,7 @@
  * Licensed under the MIT License.
  */
 
-import { assert } from "@fluidframework/core-utils";
+import { assert } from "@fluidframework/core-utils/internal";
 import { Type } from "@sinclair/typebox";
 import structuredClone from "@ungap/structured-clone";
 
@@ -48,7 +48,6 @@ export function asMutable<T>(readonly: T): Mutable<T> {
 export const clone = structuredClone;
 
 /**
- * @internal
  */
 export function fail(message: string): never {
 	throw new Error(message);
@@ -81,6 +80,44 @@ export function makeArray<T>(size: number, filler: (index: number) => T): T[] {
 }
 
 /**
+ * Returns the last element of an array, or `undefined` if the array has no elements.
+ * @param array - The array to get the last element from.
+ * @remarks
+ * If the type of the array has been narrowed by e.g. {@link hasSome | hasSome(array)} or {@link hasSingle | hasOne(array)} then the return type will be `T` rather than `T | undefined`.
+ */
+export function getLast<T>(array: readonly [T, ...T[]]): T;
+export function getLast<T>(array: { [index: number]: T; length: number }): T | undefined;
+export function getLast<T>(array: { [index: number]: T; length: number }): T | undefined {
+	return array[array.length - 1];
+}
+
+/**
+ * Returns true if and only if the given array has at least one element.
+ * @param array - The array to check.
+ * @remarks
+ * If `array` contains at least one element, its type will be narrowed and can benefit from improved typing from e.g. `array[0]` and {@link getLast | getLast(array)}.
+ * This is especially useful when "noUncheckedIndexedAccess" is enabled in the TypeScript compiler options, since the return type of `array[0]` will be `T` rather than `T | undefined`.
+ */
+export function hasSome<T>(array: T[]): array is [T, ...T[]];
+export function hasSome<T>(array: readonly T[]): array is readonly [T, ...T[]];
+export function hasSome<T>(array: readonly T[]): array is [T, ...T[]] {
+	return array.length > 0;
+}
+
+/**
+ * Returns true if and only if the given array has exactly one element.
+ * @param array - The array to check.
+ * @remarks
+ * If `array` contains exactly one element, its type will be narrowed and can benefit from improved typing from e.g. `array[0]` and {@link getLast | getLast(array)}.
+ * This is especially useful when "noUncheckedIndexedAccess" is enabled in the TypeScript compiler options, since the return type of `array[0]` will be `T` rather than `T | undefined`.
+ */
+export function hasSingle<T>(array: T[]): array is [T];
+export function hasSingle<T>(array: readonly T[]): array is readonly [T];
+export function hasSingle<T>(array: readonly T[]): array is [T] {
+	return array.length === 1;
+}
+
+/**
  * Compares two sets using callbacks.
  * Early returns on first false comparison.
  *
@@ -106,18 +143,26 @@ export function compareSets<T>({
 }): boolean {
 	for (const item of a.keys()) {
 		if (!b.has(item)) {
-			if (aExtra && !aExtra(item)) {
+			if (aExtra !== undefined) {
+				if (!aExtra(item)) {
+					return false;
+				}
+			} else {
 				return false;
 			}
 		} else {
-			if (same && !same(item)) {
+			if (same !== undefined && !same(item)) {
 				return false;
 			}
 		}
 	}
 	for (const item of b.keys()) {
 		if (!a.has(item)) {
-			if (bExtra && !bExtra(item)) {
+			if (bExtra !== undefined) {
+				if (!bExtra(item)) {
+					return false;
+				}
+			} else {
 				return false;
 			}
 		}
@@ -132,7 +177,11 @@ export function compareSets<T>({
  * @param defaultValue - a function which returns a default value. This is called and used to set an initial value for the given key in the map if none exists
  * @returns either the existing value for the given key, or the newly-created value (the result of `defaultValue`)
  */
-export function getOrCreate<K, V>(map: MapGetSet<K, V>, key: K, defaultValue: (key: K) => V): V {
+export function getOrCreate<K, V>(
+	map: MapGetSet<K, V>,
+	key: K,
+	defaultValue: (key: K) => V,
+): V {
 	let value = map.get(key);
 	if (value === undefined) {
 		value = defaultValue(key);
@@ -161,65 +210,94 @@ export function getOrAddEmptyToMap<K, V>(map: MapGetSet<K, V[]>, key: K): V[] {
  * @param map - the transformation function to run on each element of the iterable
  * @returns a new iterable of elements which have been transformed by the `map` function
  */
-export function* mapIterable<T, U>(iterable: Iterable<T>, map: (t: T) => U): Iterable<U> {
+export function* mapIterable<T, U>(
+	iterable: Iterable<T>,
+	map: (t: T) => U,
+): IterableIterator<U> {
 	for (const t of iterable) {
 		yield map(t);
 	}
 }
 
 /**
- * Returns an iterable of tuples containing pairs of elements from the given iterables
- * @param iterableA - an iterable to zip together with `iterableB`
- * @param iterableB - an iterable to zip together with `iterableA`
- * @returns in iterable of tuples of elements zipped together from `iterableA` and `iterableB`.
- * If the input iterables are of different lengths, then the extra elements in the longer will be ignored.
+ * Filter one iterable into another
+ * @param iterable - the iterable to filter
+ * @param filter - the predicate function to run on each element of the iterable
+ * @returns a new iterable including only the elements that passed the filter predicate
  */
-export function* zipIterables<T, U>(
-	iterableA: Iterable<T>,
-	iterableB: Iterable<U>,
-): Iterable<[T, U]> {
-	const iteratorA = iterableA[Symbol.iterator]();
-	const iteratorB = iterableB[Symbol.iterator]();
-	for (
-		let nextA = iteratorA.next(), nextB = iteratorB.next();
-		nextA.done !== true && nextB.done !== true;
-		nextA = iteratorA.next(), nextB = iteratorB.next()
-	) {
-		yield [nextA.value, nextB.value];
+export function* filterIterable<T>(
+	iterable: Iterable<T>,
+	filter: (t: T) => boolean,
+): IterableIterator<T> {
+	for (const t of iterable) {
+		if (filter(t)) {
+			yield t;
+		}
 	}
+}
+
+/**
+ * Finds the first element in the given iterable that satisfies a predicate.
+ * @param iterable - The iterable to search for an eligible element
+ * @param predicate - The predicate to run against each element
+ * @returns The first element in the iterable that satisfies the predicate, or undefined if the iterable contains no such element
+ */
+export function find<T>(iterable: Iterable<T>, predicate: (t: T) => boolean): T | undefined {
+	for (const t of iterable) {
+		if (predicate(t)) {
+			return t;
+		}
+	}
+}
+
+/**
+ * Counts the number of elements in the given iterable.
+ * @param iterable - the iterable to enumerate
+ * @returns the number of elements that were iterated after exhausting the iterable
+ */
+export function count(iterable: Iterable<unknown>): number {
+	let n = 0;
+	for (const _ of iterable) {
+		n += 1;
+	}
+	return n;
 }
 
 /**
  * Use for Json compatible data.
  *
- * Note that this does not robustly forbid non json comparable data via type checking,
+ * @typeparam TExtra - Type permitted in addition to the normal JSON types.
+ * Commonly used for to allow {@link @fluidframework/core-interfaces#IFluidHandle} within the otherwise JSON compatible content.
+ *
+ * @remarks
+ * This does not robustly forbid non json comparable data via type checking,
  * but instead mostly restricts access to it.
- * @internal
+ * @alpha
  */
-export type JsonCompatible =
+export type JsonCompatible<TExtra = never> =
 	| string
 	| number
 	| boolean
 	// eslint-disable-next-line @rushstack/no-new-null
 	| null
-	| JsonCompatible[]
-	| JsonCompatibleObject;
+	| JsonCompatible<TExtra>[]
+	| JsonCompatibleObject<TExtra>
+	| TExtra;
 
 /**
  * Use for Json object compatible data.
- *
- * Note that this does not robustly forbid non json comparable data via type checking,
+ * @remarks
+ * This does not robustly forbid non json comparable data via type checking,
  * but instead mostly restricts access to it.
- * @internal
+ * @alpha
  */
-export type JsonCompatibleObject = { [P in string]?: JsonCompatible };
+export type JsonCompatibleObject<TExtra = never> = { [P in string]?: JsonCompatible<TExtra> };
 
 /**
  * Use for readonly view of Json compatible data.
- *
- * Note that this does not robustly forbid non json comparable data via type checking,
+ * @remarks
+ * This does not robustly forbid non json comparable data via type checking,
  * but instead mostly restricts access to it.
- * @internal
  */
 export type JsonCompatibleReadOnly =
 	| string
@@ -228,7 +306,15 @@ export type JsonCompatibleReadOnly =
 	// eslint-disable-next-line @rushstack/no-new-null
 	| null
 	| readonly JsonCompatibleReadOnly[]
-	| { readonly [P in string]?: JsonCompatibleReadOnly };
+	| JsonCompatibleReadOnlyObject;
+
+/**
+ * Use for readonly view of Json compatible data.
+ * @remarks
+ * This does not robustly forbid non json comparable data via type checking,
+ * but instead mostly restricts access to it.
+ */
+export type JsonCompatibleReadOnlyObject = { readonly [P in string]?: JsonCompatibleReadOnly };
 
 /**
  * @remarks TODO: Audit usage of this type in schemas, evaluating whether it is necessary and performance
@@ -260,7 +346,7 @@ export function assertValidRangeIndices(
 	startIndex: number,
 	endIndex: number,
 	array: { readonly length: number },
-) {
+): void {
 	assert(endIndex >= startIndex, 0x79c /* Range indices are malformed. */);
 	assertValidIndex(startIndex, array, false);
 	assertValidIndex(endIndex, array, true);
@@ -270,7 +356,7 @@ export function assertValidIndex(
 	index: number,
 	array: { readonly length: number },
 	allowOnePastEnd: boolean = false,
-) {
+): void {
 	assertNonNegativeSafeInteger(index);
 	if (allowOnePastEnd) {
 		assert(index <= array.length, 0x378 /* index must be less than or equal to length */);
@@ -282,14 +368,14 @@ export function assertValidIndex(
 export function assertValidRange(
 	{ start, end }: { start: number; end: number },
 	array: { readonly length: number },
-) {
+): void {
 	assertNonNegativeSafeInteger(start);
 	assertNonNegativeSafeInteger(end);
 	assert(end <= array.length, 0x79d /* Range end must be less than or equal to length */);
 	assert(start <= end, 0x79e /* Range start must be less than or equal to range start */);
 }
 
-export function assertNonNegativeSafeInteger(index: number) {
+export function assertNonNegativeSafeInteger(index: number): void {
 	assert(Number.isSafeInteger(index), 0x376 /* index must be an integer */);
 	assert(index >= 0, 0x377 /* index must be non-negative */);
 }
@@ -325,7 +411,11 @@ export function objectToMap<MapKey extends string | number | symbol, MapValue>(
  * (including but not limited to unintended access to __proto__ and other non-owned keys).
  * {@link objectToMap} helps these few cases get into using an actual map in as safe of a way as is practical.
  */
-export function transformObjectMap<MapKey extends string | number | symbol, MapValue, NewMapValue>(
+export function transformObjectMap<
+	MapKey extends string | number | symbol,
+	MapValue,
+	NewMapValue,
+>(
 	objectMap: Record<MapKey, MapValue>,
 	transformer: (value: MapValue, key: MapKey) => NewMapValue,
 ): Record<MapKey, MapValue> {
@@ -350,13 +440,15 @@ export function transformObjectMap<MapKey extends string | number | symbol, MapV
  */
 export function invertMap<Key, Value>(input: Map<Key, Value>): Map<Value, Key> {
 	const result = new Map<Value, Key>(mapIterable(input, ([key, value]) => [value, key]));
-	assert(result.size === input.size, 0x88a /* all values in a map must be unique to invert it */);
+	assert(
+		result.size === input.size,
+		0x88a /* all values in a map must be unique to invert it */,
+	);
 	return result;
 }
 
 /**
  * Returns the value from `set` if it contains exactly one item, otherwise `undefined`.
- * @internal
  */
 export function oneFromSet<T>(set: ReadonlySet<T> | undefined): T | undefined {
 	if (set === undefined) {
@@ -373,7 +465,6 @@ export function oneFromSet<T>(set: ReadonlySet<T> | undefined): T | undefined {
 /**
  * Type with a name describing what it is.
  * Typically used with values (like schema) that can be stored in a map, but in some representations have their name/key as a field.
- * @internal
  */
 export interface Named<TName> {
 	readonly name: TName;
@@ -381,7 +472,6 @@ export interface Named<TName> {
 
 /**
  * Order {@link Named} objects by their name.
- * @internal
  */
 export function compareNamed(a: Named<string>, b: Named<string>): -1 | 0 | 1 {
 	if (a.name < b.name) {
@@ -395,17 +485,19 @@ export function compareNamed(a: Named<string>, b: Named<string>): -1 | 0 | 1 {
 
 /**
  * Placeholder for `Symbol.dispose`.
- *
- * Replace this with `Symbol.dispose` when it is available.
- * @public
+ * @privateRemarks
+ * TODO: replace this with `Symbol.dispose` when it is available or make it a valid polyfill.
  */
 export const disposeSymbol: unique symbol = Symbol("Symbol.dispose placeholder");
 
 /**
  * An object with an explicit lifetime that can be ended.
  * @privateRemarks
- * TODO: align this with core-utils/IDisposable and {@link https://www.typescriptlang.org/docs/handbook/release-notes/typescript-5-2.html#using-declarations-and-explicit-resource-management| TypeScript's Disposable}.
- * @public
+ * Simpler alternative to core-utils/IDisposable for internal use in this package.
+ * This avoids adding a named "dispose" method, and will eventually be replaced with
+ * {@link https://www.typescriptlang.org/docs/handbook/release-notes/typescript-5-2.html#using-declarations-and-explicit-resource-management| TypeScript's Disposable}.
+ *
+ * Once this is replaced with TypeScript's Disposable, core-utils/IDisposable can extend it, bringing the APIs into a reasonable alignment.
  */
 export interface IDisposable {
 	/**

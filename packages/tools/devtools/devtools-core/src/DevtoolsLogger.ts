@@ -3,12 +3,12 @@
  * Licensed under the MIT License.
  */
 
-import {
-	type ITelemetryBaseEvent,
-	type ITelemetryBaseLogger,
+import type {
+	ITelemetryBaseEvent,
+	ITelemetryBaseLogger,
 } from "@fluidframework/core-interfaces";
 
-import { type ITimestampedTelemetryEvent } from "./TelemetryMetadata.js";
+import type { ITimestampedTelemetryEvent } from "./TelemetryMetadata.js";
 import {
 	GetTelemetryHistory,
 	type IDevtoolsMessage,
@@ -31,7 +31,7 @@ import {
  * initializing the Devtools.
  *
  * @sealed
- * @alpha
+ * @beta
  */
 // eslint-disable-next-line @typescript-eslint/no-empty-interface
 export interface IDevtoolsLogger extends ITelemetryBaseLogger {}
@@ -95,7 +95,11 @@ class DevtoolsLogger implements IDevtoolsLogger {
 	private readonly windowMessageHandler = (
 		event: MessageEvent<Partial<IDevtoolsMessage>>,
 	): void => {
-		handleIncomingWindowMessage(event, this.inboundMessageHandlers, this.messageLoggingOptions);
+		handleIncomingWindowMessage(
+			event,
+			this.inboundMessageHandlers,
+			this.messageLoggingOptions,
+		);
 	};
 
 	/**
@@ -157,7 +161,7 @@ class DevtoolsLogger implements IDevtoolsLogger {
 /**
  * Creates a new {@link IDevtoolsLogger} by wrapping the provided (optional) base logger.
  *
- * @alpha
+ * @beta
  */
 export function createDevtoolsLogger(baseLogger?: ITelemetryBaseLogger): IDevtoolsLogger {
 	return new DevtoolsLogger(baseLogger);

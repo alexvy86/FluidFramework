@@ -4,46 +4,59 @@
  */
 
 import { TypedEventEmitter } from "@fluid-internal/client-utils";
-import { AttachState, IAudience, IDeltaManager } from "@fluidframework/container-definitions";
+import { AttachState, IAudience } from "@fluidframework/container-definitions";
+import { IDeltaManager } from "@fluidframework/container-definitions/internal";
 import {
 	FluidObject,
 	IFluidHandle,
-	IFluidHandleContext,
 	IRequest,
 	IResponse,
 } from "@fluidframework/core-interfaces";
-import { assert, Deferred, LazyPromise, unreachableCase } from "@fluidframework/core-utils";
+import { IFluidHandleContext } from "@fluidframework/core-interfaces/internal";
+import type { IFluidHandleInternal } from "@fluidframework/core-interfaces/internal";
+import {
+	assert,
+	Deferred,
+	LazyPromise,
+	unreachableCase,
+} from "@fluidframework/core-utils/internal";
 import {
 	IChannel,
 	IChannelFactory,
 	IFluidDataStoreRuntime,
 	IFluidDataStoreRuntimeEvents,
-} from "@fluidframework/datastore-definitions";
-import { buildSnapshotTree } from "@fluidframework/driver-utils";
-import { IIdCompressor } from "@fluidframework/id-compressor";
+	type IDeltaManagerErased,
+} from "@fluidframework/datastore-definitions/internal";
 import {
 	IClientDetails,
-	IDocumentMessage,
 	IQuorumClients,
-	ISequencedDocumentMessage,
 	ISummaryBlob,
 	ISummaryTree,
 	SummaryType,
-} from "@fluidframework/protocol-definitions";
+} from "@fluidframework/driver-definitions";
 import {
+	IDocumentMessage,
+	type ISnapshotTree,
+	ISequencedDocumentMessage,
+} from "@fluidframework/driver-definitions/internal";
+import { buildSnapshotTree } from "@fluidframework/driver-utils/internal";
+import { IIdCompressor } from "@fluidframework/id-compressor";
+import {
+	ISummaryTreeWithStats,
+	ITelemetryContext,
+	IGarbageCollectionData,
 	CreateChildSummarizerNodeParam,
 	CreateSummarizerNodeSource,
 	IAttachMessage,
 	IEnvelope,
 	IFluidDataStoreChannel,
 	IFluidDataStoreContext,
-	IGarbageCollectionData,
-	IInboundSignalMessage,
-	ISummaryTreeWithStats,
-	ITelemetryContext,
 	VisibilityState,
 	gcDataBlobKey,
-} from "@fluidframework/runtime-definitions";
+	IInboundSignalMessage,
+	type IRuntimeMessageCollection,
+	type IRuntimeMessagesContent,
+} from "@fluidframework/runtime-definitions/internal";
 import {
 	GCDataBuilder,
 	RequestParser,
@@ -53,15 +66,17 @@ import {
 	convertSummaryTreeToITree,
 	create404Response,
 	createResponseError,
-	encodeCompactIdToString,
 	exceptionToResponse,
 	generateHandleContextPath,
 	processAttachMessageGCData,
+	toFluidHandleInternal,
 	unpackChildNodesUsedRoutes,
-} from "@fluidframework/runtime-utils";
+	toDeltaManagerErased,
+	encodeCompactIdToString,
+} from "@fluidframework/runtime-utils/internal";
 import {
-	DataProcessingError,
 	ITelemetryLoggerExt,
+	DataProcessingError,
 	LoggingError,
 	MonitoringContext,
 	UsageError,
@@ -69,8 +84,9 @@ import {
 	generateStack,
 	raiseConnectedEvent,
 	tagCodeArtifacts,
-} from "@fluidframework/telemetry-utils";
+} from "@fluidframework/telemetry-utils/internal";
 import { v4 as uuid } from "uuid";
+
 import { IChannelContext, summarizeChannel } from "./channelContext.js";
 import { FluidObjectHandle } from "./fluidHandle.js";
 import {
@@ -78,9 +94,11 @@ import {
 	LocalChannelContextBase,
 	RehydratedLocalChannelContext,
 } from "./localChannelContext.js";
+import { pkgVersion } from "./packageVersion.js";
 import { RemoteChannelContext } from "./remoteChannelContext.js";
 
 /**
+ * @legacy
  * @alpha
  */
 export enum DataStoreMessageType {
@@ -90,6 +108,7 @@ export enum DataStoreMessageType {
 }
 
 /**
+ * @legacy
  * @alpha
  */
 export interface ISharedObjectRegistry {
@@ -100,6 +119,7 @@ export interface ISharedObjectRegistry {
 
 /**
  * Base data store class
+ * @legacy
  * @alpha
  */
 export class FluidDataStoreRuntime
@@ -109,7 +129,7 @@ export class FluidDataStoreRuntime
 	/**
 	 * {@inheritDoc @fluidframework/datastore-definitions#IFluidDataStoreRuntime.entryPoint}
 	 */
-	public readonly entryPoint: IFluidHandle<FluidObject>;
+	public readonly entryPoint: IFluidHandleInternal<FluidObject>;
 
 	public get connected(): boolean {
 		return this.dataStoreContext.connected;
@@ -172,12 +192,15 @@ export class FluidDataStoreRuntime
 	public visibilityState: VisibilityState;
 	// A list of handles that are bound when the data store is not visible. We have to make them visible when the data
 	// store becomes visible.
-	private readonly pendingHandlesToMakeVisible: Set<IFluidHandle> = new Set();
+	private readonly pendingHandlesToMakeVisible: Set<IFluidHandleInternal> = new Set();
 
 	public readonly id: string;
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	public readonly options: Record<string | number, any>;
-	public readonly deltaManager: IDeltaManager<ISequencedDocumentMessage, IDocumentMessage>;
+	public readonly deltaManagerInternal: IDeltaManager<
+		ISequencedDocumentMessage,
+		IDocumentMessage
+	>;
 	private readonly quorum: IQuorumClients;
 	private readonly audience: IAudience;
 	private readonly mc: MonitoringContext;
@@ -191,21 +214,6 @@ export class FluidDataStoreRuntime
 	 * controlled via feature flags.
 	 */
 	private localChangesTelemetryCount: number;
-
-	/**
-	 * Invokes the given callback and expects that no ops are submitted
-	 * until execution finishes. If an op is submitted, an error will be raised.
-	 *
-	 * Can be disabled by feature gate `Fluid.ContainerRuntime.DisableOpReentryCheck`
-	 *
-	 * @param callback - the callback to be invoked
-	 */
-	public ensureNoDataModelChanges<T>(callback: () => T): T {
-		// back-compat ADO:2309
-		return this.dataStoreContext.ensureNoDataModelChanges === undefined
-			? callback()
-			: this.dataStoreContext.ensureNoDataModelChanges(callback);
-	}
 
 	/**
 	 * Create an instance of a DataStore runtime.
@@ -232,16 +240,16 @@ export class FluidDataStoreRuntime
 		);
 
 		this.mc = createChildMonitoringContext({
-			logger: dataStoreContext.logger,
+			logger: dataStoreContext.baseLogger,
 			namespace: "FluidDataStoreRuntime",
 			properties: {
-				all: { dataStoreId: uuid() },
+				all: { dataStoreId: uuid(), dataStoreVersion: pkgVersion },
 			},
 		});
 
 		this.id = dataStoreContext.id;
 		this.options = dataStoreContext.options;
-		this.deltaManager = dataStoreContext.deltaManager;
+		this.deltaManagerInternal = dataStoreContext.deltaManager;
 		this.quorum = dataStoreContext.getQuorum();
 		this.audience = dataStoreContext.getAudience();
 
@@ -249,7 +257,7 @@ export class FluidDataStoreRuntime
 
 		// Must always receive the data store type inside of the attributes
 		if (tree?.trees !== undefined) {
-			Object.keys(tree.trees).forEach((path) => {
+			Object.entries(tree.trees).forEach(([path, subtree]) => {
 				// Issue #4414
 				if (path === "_search") {
 					return;
@@ -260,20 +268,7 @@ export class FluidDataStoreRuntime
 				// container from snapshot where we load detached container from a snapshot, isLocalDataStore would be
 				// true. In this case create a RehydratedLocalChannelContext.
 				if (dataStoreContext.isLocalDataStore) {
-					channelContext = new RehydratedLocalChannelContext(
-						path,
-						this.sharedObjectRegistry,
-						this,
-						this.dataStoreContext,
-						this.dataStoreContext.storage,
-						this.logger,
-						(content, localOpMetadata) =>
-							this.submitChannelOp(path, content, localOpMetadata),
-						(address: string) => this.setChannelDirty(address),
-						(srcHandle: IFluidHandle, outboundHandle: IFluidHandle) =>
-							this.addedGCOutboundReference(srcHandle, outboundHandle),
-						tree.trees[path],
-					);
+					channelContext = this.createRehydratedLocalChannelContext(path, subtree);
 					// This is the case of rehydrating a detached container from snapshot. Now due to delay loading of
 					// data store, if the data store is loaded after the container is attached, then we missed making
 					// the channel visible. So do it now. Otherwise, add it to local channel context queue, so
@@ -288,13 +283,10 @@ export class FluidDataStoreRuntime
 						this,
 						dataStoreContext,
 						dataStoreContext.storage,
-						(content, localOpMetadata) =>
-							this.submitChannelOp(path, content, localOpMetadata),
+						(content, localOpMetadata) => this.submitChannelOp(path, content, localOpMetadata),
 						(address: string) => this.setChannelDirty(address),
-						(srcHandle: IFluidHandle, outboundHandle: IFluidHandle) =>
-							this.addedGCOutboundReference(srcHandle, outboundHandle),
 						path,
-						tree.trees[path],
+						subtree,
 						this.sharedObjectRegistry,
 						undefined /* extraBlobs */,
 						this.dataStoreContext.getCreateChildSummarizerNodeFn(path, {
@@ -345,6 +337,10 @@ export class FluidDataStoreRuntime
 			this.mc.config.getNumber("Fluid.Telemetry.LocalChangesTelemetryCount") ?? 10;
 	}
 
+	get deltaManager(): IDeltaManagerErased {
+		return toDeltaManagerErased(this.deltaManagerInternal);
+	}
+
 	public dispose(): void {
 		if (this._disposed) {
 			return;
@@ -362,26 +358,37 @@ export class FluidDataStoreRuntime
 	public async request(request: IRequest): Promise<IResponse> {
 		try {
 			const parser = RequestParser.create(request);
+			// If there are not path parts, and the request is via a handle
+			// then we should return the entrypoint object for this runtime.
+			// This allows the entrypoint handle to be resolved without the need
+			// for the entrypoint object to know anything about requests or handles.
+			//
+			// This works because the entrypoint handle is an object handle,
+			// which always has a real reference to the object itself.
+			// Those get serialized and then deserialized into a plain handle, which really just has a path,
+			// resolution walks to the runtime, which calls this, and get the true object off the internal object handle
+			if (parser.pathParts.length === 0 && request.headers?.viaHandle === true) {
+				return { mimeType: "fluid/object", status: 200, value: await this.entryPoint.get() };
+			}
 			const id = parser.pathParts[0];
 
 			if (id === "_channels" || id === "_custom") {
 				return await this.request(parser.createSubRequest(1));
 			}
 
-			// Check for a data type reference first
-			const context = this.contexts.get(id);
-			if (context !== undefined && parser.isLeaf(1)) {
-				try {
-					const channel = await context.getChannel();
+			if (id !== undefined) {
+				// Check for a data type reference first
+				const context = this.contexts.get(id);
+				if (context !== undefined && parser.isLeaf(1)) {
+					try {
+						const channel = await context.getChannel();
 
-					return { mimeType: "fluid/object", status: 200, value: channel };
-				} catch (error) {
-					this.mc.logger.sendErrorEvent(
-						{ eventName: "GetChannelFailedInRequest" },
-						error,
-					);
+						return { mimeType: "fluid/object", status: 200, value: channel };
+					} catch (error) {
+						this.mc.logger.sendErrorEvent({ eventName: "GetChannelFailedInRequest" }, error);
 
-					return createResponseError(500, `Failed to get Channel: ${error}`, request);
+						return createResponseError(500, `Failed to get Channel: ${error}`, request);
+					}
 				}
 			}
 
@@ -451,21 +458,30 @@ export class FluidDataStoreRuntime
 			id = idArg;
 			this.validateChannelId(id);
 		} else {
-			// We use three non-overlapping namespaces:
-			// - detached state: even numbers
-			// - attached state: odd numbers
-			// - uuids
-			// In first two cases we will encode result as strings in more compact form, with leading underscore,
-			// to ensure no overlap with user-provided DDS names (see validateChannelId())
-			if (this.visibilityState !== VisibilityState.GloballyVisible) {
-				// container is detached, only one client observes content, no way to hit collisions with other clients.
-				id = encodeCompactIdToString(2 * this.contexts.size, "_");
+			/**
+			 * There is currently a bug where certain data store ids such as "[" are getting converted to ASCII characters
+			 * in the snapshot.
+			 * So, return short ids only if explicitly enabled via feature flags. Else, return uuid();
+			 */
+			if (this.mc.config.getBoolean("Fluid.Runtime.UseShortIds") === true) {
+				// We use three non-overlapping namespaces:
+				// - detached state: even numbers
+				// - attached state: odd numbers
+				// - uuids
+				// In first two cases we will encode result as strings in more compact form, with leading underscore,
+				// to ensure no overlap with user-provided DDS names (see validateChannelId())
+				if (this.visibilityState !== VisibilityState.GloballyVisible) {
+					// container is detached, only one client observes content, no way to hit collisions with other clients.
+					id = encodeCompactIdToString(2 * this.contexts.size, "_");
+				} else {
+					// Due to back-compat, we could not depend yet on generateDocumentUniqueId() being there.
+					// We can remove the need to leverage uuid() as fall-back in couple releases.
+					const res =
+						this.dataStoreContext.containerRuntime.generateDocumentUniqueId?.() ?? uuid();
+					id = typeof res === "number" ? encodeCompactIdToString(2 * res + 1, "_") : res;
+				}
 			} else {
-				// Due to back-compat, we could not depend yet on generateDocumentUniqueId() being there.
-				// We can remove the need to leverage uuid() as fall-back in couple releases.
-				const res =
-					this.dataStoreContext.containerRuntime.generateDocumentUniqueId?.() ?? uuid();
-				id = typeof res === "number" ? encodeCompactIdToString(2 * res + 1, "_") : res;
+				id = uuid();
 			}
 			assert(!id.includes("/"), 0x8fc /* slash */);
 		}
@@ -494,13 +510,29 @@ export class FluidDataStoreRuntime
 			this.dataStoreContext,
 			this.dataStoreContext.storage,
 			this.logger,
-			(content, localOpMetadata) =>
-				this.submitChannelOp(channel.id, content, localOpMetadata),
+			(content, localOpMetadata) => this.submitChannelOp(channel.id, content, localOpMetadata),
 			(address: string) => this.setChannelDirty(address),
-			(srcHandle: IFluidHandle, outboundHandle: IFluidHandle) =>
-				this.addedGCOutboundReference(srcHandle, outboundHandle),
 		);
 		this.contexts.set(channel.id, context);
+	}
+
+	private createRehydratedLocalChannelContext(
+		id: string,
+		tree: ISnapshotTree,
+		flatBlobs?: Map<string, ArrayBufferLike>,
+	) {
+		return new RehydratedLocalChannelContext(
+			id,
+			this.sharedObjectRegistry,
+			this,
+			this.dataStoreContext,
+			this.dataStoreContext.storage,
+			this.logger,
+			(content, localOpMetadata) => this.submitChannelOp(id, content, localOpMetadata),
+			(address: string) => this.setChannelDirty(address),
+			tree,
+			flatBlobs,
+		);
 	}
 
 	/**
@@ -524,7 +556,7 @@ export class FluidDataStoreRuntime
 		 * If this channel is already waiting to be made visible, do nothing. This can happen during attachGraph() when
 		 * a channel's graph is attached. It calls bindToContext on the shared object which will end up back here.
 		 */
-		if (this.pendingHandlesToMakeVisible.has(channel.handle)) {
+		if (this.pendingHandlesToMakeVisible.has(toFluidHandleInternal(channel.handle))) {
 			return;
 		}
 
@@ -573,10 +605,10 @@ export class FluidDataStoreRuntime
 	public bind(handle: IFluidHandle): void {
 		// If visible, attach the incoming handle's graph. Else, this will be done when we become visible.
 		if (this.visibilityState !== VisibilityState.NotVisible) {
-			handle.attachGraph();
+			toFluidHandleInternal(handle).attachGraph();
 			return;
 		}
-		this.pendingHandlesToMakeVisible.add(handle);
+		this.pendingHandlesToMakeVisible.add(toFluidHandleInternal(handle));
 	}
 
 	public setConnectionState(connected: boolean, clientId?: string) {
@@ -620,8 +652,6 @@ export class FluidDataStoreRuntime
 			(content, localContentMetadata) =>
 				this.submitChannelOp(attachMessage.id, content, localContentMetadata),
 			(address: string) => this.setChannelDirty(address),
-			(srcHandle: IFluidHandle, outboundHandle: IFluidHandle) =>
-				this.addedGCOutboundReference(srcHandle, outboundHandle),
 			attachMessage.id,
 			snapshotTree,
 			this.sharedObjectRegistry,
@@ -634,62 +664,151 @@ export class FluidDataStoreRuntime
 		);
 	}
 
-	public process(message: ISequencedDocumentMessage, local: boolean, localOpMetadata: unknown) {
+	/**
+	 * Process channel messages. The messages here are contiguous channel types messages in a batch for this data
+	 * store.
+	 * @param messageCollection - The collection of messages to process.
+	 */
+	private processChannelMessages(messageCollection: IRuntimeMessageCollection) {
 		this.verifyNotClosed();
 
+		/*
+		 * Bunch contiguous messages for the same channel and send them together.
+		 * This is an optimization where DDSes can process a bunch of ops together. DDSes
+		 * like merge tree or shared tree can process ops more efficiently when they are bunched together.
+		 */
+		let currentAddress: string | undefined;
+		let currentMessagesContent: IRuntimeMessagesContent[] = [];
+		const { messagesContent, local } = messageCollection;
+
+		const sendBunchedMessages = () => {
+			// Current address will be undefined for the first message in the list.
+			if (currentAddress === undefined) {
+				return;
+			}
+
+			// process the last set of channel ops
+			const channelContext = this.contexts.get(currentAddress);
+			assert(!!channelContext, 0xa6b /* Channel context not found */);
+
+			channelContext.processMessages({
+				envelope: messageCollection.envelope,
+				messagesContent: currentMessagesContent,
+				local,
+			});
+
+			currentMessagesContent = [];
+		};
+
+		for (const { contents, ...restOfMessagesContent } of messagesContent) {
+			const contentsEnvelope = contents as IEnvelope;
+
+			// If the address of the message changes while processing the batch, send the current bunch.
+			if (currentAddress !== contentsEnvelope.address) {
+				sendBunchedMessages();
+			}
+
+			currentMessagesContent.push({
+				contents: contentsEnvelope.contents,
+				...restOfMessagesContent,
+			});
+			currentAddress = contentsEnvelope.address;
+		}
+
+		// Process the last bunch of messages.
+		sendBunchedMessages();
+	}
+
+	private processAttachMessages(messageCollection: IRuntimeMessageCollection) {
+		const { envelope, messagesContent, local } = messageCollection;
+		for (const { contents } of messagesContent) {
+			const attachMessage = contents as IAttachMessage;
+			const id = attachMessage.id;
+
+			// We need to process the GC Data for both local and remote attach messages
+			processAttachMessageGCData(attachMessage.snapshot, (nodeId, toPath) => {
+				// Note: nodeId will be "/" unless and until we support sub-DDS GC Nodes
+				const fromPath = `/${this.id}/${id}${nodeId === "/" ? "" : nodeId}`;
+				this.dataStoreContext.addedGCOutboundRoute(fromPath, toPath, envelope.timestamp);
+			});
+
+			// If a non-local operation then go and create the object
+			// Otherwise mark it as officially attached.
+			if (local) {
+				assert(
+					this.pendingAttach.delete(id),
+					0x17c /* "Unexpected attach (local) channel OP" */,
+				);
+			} else {
+				assert(!this.contexts.has(id), 0x17d /* "Unexpected attach channel OP" */);
+
+				const summarizerNodeParams = {
+					type: CreateSummarizerNodeSource.FromAttach,
+					sequenceNumber: envelope.sequenceNumber,
+					snapshot: attachMessage.snapshot,
+				};
+
+				const remoteChannelContext = this.createRemoteChannelContext(
+					attachMessage,
+					summarizerNodeParams,
+				);
+				this.contexts.set(id, remoteChannelContext);
+			}
+		}
+	}
+
+	/**
+	 * Process messages for this data store. The messages here are contiguous messages in a batch.
+	 * @param messageCollection - The collection of messages to process.
+	 */
+	public processMessages(messageCollection: IRuntimeMessageCollection): void {
+		this.verifyNotClosed();
+
+		const { envelope, messagesContent } = messageCollection;
 		try {
-			// catches as data processing error whether or not they come from async pending queues
-			switch (message.type) {
-				case DataStoreMessageType.Attach: {
-					const attachMessage = message.contents as IAttachMessage;
-					const id = attachMessage.id;
-
-					// We need to process the GC Data for both local and remote attach messages
-					processAttachMessageGCData(attachMessage.snapshot, (nodeId, toPath) => {
-						// Note: nodeId will be "/" unless and until we support sub-DDS GC Nodes
-						const fromPath = `/${this.id}/${id}${nodeId === "/" ? "" : nodeId}`;
-						this.dataStoreContext.addedGCOutboundRoute?.(fromPath, toPath);
-					});
-
-					// If a non-local operation then go and create the object
-					// Otherwise mark it as officially attached.
-					if (local) {
-						assert(
-							this.pendingAttach.delete(id),
-							0x17c /* "Unexpected attach (local) channel OP" */,
-						);
-					} else {
-						assert(!this.contexts.has(id), 0x17d /* "Unexpected attach channel OP" */);
-
-						const summarizerNodeParams = {
-							type: CreateSummarizerNodeSource.FromAttach,
-							sequenceNumber: message.sequenceNumber,
-							snapshot: attachMessage.snapshot,
-						};
-
-						const remoteChannelContext = this.createRemoteChannelContext(
-							attachMessage,
-							summarizerNodeParams,
-						);
-						this.contexts.set(id, remoteChannelContext);
-					}
-					break;
-				}
-
+			switch (envelope.type) {
 				case DataStoreMessageType.ChannelOp:
-					this.processChannelOp(message, local, localOpMetadata);
+					this.processChannelMessages(messageCollection);
+					break;
+				case DataStoreMessageType.Attach:
+					this.processAttachMessages(messageCollection);
 					break;
 				default:
 			}
-
-			this.emit("op", message);
 		} catch (error) {
 			throw DataProcessingError.wrapIfUnrecognized(
 				error,
 				"fluidDataStoreRuntimeFailedToProcessMessage",
-				message,
+				envelope,
 			);
 		}
+
+		for (const { contents, clientSequenceNumber } of messagesContent) {
+			this.emit("op", { ...envelope, contents, clientSequenceNumber });
+		}
+	}
+
+	/**
+	 * back-compat ADO 21575.
+	 * This is still here for back-compat purposes because it exists on IFluidDataStoreChannel. Once it is removed from
+	 * the interface, this method can be removed.
+	 */
+	public process(
+		message: ISequencedDocumentMessage,
+		local: boolean,
+		localOpMetadata: unknown,
+	) {
+		this.processMessages({
+			envelope: message,
+			messagesContent: [
+				{
+					contents: message.contents,
+					localOpMetadata,
+					clientSequenceNumber: message.clientSequenceNumber,
+				},
+			],
+			local,
+		});
 	}
 
 	public processSignal(message: IInboundSignalMessage, local: boolean) {
@@ -739,6 +858,27 @@ export class FluidDataStoreRuntime
 	}
 
 	/**
+	 * Returns a summary at the current sequence number.
+	 * @param fullTree - true to bypass optimizations and force a full summary tree
+	 * @param trackState - This tells whether we should track state from this summary.
+	 * @param telemetryContext - summary data passed through the layers for telemetry purposes
+	 */
+	public async summarize(
+		fullTree: boolean = false,
+		trackState: boolean = true,
+		telemetryContext?: ITelemetryContext,
+	): Promise<ISummaryTreeWithStats> {
+		const summaryBuilder = new SummaryTreeBuilder();
+		await this.visitContextsDuringSummary(
+			async (contextId: string, context: IChannelContext) => {
+				const contextSummary = await context.summarize(fullTree, trackState, telemetryContext);
+				summaryBuilder.addWithStats(contextId, contextSummary);
+			},
+		);
+		return summaryBuilder.getSummaryTree();
+	}
+
+	/**
 	 * Generates data used for garbage collection. This includes a list of GC nodes that represent this channel
 	 * including any of its child channel contexts. Each node has a set of outbound routes to other GC nodes in the
 	 * document. It does the following:
@@ -755,22 +895,14 @@ export class FluidDataStoreRuntime
 	 */
 	public async getGCData(fullGC: boolean = false): Promise<IGarbageCollectionData> {
 		const builder = new GCDataBuilder();
-		// Iterate over each channel context and get their GC data.
-		await Promise.all(
-			Array.from(this.contexts)
-				.filter(([contextId, _]) => {
-					// Get GC data only for attached contexts. Detached contexts are not connected in the GC reference
-					// graph so any references they might have won't be connected as well.
-					return this.isChannelAttached(contextId);
-				})
-				.map(async ([contextId, context]) => {
-					const contextGCData = await context.getGCData(fullGC);
-					// Prefix the child's id to the ids of its GC nodes so they can be identified as belonging to the child.
-					// This also gradually builds the id of each node to be a path from the root.
-					builder.prefixAndAddNodes(contextId, contextGCData.gcNodes);
-				}),
+		await this.visitContextsDuringSummary(
+			async (contextId: string, context: IChannelContext) => {
+				const contextGCData = await context.getGCData(fullGC);
+				// Prefix the child's id to the ids of its GC nodes so they can be identified as belonging to the child.
+				// This also gradually builds the id of each node to be a path from the root.
+				builder.prefixAndAddNodes(contextId, contextGCData.gcNodes);
+			},
 		);
-
 		this.updateGCNodes(builder);
 		return builder.getGCData();
 	}
@@ -798,60 +930,6 @@ export class FluidDataStoreRuntime
 		}
 	}
 
-	/**
-	 * Called when a new outbound reference is added to another node. This is used by garbage collection to identify
-	 * all references added in the system.
-	 * @param srcHandle - The handle of the node that added the reference.
-	 * @param outboundHandle - The handle of the outbound node that is referenced.
-	 */
-	private addedGCOutboundReference(srcHandle: IFluidHandle, outboundHandle: IFluidHandle) {
-		// Note: This is deprecated on IFluidDataStoreContext, and in an n/n-1 scenario where the
-		// ContainerRuntime is newer, it will actually be a no-op since then the ContainerRuntime
-		// will be the one to call addedGCOutboundReference directly.
-		// But on the flip side, if the ContainerRuntime is older, then it's important we still call this.
-		this.dataStoreContext.addedGCOutboundReference?.(srcHandle, outboundHandle);
-	}
-
-	/**
-	 * Returns a summary at the current sequence number.
-	 * @param fullTree - true to bypass optimizations and force a full summary tree
-	 * @param trackState - This tells whether we should track state from this summary.
-	 * @param telemetryContext - summary data passed through the layers for telemetry purposes
-	 */
-	public async summarize(
-		fullTree: boolean = false,
-		trackState: boolean = true,
-		telemetryContext?: ITelemetryContext,
-	): Promise<ISummaryTreeWithStats> {
-		const summaryBuilder = new SummaryTreeBuilder();
-
-		// Iterate over each data store and ask it to summarize
-		await Promise.all(
-			Array.from(this.contexts)
-				.filter(([contextId, _]) => {
-					const isAttached = this.isChannelAttached(contextId);
-					// We are not expecting local dds! Summary may not capture local state.
-					assert(
-						isAttached,
-						0x17f /* "Not expecting detached channels during summarize" */,
-					);
-					// If the object is registered - and we have received the sequenced op creating the object
-					// (i.e. it has a base mapping) - then we go ahead and summarize
-					return isAttached;
-				})
-				.map(async ([contextId, context]) => {
-					const contextSummary = await context.summarize(
-						fullTree,
-						trackState,
-						telemetryContext,
-					);
-					summaryBuilder.addWithStats(contextId, contextSummary);
-				}),
-		);
-
-		return summaryBuilder.getSummaryTree();
-	}
-
 	public getAttachSummary(telemetryContext?: ITelemetryContext): ISummaryTreeWithStats {
 		const summaryBuilder = new SummaryTreeBuilder();
 		this.visitLocalBoundContextsDuringAttach(
@@ -873,7 +951,9 @@ export class FluidDataStoreRuntime
 						0x181 /* "BaseSnapshot should be there as detached container loaded from snapshot" */,
 					);
 					summaryTree = convertSnapshotTreeToSummaryTree(
-						this.dataStoreContext.baseSnapshot.trees[contextId],
+						// TODO why are we non null asserting here?
+						// eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+						this.dataStoreContext.baseSnapshot.trees[contextId]!,
 					);
 				}
 				summaryBuilder.addWithStats(contextId, summaryTree);
@@ -905,6 +985,21 @@ export class FluidDataStoreRuntime
 	}
 
 	/**
+	 * Helper method for preparing to summarize this channel.
+	 * Runs the callback for each bound context to incorporate its data however the caller specifies
+	 */
+	private async visitContextsDuringSummary(
+		visitor: (contextId: string, context: IChannelContext) => Promise<void>,
+	): Promise<void> {
+		for (const [contextId, context] of this.contexts) {
+			const isAttached = this.isChannelAttached(contextId);
+			// We are not expecting local dds! Summary / GC data may not capture local state.
+			assert(isAttached, 0x17f /* "Not expecting detached channels during summarize" */);
+			await visitor(contextId, context);
+		}
+	}
+
+	/**
 	 * Helper method for preparing to attach this dataStore.
 	 * Runs the callback for each bound context to incorporate its data however the caller specifies
 	 */
@@ -931,13 +1026,27 @@ export class FluidDataStoreRuntime
 		//  "The data store should be locally visible when generating attach summary",
 		// );
 
-		for (const [contextId, context] of this.contexts) {
-			if (!(context instanceof LocalChannelContextBase)) {
-				throw new LoggingError("Should only be called with local channel handles");
-			}
+		const visitedContexts = new Set<string>();
+		let visitedLength = -1;
+		while (visitedLength !== visitedContexts.size) {
+			// detect changes in the visitedContexts set, as on visiting a context
+			// it could could make contexts available by removing other contexts
+			// from the notBoundedChannelContextSet, so we need to ensure those get processed as well.
+			// only once the loop can run with no new contexts added to the visitedContexts set do we
+			// know for sure all possible contexts have been visited.
+			visitedLength = visitedContexts.size;
+			for (const [contextId, context] of this.contexts) {
+				if (!(context instanceof LocalChannelContextBase)) {
+					throw new LoggingError("Should only be called with local channel handles");
+				}
 
-			if (!this.notBoundedChannelContextSet.has(contextId)) {
-				visitor(contextId, context);
+				if (
+					!visitedContexts.has(contextId) &&
+					!this.notBoundedChannelContextSet.has(contextId)
+				) {
+					visitor(contextId, context);
+					visitedContexts.add(contextId);
+				}
 			}
 		}
 	}
@@ -949,10 +1058,10 @@ export class FluidDataStoreRuntime
 	/**
 	 * Submits the signal to be sent to other clients.
 	 * @param type - Type of the signal.
-	 * @param content - Content of the signal.
+	 * @param content - Content of the signal. Should be a JSON serializable object or primitive.
 	 * @param targetClientId - When specified, the signal is only sent to the provided client id.
 	 */
-	public submitSignal(type: string, content: any, targetClientId?: string) {
+	public submitSignal(type: string, content: unknown, targetClientId?: string) {
 		this.verifyNotClosed();
 		return this.dataStoreContext.submitSignal(type, content, targetClientId);
 	}
@@ -975,9 +1084,12 @@ export class FluidDataStoreRuntime
 			return;
 		}
 
-		channel.handle.attachGraph();
+		toFluidHandleInternal(channel.handle).attachGraph();
 
-		assert(this.isAttached, 0x182 /* "Data store should be attached to attach the channel." */);
+		assert(
+			this.isAttached,
+			0x182 /* "Data store should be attached to attach the channel." */,
+		);
 		assert(
 			this.visibilityState === VisibilityState.GloballyVisible,
 			0x2d0 /* "Data store should be globally visible to attach channels." */,
@@ -1037,10 +1149,7 @@ export class FluidDataStoreRuntime
 				// For Operations, find the right channel and trigger resubmission on it.
 				const envelope = content as IEnvelope;
 				const channelContext = this.contexts.get(envelope.address);
-				assert(
-					!!channelContext,
-					0x183 /* "There should be a channel context for the op" */,
-				);
+				assert(!!channelContext, 0x183 /* "There should be a channel context for the op" */);
 				channelContext.reSubmit(envelope.contents, localOpMetadata);
 				break;
 			}
@@ -1066,10 +1175,7 @@ export class FluidDataStoreRuntime
 				// For Operations, find the right channel and trigger resubmission on it.
 				const envelope = content as IEnvelope;
 				const channelContext = this.contexts.get(envelope.address);
-				assert(
-					!!channelContext,
-					0x2ed /* "There should be a channel context for the op" */,
-				);
+				assert(!!channelContext, 0x2ed /* "There should be a channel context for the op" */);
 				channelContext.rollback(envelope.contents, localOpMetadata);
 				break;
 			}
@@ -1083,25 +1189,29 @@ export class FluidDataStoreRuntime
 		switch (type) {
 			case DataStoreMessageType.Attach: {
 				const attachMessage = content.content as IAttachMessage;
-				// local means this node will throw if summarized; this is fine because only interactive clients will have stashed ops
-				const summarizerNodeParams: CreateChildSummarizerNodeParam = {
-					type: CreateSummarizerNodeSource.Local,
-				};
-				const context = this.createRemoteChannelContext(
-					attachMessage,
-					summarizerNodeParams,
+
+				const flatBlobs = new Map<string, ArrayBufferLike>();
+				const snapshotTree = buildSnapshotTree(attachMessage.snapshot.entries, flatBlobs);
+
+				const channelContext = this.createRehydratedLocalChannelContext(
+					attachMessage.id,
+					snapshotTree,
+					flatBlobs,
 				);
-				this.pendingAttach.add(attachMessage.id);
-				this.contexts.set(attachMessage.id, context);
+				await channelContext.getChannel();
+				this.contexts.set(attachMessage.id, channelContext);
+				if (this.attachState === AttachState.Detached) {
+					this.localChannelContextQueue.set(attachMessage.id, channelContext);
+				} else {
+					channelContext.makeVisible();
+					this.pendingAttach.add(attachMessage.id);
+				}
 				return;
 			}
 			case DataStoreMessageType.ChannelOp: {
 				const envelope = content.content as IEnvelope;
 				const channelContext = this.contexts.get(envelope.address);
-				assert(
-					!!channelContext,
-					0x184 /* "There should be a channel context for the op" */,
-				);
+				assert(!!channelContext, 0x184 /* "There should be a channel context for the op" */);
 				await channelContext.getChannel();
 				return channelContext.applyStashedOp(envelope.contents);
 			}
@@ -1113,27 +1223,6 @@ export class FluidDataStoreRuntime
 	private setChannelDirty(address: string): void {
 		this.verifyNotClosed();
 		this.dataStoreContext.setChannelDirty(address);
-	}
-
-	private processChannelOp(
-		message: ISequencedDocumentMessage,
-		local: boolean,
-		localOpMetadata: unknown,
-	) {
-		this.verifyNotClosed();
-
-		const envelope = message.contents as IEnvelope;
-
-		const transformed: ISequencedDocumentMessage = {
-			...message,
-			contents: envelope.contents,
-		};
-
-		const channelContext = this.contexts.get(envelope.address);
-		assert(!!channelContext, 0x185 /* "Channel not found" */);
-		channelContext.processOp(transformed, local, localOpMetadata);
-
-		return channelContext;
 	}
 
 	private attachListener() {
@@ -1183,7 +1272,7 @@ export class FluidDataStoreRuntime
 				fluidDataStoreId: this.id,
 				fluidDataStorePackagePath: this.dataStoreContext.packagePath.join("/"),
 			}),
-			stack: generateStack(),
+			stack: generateStack(30),
 		});
 		this.localChangesTelemetryCount--;
 	}
@@ -1239,7 +1328,8 @@ export class FluidDataStoreRuntime
  * Request handler is only called when data store can't resolve request, i.e. for custom requests.
  * @param Base - base class, inherits from FluidDataStoreRuntime
  * @param requestHandler - request handler to mix in
- * @internal
+ * @legacy
+ * @alpha
  */
 export const mixinRequestHandler = (
 	requestHandler: (request: IRequest, runtime: FluidDataStoreRuntime) => Promise<IResponse>,
@@ -1260,6 +1350,7 @@ export const mixinRequestHandler = (
  * @param handler - handler that returns info about blob to be added to summary.
  * Or undefined not to add anything to summary.
  * @param Base - base class, inherits from FluidDataStoreRuntime
+ * @legacy
  * @alpha
  */
 export const mixinSummaryHandler = (

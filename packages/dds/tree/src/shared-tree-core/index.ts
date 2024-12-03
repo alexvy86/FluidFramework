@@ -6,24 +6,45 @@
 export {
 	onForkTransitive,
 	SharedTreeBranch,
-	SharedTreeBranchChange,
-	SharedTreeBranchEvents,
+	type SharedTreeBranchChange,
+	type SharedTreeBranchEvents,
 	getChangeReplaceType,
 } from "./branch.js";
 
 export {
+	TransactionResult,
+	type Transactor,
+	type TransactionEvents,
+	TransactionStack,
+	type OnPush,
+	type OnPop,
+} from "./transaction.js";
+
+export {
+	type ExplicitCoreCodecVersions,
 	SharedTreeCore,
-	Summarizable,
-	SummaryElementParser,
-	SummaryElementStringifier,
+	type Summarizable,
+	type SummaryElementParser,
+	type SummaryElementStringifier,
 } from "./sharedTreeCore.js";
 
-export { TransactionStack } from "./transactionStack.js";
+export type { ResubmitMachine } from "./resubmitMachine.js";
+export { DefaultResubmitMachine } from "./defaultResubmitMachine.js";
+
+export {
+	type ChangeEnricherReadonlyCheckout,
+	type ChangeEnricherMutableCheckout,
+	NoOpChangeEnricher,
+} from "./changeEnricher.js";
 
 export { makeEditManagerCodec } from "./editManagerCodecs.js";
 export { EditManagerSummarizer } from "./editManagerSummarizer.js";
-export { EditManager, minimumPossibleSequenceNumber, SummaryData } from "./editManager.js";
 export {
+	EditManager,
+	minimumPossibleSequenceNumber,
+	type SummaryData,
+} from "./editManager.js";
+export type {
 	Commit,
 	SeqNumber,
 	SequencedCommit,

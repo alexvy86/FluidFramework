@@ -9,12 +9,13 @@
 
 import {
 	BaseTelemetryProperties,
+	CommonProperties,
 	getLumberBaseProperties,
 	LumberEventName,
 	Lumberjack,
 } from "@fluidframework/server-services-telemetry";
 import { ICheckpointRepository, IDocumentRepository } from "./database";
-import { IDeliState, IDocument, IScribe } from "./document";
+import { IDeliState, IDocument, IScribe, type ICheckpoint } from "./document";
 
 type DocumentLambda = "deli" | "scribe";
 
@@ -171,7 +172,7 @@ export class CheckpointService implements ICheckpointService {
 		}
 	}
 
-	async clearCheckpoint(
+	public async clearCheckpoint(
 		documentId: string,
 		tenantId: string,
 		service: DocumentLambda,
@@ -198,52 +199,80 @@ export class CheckpointService implements ICheckpointService {
 			  }));
 	}
 
-	async restoreFromCheckpoint(
+	public async restoreFromCheckpoint(
 		documentId: string,
 		tenantId: string,
 		service: DocumentLambda,
 		document: IDocument,
-	) {
-		let checkpoint;
-		let lastCheckpoint: IDeliState | IScribe;
+	): Promise<IScribe | IDeliState> {
+		let lastCheckpoint: IDeliState | IScribe | undefined;
 		let isLocalCheckpoint = false;
-		let localLogOffset;
-		let globalLogOffset;
-		let localSequenceNumber;
-		let globalSequenceNumber;
+		let localLogOffset: number | undefined;
+		let globalLogOffset: number | undefined;
+		let localSequenceNumber: number | undefined;
+		let globalSequenceNumber: number | undefined;
+		let checkpointSource = "notFound";
 
 		const restoreFromCheckpointMetric = Lumberjack.newLumberMetric(
 			LumberEventName.RestoreFromCheckpoint,
 		);
-		let checkpointSource = "defaultGlobalCollection";
+		const parseCheckpointString = (
+			checkpointString: string | undefined,
+		): IDeliState | IScribe | undefined =>
+			checkpointString ? (JSON.parse(checkpointString) as IDeliState | IScribe) : undefined;
 
 		try {
 			if (!this.localCheckpointEnabled || !this.checkpointRepository) {
 				// If we cannot checkpoint locally, use document
-				lastCheckpoint = JSON.parse(document[service]);
-				globalLogOffset = lastCheckpoint.logOffset;
-				globalSequenceNumber = lastCheckpoint.sequenceNumber;
+				lastCheckpoint = parseCheckpointString(document[service]);
+				globalLogOffset = lastCheckpoint?.logOffset;
+				globalSequenceNumber = lastCheckpoint?.sequenceNumber;
+				checkpointSource = "defaultGlobalCollection";
 			} else {
 				// Search checkpoints collection for checkpoint
-				try {
-					checkpoint = await this.checkpointRepository.getCheckpoint(
-						documentId,
-						tenantId,
+				const checkpoint: ICheckpoint | undefined =
+					(await this.checkpointRepository
+						.getCheckpoint(documentId, tenantId)
+						.catch((error) => {
+							Lumberjack.error(
+								`Error retrieving local checkpoint`,
+								getLumberBaseProperties(documentId, tenantId),
+							);
+							return undefined;
+						})) ?? undefined;
+
+				const localCheckpoint: IDeliState | IScribe | undefined = parseCheckpointString(
+					checkpoint?.[service],
+				);
+				const globalCheckpoint: IDeliState | IScribe | undefined = parseCheckpointString(
+					document[service],
+				);
+				localLogOffset = localCheckpoint?.logOffset;
+				globalLogOffset = globalCheckpoint?.logOffset;
+				localSequenceNumber = localCheckpoint?.sequenceNumber;
+				globalSequenceNumber = globalCheckpoint?.sequenceNumber;
+
+				if (localCheckpoint && !globalCheckpoint) {
+					// If checkpoint does not exist in document (global), use local
+					Lumberjack.info(
+						`Global checkpoint not found.`,
+						getLumberBaseProperties(documentId, tenantId),
 					);
-				} catch (error) {
-					checkpoint = undefined;
-					Lumberjack.error(
-						`Error retrieving local checkpoint`,
+					lastCheckpoint = localCheckpoint;
+					checkpointSource = "notFoundInGlobalCollection";
+					isLocalCheckpoint = true;
+				} else if (!localCheckpoint && globalCheckpoint) {
+					// If checkpoint does not exist in local, use document (global)
+					Lumberjack.info(
+						`Local checkpoint not found.`,
 						getLumberBaseProperties(documentId, tenantId),
 					);
 					checkpointSource = "notFoundInLocalCollection";
-				}
-
-				if (checkpoint?.[service]) {
-					const localCheckpoint: IDeliState | IScribe = JSON.parse(checkpoint[service]);
-					const globalCheckpoint: IDeliState | IScribe = JSON.parse(document[service]);
-
-					// Compare local and global checkpoints to use latest version
+					lastCheckpoint = globalCheckpoint;
+					isLocalCheckpoint = false;
+				} else if (localCheckpoint && globalCheckpoint) {
+					// If both checkpoints exist,
+					// compare local and global checkpoints to use latest version
 					if (localCheckpoint.sequenceNumber < globalCheckpoint.sequenceNumber) {
 						// if local checkpoint is behind global, use global
 						lastCheckpoint = globalCheckpoint;
@@ -254,25 +283,11 @@ export class CheckpointService implements ICheckpointService {
 						checkpointSource = "latestFoundInLocalCollection";
 						isLocalCheckpoint = true;
 					}
-					localLogOffset = localCheckpoint.logOffset;
-					globalLogOffset = globalCheckpoint.logOffset;
-					localSequenceNumber = localCheckpoint.sequenceNumber;
-					globalSequenceNumber = globalCheckpoint.sequenceNumber;
-				} else {
-					// If checkpoint does not exist, use document
-					Lumberjack.info(
-						`Local checkpoint not found.`,
-						getLumberBaseProperties(documentId, tenantId),
-					);
-					checkpointSource = "notFoundInLocalCollection";
-					lastCheckpoint = JSON.parse(document[service]);
-					globalLogOffset = lastCheckpoint.logOffset;
-					globalSequenceNumber = lastCheckpoint.sequenceNumber;
 				}
 			}
 			restoreFromCheckpointMetric.setProperties({
-				[BaseTelemetryProperties.tenantId]: tenantId,
-				[BaseTelemetryProperties.documentId]: documentId,
+				...getLumberBaseProperties(documentId, tenantId),
+				[CommonProperties.isEphemeralContainer]: document.isEphemeralContainer,
 				service,
 				checkpointSource,
 				retrievedFromLocalDatabase: isLocalCheckpoint,
@@ -296,11 +311,11 @@ export class CheckpointService implements ICheckpointService {
 			restoreFromCheckpointMetric.error(
 				`Error restoring checkpoint from database. Last checkpoint not found.`,
 			);
-			return;
+			throw new Error("Could not restore checkpoint: Last checkpoint not found.");
 		}
 	}
 
-	async getLatestCheckpoint(
+	public async getLatestCheckpoint(
 		tenantId: string,
 		documentId: string,
 		activeClients?: boolean,

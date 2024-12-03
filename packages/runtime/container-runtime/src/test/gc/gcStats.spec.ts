@@ -4,15 +4,17 @@
  */
 
 import { strict as assert } from "assert";
+
 import { ICriticalContainerError } from "@fluidframework/container-definitions";
-import { IGarbageCollectionData } from "@fluidframework/runtime-definitions";
+import { IGarbageCollectionData } from "@fluidframework/runtime-definitions/internal";
 import {
 	MockLogger,
 	MonitoringContext,
 	createChildLogger,
 	mixinMonitoringContext,
-} from "@fluidframework/telemetry-utils";
+} from "@fluidframework/telemetry-utils/internal";
 import { SinonFakeTimers, useFakeTimers } from "sinon";
+
 import {
 	GCNodeType,
 	GarbageCollector,
@@ -74,7 +76,6 @@ describe("Garbage Collection Stats", () => {
 
 		// The runtime to be passed to the garbage collector.
 		const gcRuntime: IGarbageCollectionRuntime = {
-			updateStateBeforeGC: async () => {},
 			getGCData: async (fullGC?: boolean) => defaultGCData,
 			updateUsedRoutes: (usedRoutes: string[]) => {
 				return { totalNodeCount: 0, unusedNodeCount: 0 };
@@ -176,7 +177,7 @@ describe("Garbage Collection Stats", () => {
 		if (lastGCMessage === undefined) {
 			return;
 		}
-		garbageCollector.processMessage(lastGCMessage, true /* local */);
+		garbageCollector.processMessages([lastGCMessage.contents], Date.now(), true /* local */);
 	}
 
 	describe("Mark phase stats", () => {

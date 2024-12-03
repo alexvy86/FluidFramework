@@ -6,15 +6,34 @@
 /* eslint-disable @typescript-eslint/no-non-null-assertion */
 
 import { EventEmitter } from "@fluid-example/example-utils";
-
-import { IMergeTreeDeltaOp, createGroupOp, createRemoveRangeOp } from "@fluidframework/merge-tree";
-import { Marker, ReferenceType, SharedString, TextSegment } from "@fluidframework/sequence";
+import { assert } from "@fluidframework/core-utils/internal";
+import {
+	IMergeTreeDeltaOp,
+	// eslint-disable-next-line import/no-deprecated
+	createGroupOp,
+	createRemoveRangeOp,
+} from "@fluidframework/merge-tree/internal";
+import {
+	Marker,
+	ReferenceType,
+	SharedString,
+	TextSegment,
+} from "@fluidframework/sequence/internal";
 import { exampleSetup } from "prosemirror-example-setup";
 import { DOMSerializer, Schema, Slice } from "prosemirror-model";
 import { addListNodes } from "prosemirror-schema-list";
 import { EditorState, Plugin, Transaction } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
-import { IProseMirrorNode, ProseMirrorTransactionBuilder, sliceToGroupOps } from "./fluidBridge.js";
+
+import {
+	IProseMirrorNode,
+	ProseMirrorTransactionBuilder,
+	nodeTypeKey,
+	sliceToGroupOps,
+	stackTypeBegin,
+	stackTypeEnd,
+	stackTypeKey,
+} from "./fluidBridge.js";
 import { schema } from "./fluidSchema.js";
 import { create as createSelection } from "./selection.js";
 export const IRichTextEditor: keyof IProvideRichTextEditor = "IRichTextEditor";
@@ -92,27 +111,39 @@ export class FluidCollabManager extends EventEmitter implements IRichTextEditor 
 			} else if (Marker.is(segment)) {
 				// TODO are marks applied to the structural nodes as well? Or just inner text?
 
+				const nodeType = segment.properties![nodeTypeKey];
+				const stackType = segment.properties![stackTypeKey];
 				switch (segment.refType) {
 					case ReferenceType.Simple:
-						// TODO consolidate the text segment and simple references
-						const nodeJson: IProseMirrorNode = {
-							type: segment.properties!.type,
-							attrs: segment.properties!.attrs,
-						};
+						if (stackType === stackTypeBegin) {
+							// Create the new node, add it to the top's content, and push it on the stack
+							const newNode = { type: nodeType, content: [] };
+							top.content!.push(newNode);
+							nodeStack.push(newNode);
+						} else if (stackType === stackTypeEnd) {
+							const popped = nodeStack.pop();
+							assert(popped!.type === nodeType, "NestEnd top-node type has wrong type");
+						} else {
+							// TODO consolidate the text segment and simple references
+							const nodeJson: IProseMirrorNode = {
+								type: segment.properties!.type,
+								attrs: segment.properties!.attrs,
+							};
 
-						if (segment.properties) {
-							nodeJson.marks = [];
-							for (const propertyKey of Object.keys(segment.properties)) {
-								if (propertyKey !== "type" && propertyKey !== "attrs") {
-									nodeJson.marks.push({
-										type: propertyKey,
-										value: segment.properties[propertyKey],
-									});
+							if (segment.properties) {
+								nodeJson.marks = [];
+								for (const propertyKey of Object.keys(segment.properties)) {
+									if (propertyKey !== "type" && propertyKey !== "attrs") {
+										nodeJson.marks.push({
+											type: propertyKey,
+											value: segment.properties[propertyKey],
+										});
+									}
 								}
 							}
-						}
 
-						top.content!.push(nodeJson);
+							top.content!.push(nodeJson);
+						}
 						break;
 
 					default:
@@ -245,14 +276,11 @@ export class FluidCollabManager extends EventEmitter implements IRichTextEditor 
 					}
 
 					if (stepAsJson.slice) {
-						const sliceOperations = sliceToGroupOps(
-							from,
-							stepAsJson.slice,
-							this.schema,
-						);
+						const sliceOperations = sliceToGroupOps(from, stepAsJson.slice, this.schema);
 						operations = operations.concat(sliceOperations);
 					}
 
+					// eslint-disable-next-line import/no-deprecated
 					const groupOp = createGroupOp(...operations);
 					this.text.groupOperation(groupOp);
 
@@ -317,6 +345,7 @@ export class FluidCollabManager extends EventEmitter implements IRichTextEditor 
 						operations = operations.concat(sliceOperations);
 					}
 
+					// eslint-disable-next-line import/no-deprecated
 					const groupOp = createGroupOp(...operations);
 					this.text.groupOperation(groupOp);
 

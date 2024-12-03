@@ -4,6 +4,7 @@
  */
 
 import { expect } from 'chai';
+
 import {
 	RestOrArray,
 	filter,
@@ -48,9 +49,9 @@ describe('Common', () => {
 			const key = 42;
 			const value = 'test';
 			map.set(key, value);
-			expect(
-				getOrCreate(map, key, () => expect.fail('should not call value creator for existing values'))
-			).to.equal(value);
+			expect(getOrCreate(map, key, () => expect.fail('should not call value creator for existing values'))).to.equal(
+				value
+			);
 		});
 
 		it('inserts new values', () => {

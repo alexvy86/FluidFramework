@@ -3,24 +3,18 @@
  * Licensed under the MIT License.
  */
 
+import type { ErasedType } from "@fluidframework/core-interfaces";
 import { DiscriminatedUnionDispatcher } from "../../codec/index.js";
+import { type MakeNominal, brand, fail, invertMap } from "../../util/index.js";
 import {
-	Brand,
-	Erased,
-	MakeNominal,
-	brand,
-	brandErased,
-	fail,
-	invertMap,
-} from "../../util/index.js";
-import {
-	FieldKey,
-	FieldKindIdentifier,
-	FieldSchemaFormat,
+	type FieldKey,
+	type FieldKindIdentifier,
+	type FieldSchemaFormat,
 	PersistedValueSchema,
-	TreeNodeSchemaDataFormat,
-	TreeNodeSchemaIdentifier,
+	type TreeNodeSchemaDataFormat,
+	type TreeNodeSchemaIdentifier,
 } from "./format.js";
+import type { Multiplicity } from "./multiplicity.js";
 
 /**
  * Schema for what {@link TreeValue} is allowed on a Leaf node.
@@ -37,11 +31,6 @@ export enum ValueSchema {
 /**
  * Set of allowed tree types.
  * Providing multiple values here allows polymorphism, tagged union style.
- *
- * If not specified, types are unconstrained
- * (equivalent to the set containing every TreeNodeSchemaIdentifier defined in the document).
- *
- * Note that even when unconstrained, children must still be in-schema for their own type.
  *
  * In the future, this could be extended to allow inlining a TreeNodeStoredSchema here
  * (or some similar structural schema system).
@@ -64,18 +53,44 @@ export enum ValueSchema {
  * Care would need to be taken to make sure this is sound for the schema updating mechanisms.
  * @internal
  */
-export type TreeTypeSet = ReadonlySet<TreeNodeSchemaIdentifier> | undefined;
+export type TreeTypeSet = ReadonlySet<TreeNodeSchemaIdentifier>;
 
 /**
- * Specifies which field kind to use.
+ * Declarative portion of a Field Kind.
  *
  * @remarks
- * This is used instead of just the FieldKindIdentifier so that it can be subtyped into a more expressive type with additional information.
- *
- * @internal
+ * Enough info about a field kind to know if a given tree is is schema.
  */
-export interface FieldKindSpecifier<T = FieldKindIdentifier> {
-	identifier: T;
+export interface FieldKindData {
+	readonly identifier: FieldKindIdentifier;
+	readonly multiplicity: Multiplicity;
+}
+
+/**
+ * Everything needed to define what it means for a tree to be in schema.
+ */
+export interface SchemaAndPolicy {
+	readonly schema: StoredSchemaCollection;
+	readonly policy: SchemaPolicy;
+}
+
+/**
+ * Extra data needed to interpret schema.
+ */
+export interface SchemaPolicy {
+	/**
+	 * Policy information about FieldKinds:
+	 * This is typically stored as code, not in documents, and defines how to handle fields based on their kind.
+	 * It is assumed that all users of a document will have exactly the same FieldKind policies,
+	 * though older applications might be missing some,
+	 * and will be unable to process any changes that use those FieldKinds.
+	 */
+	readonly fieldKinds: ReadonlyMap<FieldKindIdentifier, FieldKindData>;
+
+	/**
+	 * If true, new content inserted into the tree should be validated against the stored schema.
+	 */
+	readonly validateSchema: boolean;
 }
 
 /**
@@ -84,12 +99,13 @@ export interface FieldKindSpecifier<T = FieldKindIdentifier> {
  * @internal
  */
 export interface TreeFieldStoredSchema {
-	readonly kind: FieldKindSpecifier;
+	readonly kind: FieldKindIdentifier;
+
 	/**
 	 * The set of allowed child types.
 	 * If not specified, types are unconstrained.
 	 */
-	readonly types?: TreeTypeSet;
+	readonly types: TreeTypeSet;
 }
 
 /**
@@ -99,8 +115,6 @@ export interface TreeFieldStoredSchema {
  * This mainly show up in:
  * 1. The root default field for documents.
  * 2. The schema used for out of schema fields (which thus must be empty/not exist) on object and leaf nodes.
- *
- * @internal
  */
 export const forbiddenFieldKindIdentifier = "Forbidden";
 
@@ -110,18 +124,34 @@ export const forbiddenFieldKindIdentifier = "Forbidden";
  */
 export const storedEmptyFieldSchema: TreeFieldStoredSchema = {
 	// This kind requires the field to be empty.
-	kind: { identifier: brand(forbiddenFieldKindIdentifier) },
+	kind: brand(forbiddenFieldKindIdentifier),
 	// This type set also forces the field to be empty not not allowing any types as all.
 	types: new Set(),
 };
 
 /**
+ * Identifier used for the FieldKind for fields of type identifier.
+ */
+export const identifierFieldKindIdentifier = "Identifier";
+
+/**
  * Opaque type erased handle to the encoded representation of the contents of a stored schema.
  * @internal
  */
-export interface ErasedTreeNodeSchemaDataFormat extends Erased<"TreeNodeSchemaDataFormat"> {}
-export interface BrandedTreeNodeSchemaDataFormat
-	extends Brand<TreeNodeSchemaDataFormat, ErasedTreeNodeSchemaDataFormat> {}
+export interface ErasedTreeNodeSchemaDataFormat
+	extends ErasedType<"TreeNodeSchemaDataFormat"> {}
+
+function toErasedTreeNodeSchemaDataFormat(
+	data: TreeNodeSchemaDataFormat,
+): ErasedTreeNodeSchemaDataFormat {
+	return data as unknown as ErasedTreeNodeSchemaDataFormat;
+}
+
+export function toTreeNodeSchemaDataFormat(
+	data: ErasedTreeNodeSchemaDataFormat,
+): TreeNodeSchemaDataFormat {
+	return data as unknown as TreeNodeSchemaDataFormat;
+}
 
 /**
  * @internal
@@ -136,6 +166,11 @@ export abstract class TreeNodeStoredSchema {
 	 * and is runtime validated by the codec.
 	 */
 	public abstract encode(): ErasedTreeNodeSchemaDataFormat;
+
+	/**
+	 * Returns the schema for the provided field.
+	 */
+	public abstract getFieldSchema(field: FieldKey): TreeFieldStoredSchema;
 }
 
 /**
@@ -147,7 +182,7 @@ export class ObjectNodeStoredSchema extends TreeNodeStoredSchema {
 	 * Schema for fields with keys scoped to this TreeNodeStoredSchema.
 	 * This refers to the TreeFieldStoredSchema directly
 	 * (as opposed to just supporting FieldSchemaIdentifier and having a central FieldKey -\> TreeFieldStoredSchema map).
-	 * This allows os short friendly field keys which can ergonomically used as field names in code.
+	 * This allows us short friendly field keys which can be ergonomically used as field names in code.
 	 * It also interoperates well with mapFields being used as a map with arbitrary data as keys.
 	 */
 	public constructor(
@@ -168,9 +203,13 @@ export class ObjectNodeStoredSchema extends TreeNodeStoredSchema {
 				value: encodeFieldSchema(this.objectNodeFields.get(key) ?? fail("missing field")),
 			});
 		}
-		return brandErased<BrandedTreeNodeSchemaDataFormat>({
+		return toErasedTreeNodeSchemaDataFormat({
 			object: fieldsObject,
 		});
+	}
+
+	public override getFieldSchema(field: FieldKey): TreeFieldStoredSchema {
+		return this.objectNodeFields.get(field) ?? storedEmptyFieldSchema;
 	}
 }
 
@@ -180,10 +219,10 @@ export class ObjectNodeStoredSchema extends TreeNodeStoredSchema {
 export class MapNodeStoredSchema extends TreeNodeStoredSchema {
 	/**
 	 * @param mapFields -
-	 * Allows using using the fields as a map, with the keys being
+	 * Allows using the fields as a map, with the keys being
 	 * FieldKeys and the values being constrained by this TreeFieldStoredSchema.
 	 * Usually `FieldKind.Value` should NOT be used here
-	 * since no nodes can ever be in schema are in schema if you use `FieldKind.Value` here
+	 * since no nodes can ever be in schema if you use `FieldKind.Value` here
 	 * (that would require infinite children).
 	 */
 	public constructor(public readonly mapFields: TreeFieldStoredSchema) {
@@ -191,9 +230,13 @@ export class MapNodeStoredSchema extends TreeNodeStoredSchema {
 	}
 
 	public override encode(): ErasedTreeNodeSchemaDataFormat {
-		return brandErased<BrandedTreeNodeSchemaDataFormat>({
+		return toErasedTreeNodeSchemaDataFormat({
 			map: encodeFieldSchema(this.mapFields),
 		});
+	}
+
+	public override getFieldSchema(field: FieldKey): TreeFieldStoredSchema {
+		return this.mapFields;
 	}
 }
 
@@ -218,9 +261,13 @@ export class LeafNodeStoredSchema extends TreeNodeStoredSchema {
 	}
 
 	public override encode(): ErasedTreeNodeSchemaDataFormat {
-		return brandErased<BrandedTreeNodeSchemaDataFormat>({
+		return toErasedTreeNodeSchemaDataFormat({
 			leaf: encodeValueSchema(this.leafValue),
 		});
+	}
+
+	public override getFieldSchema(field: FieldKey): TreeFieldStoredSchema {
+		return storedEmptyFieldSchema;
 	}
 }
 
@@ -230,7 +277,9 @@ export const storedSchemaDecodeDispatcher: DiscriminatedUnionDispatcher<
 	TreeNodeStoredSchema
 > = new DiscriminatedUnionDispatcher({
 	leaf: (data: PersistedValueSchema) => new LeafNodeStoredSchema(decodeValueSchema(data)),
-	object: (data: Record<TreeNodeSchemaIdentifier, FieldSchemaFormat>) => {
+	object: (
+		data: Record<TreeNodeSchemaIdentifier, FieldSchemaFormat>,
+	): TreeNodeStoredSchema => {
 		const map = new Map();
 		for (const [key, value] of Object.entries(data)) {
 			map.set(key, decodeFieldSchema(value));
@@ -259,20 +308,18 @@ function decodeValueSchema(inMemory: PersistedValueSchema): ValueSchema {
 }
 
 export function encodeFieldSchema(schema: TreeFieldStoredSchema): FieldSchemaFormat {
-	const out: FieldSchemaFormat = {
-		kind: schema.kind.identifier,
+	return {
+		kind: schema.kind,
+		// Types are sorted by identifier to improve stability of persisted data to increase chance of schema blob reuse.
+		types: [...schema.types].sort(),
 	};
-	if (schema.types !== undefined) {
-		out.types = [...schema.types];
-	}
-	return out;
 }
 
 export function decodeFieldSchema(schema: FieldSchemaFormat): TreeFieldStoredSchema {
 	const out: TreeFieldStoredSchema = {
 		// TODO: maybe provide actual FieldKind objects here, error on unrecognized kinds.
-		kind: { identifier: schema.kind },
-		types: schema.types === undefined ? undefined : new Set(schema.types),
+		kind: schema.kind,
+		types: new Set(schema.types),
 	};
 	return out;
 }

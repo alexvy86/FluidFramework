@@ -20,6 +20,11 @@ module.exports = (env) => {
 				main: path.join(sourcePath, "index.tsx"),
 			},
 			resolve: {
+				extensionAlias: {
+					".cjs": [".cts", ".cjs"],
+					".js": [".ts", ".tsx", ".js"],
+					".mjs": [".mts", ".mjs"],
+				},
 				extensions: [".ts", ".tsx", ".js", ".cjs", ".mjs"],
 			},
 			module: {
@@ -56,7 +61,7 @@ module.exports = (env) => {
 			},
 			plugins: [
 				new webpack.ProvidePlugin({
-					process: "process/browser",
+					process: "process/browser.js",
 				}),
 				new HtmlWebpackPlugin({
 					template: path.join(sourcePath, "index.html"),

@@ -3,7 +3,12 @@
  * Licensed under the MIT License.
  */
 
-import { IMemoryTestObject, benchmarkMemory } from "@fluid-tools/benchmark";
+import {
+	type IMemoryTestObject,
+	benchmarkMemory,
+	isInPerformanceTestingMode,
+} from "@fluid-tools/benchmark";
+
 import { SubSequence } from "../../sharedSequence.js";
 
 describe("SharedSequence memory usage", () => {
@@ -30,7 +35,7 @@ describe("SharedSequence memory usage", () => {
 			title = "Create empty SharedSequence";
 			minSampleCount = 500;
 
-			private segment = new SubSequence<number>([]);
+			segment = new SubSequence<number>([]);
 
 			async run() {
 				this.segment = new SubSequence<number>([]);
@@ -38,7 +43,10 @@ describe("SharedSequence memory usage", () => {
 		})(),
 	);
 
-	const numbersOfEntriesForTests = [100, 1000, 10_000];
+	const numbersOfEntriesForTests = isInPerformanceTestingMode
+		? [100, 1000, 10_000]
+		: // When not measuring perf, use a single smaller data size so the tests run faster.
+			[10];
 
 	numbersOfEntriesForTests.forEach((x) => {
 		benchmarkMemory(

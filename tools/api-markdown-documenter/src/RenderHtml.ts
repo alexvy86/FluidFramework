@@ -2,18 +2,19 @@
  * Copyright (c) Microsoft Corporation and contributors. All rights reserved.
  * Licensed under the MIT License.
  */
+
 import * as Path from "node:path";
 
 import { FileSystem, NewlineKind } from "@rushstack/node-core-library";
 
+import type { FileSystemConfiguration } from "./FileSystemConfiguration.js";
+import type { Logger } from "./Logging.js";
 import {
 	type ApiItemTransformationConfiguration,
 	transformApiModel,
 } from "./api-item-transforms/index.js";
-import { type DocumentNode } from "./documentation-domain/index.js";
-import { type Logger } from "./Logging.js";
-import { type HtmlRenderConfiguration, renderDocumentAsHtml } from "./renderers/index.js";
-import { type FileSystemConfiguration } from "./FileSystemConfiguration.js";
+import type { DocumentNode } from "./documentation-domain/index.js";
+import { type RenderDocumentAsHtmlConfig, renderDocumentAsHtml } from "./renderers/index.js";
 
 /**
  * Renders the provided model and its contents, and writes each document to a file on disk.
@@ -38,7 +39,7 @@ import { type FileSystemConfiguration } from "./FileSystemConfiguration.js";
  */
 export async function renderApiModelAsHtml(
 	transformConfig: Omit<ApiItemTransformationConfiguration, "logger">,
-	renderConfig: Omit<HtmlRenderConfiguration, "logger">,
+	renderConfig: Omit<RenderDocumentAsHtmlConfig, "logger">,
 	fileSystemConfig: FileSystemConfiguration,
 	logger?: Logger,
 ): Promise<void> {
@@ -63,7 +64,7 @@ export async function renderApiModelAsHtml(
  */
 export async function renderDocumentsAsHtml(
 	documents: DocumentNode[],
-	renderConfig: Omit<HtmlRenderConfiguration, "logger">,
+	renderConfig: Omit<RenderDocumentAsHtmlConfig, "logger">,
 	fileSystemConfig: FileSystemConfiguration,
 	logger?: Logger,
 ): Promise<void> {

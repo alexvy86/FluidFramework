@@ -5,7 +5,7 @@
 
 import { expect } from "chai";
 
-import { type ContainerDevtoolsProps } from "../ContainerDevtools.js";
+import type { ContainerDevtoolsProps } from "../ContainerDevtools.js";
 import {
 	FluidDevtools,
 	accessBeforeInitializeErrorText,
@@ -13,6 +13,7 @@ import {
 	initializeDevtools,
 	useAfterDisposeErrorText,
 } from "../FluidDevtools.js";
+
 import { createMockContainer } from "./Utilities.js";
 
 // TODOs:

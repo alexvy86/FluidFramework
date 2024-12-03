@@ -3,13 +3,20 @@
  * Licensed under the MIT License.
  */
 
-import { assert } from "@fluidframework/core-utils";
+import { assert } from "@fluidframework/core-utils/internal";
 import {
 	IChannelAttributes,
 	IFluidDataStoreRuntime,
 	Serializable,
-} from "@fluidframework/datastore-definitions";
-import { BaseSegment, IJSONSegment, ISegment, PropertySet } from "@fluidframework/merge-tree";
+} from "@fluidframework/datastore-definitions/internal";
+import {
+	BaseSegment,
+	IJSONSegment,
+	ISegment,
+	PropertySet,
+} from "@fluidframework/merge-tree/internal";
+
+// eslint-disable-next-line import/no-deprecated
 import { SharedSegmentSequence } from "./sequence.js";
 
 const MaxRun = 128;
@@ -33,19 +40,18 @@ export class SubSequence<T> extends BaseSegment {
 	}
 	public static fromJSONObject<U>(spec: any) {
 		if (spec && typeof spec === "object" && "items" in spec) {
-			const segment = new SubSequence<U>(spec.items);
-			if (spec.props) {
-				segment.addProperties(spec.props);
-			}
-			return segment;
+			return new SubSequence<U>(spec.items, spec.props);
 		}
 		return undefined;
 	}
 
 	public readonly type = SubSequence.typeString;
 
-	constructor(public items: Serializable<T>[]) {
-		super();
+	constructor(
+		public items: Serializable<T>[],
+		props?: PropertySet,
+	) {
+		super(props);
 		this.cachedLength = items.length;
 	}
 
@@ -113,6 +119,7 @@ export class SubSequence<T> extends BaseSegment {
  * @deprecated SharedSequence will be removed in a upcoming release. It has been moved to the fluid-experimental/sequence-deprecated package
  * @internal
  */
+// eslint-disable-next-line import/no-deprecated
 export class SharedSequence<T> extends SharedSegmentSequence<SubSequence<T>> {
 	constructor(
 		document: IFluidDataStoreRuntime,
@@ -129,10 +136,7 @@ export class SharedSequence<T> extends SharedSegmentSequence<SubSequence<T>> {
 	 * @param props - Optional. Properties to set on the inserted items.
 	 */
 	public insert(pos: number, items: Serializable<T>[], props?: PropertySet) {
-		const segment = new SubSequence<T>(items);
-		if (props) {
-			segment.addProperties(props);
-		}
+		const segment = new SubSequence<T>(items, props);
 		this.client.insertSegmentLocal(pos, segment);
 	}
 

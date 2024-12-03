@@ -16,6 +16,7 @@ import {
 	ISequencedProposal,
 	MessageType,
 } from "@fluidframework/protocol-definitions";
+
 import { IQuorumSnapshot, Quorum } from "./quorum";
 
 /**
@@ -120,8 +121,7 @@ export class ProtocolOpHandler implements IProtocolHandler {
 				break;
 
 			case MessageType.Propose:
-				// back-compat: ADO #1385: This should become unconditional eventually.
-				// Can be done only after Container.processRemoteMessage() stops parsing content!
+				// TODO: Update callers to stop parsing the contents and do it here unconditionally
 				if (typeof message.contents === "string") {
 					message.contents = JSON.parse(message.contents);
 				}
@@ -159,15 +159,16 @@ export class ProtocolOpHandler implements IProtocolHandler {
 
 		if (scrubUserData) {
 			// In place, remove any identifying client information
-			snapshot.members.forEach((member) => {
-				member[1] = {
-					...member[1],
+			snapshot.members = snapshot.members.map(([id, sequencedClient]) => [
+				id,
+				{
+					...sequencedClient,
 					client: {
-						...member[1].client,
+						...sequencedClient.client,
 						user: { id: "" },
 					},
-				};
-			});
+				},
+			]);
 		}
 
 		return {

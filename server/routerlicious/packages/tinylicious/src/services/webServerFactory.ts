@@ -31,11 +31,11 @@ class SocketIoSocket implements IWebSocket {
 		return this.socket.join(id);
 	}
 
-	public async emit(event: string, ...args: any[]) {
+	public emit(event: string, ...args: any[]) {
 		this.socket.emit(event, ...args);
 	}
 
-	public async emitToRoom(roomId: string, event: string, ...args: any[]) {
+	public emitToRoom(roomId: string, event: string, ...args: any[]) {
 		this.socket.nsp.to(roomId).emit(event, ...args);
 	}
 
@@ -70,8 +70,8 @@ class SocketIoServer extends EventEmitter implements IWebSocketServer {
 		});
 	}
 
-	public async close(): Promise<void> {
-		await new Promise<void>((resolve) => this.io.close(() => resolve()));
+	public close(): Promise<void> {
+		return this.io.close();
 	}
 }
 

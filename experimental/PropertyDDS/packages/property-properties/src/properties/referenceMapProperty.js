@@ -9,6 +9,7 @@
 const { PathHelper, TypeIdHelper } = require("@fluid-experimental/property-changeset");
 const { MSG } = require("@fluid-experimental/property-common").constants;
 const _ = require("lodash");
+
 const { BaseProperty } = require("./baseProperty");
 const { ContainerProperty } = require("./containerProperty");
 const { ReferenceProperty } = require("./referenceProperty");
@@ -169,7 +170,9 @@ export class ReferenceMapProperty extends StringMapProperty {
 	 * @returns {boolean} True if the reference is valid, otherwise false.
 	 */
 	isReferenceValid(in_key) {
-		return this.has(in_key) && (this.getValue(in_key) === "" || this.get(in_key) !== undefined);
+		return (
+			this.has(in_key) && (this.getValue(in_key) === "" || this.get(in_key) !== undefined)
+		);
 	}
 
 	/**
@@ -189,13 +192,13 @@ export class ReferenceMapProperty extends StringMapProperty {
 		return in_segmentType === PathHelper.TOKEN_TYPES.ARRAY_TOKEN
 			? this.get(in_segment, {
 					referenceResolutionMode: BaseProperty.REFERENCE_RESOLUTION.NEVER,
-			  })
+				})
 			: // Everything else is handled by the implementation in the base property
-			  AbstractStaticCollectionProperty.prototype._resolvePathSegment.call(
+				AbstractStaticCollectionProperty.prototype._resolvePathSegment.call(
 					this,
 					in_segment,
 					in_segmentType,
-			  );
+				);
 	}
 }
 

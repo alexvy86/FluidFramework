@@ -4,34 +4,51 @@
  */
 
 export {
-	ISharedTree,
+	type ISharedTree,
 	SharedTreeFactory,
-	SharedTreeOptions,
+	type SharedTreeOptions,
 	SharedTree,
+	getBranch,
 	ForestType,
-	SharedTreeContentSnapshot,
+	type SharedTreeContentSnapshot,
+	type SharedTreeFormatOptions,
+	SharedTreeFormatVersion,
+	buildConfiguredForest,
+	defaultSharedTreeOptions,
+	type ForestOptions,
 } from "./sharedTree.js";
 
 export {
 	createTreeCheckout,
 	TreeCheckout,
-	ITreeCheckout,
-	runSynchronous,
-	CheckoutEvents,
-	ITransaction,
-	ITreeCheckoutFork,
+	type ITreeCheckout,
+	type CheckoutEvents,
+	type ITreeCheckoutFork,
+	type BranchableTree,
+	type TreeBranchFork,
 } from "./treeCheckout.js";
 
+export { type TreeStoredContent } from "./schematizeTree.js";
+
+export { SchematizingSimpleTreeView } from "./schematizingTreeView.js";
+
+export { CheckoutFlexTreeView } from "./checkoutFlexTreeView.js";
+
+export type { ISharedTreeEditor, ISchemaEditor } from "./sharedTreeEditBuilder.js";
+
 export {
-	SchematizeConfiguration,
-	TreeContent,
-	InitializeAndSchematizeConfiguration,
-	SchemaConfiguration,
-	buildTreeConfiguration,
-} from "./schematizeTree.js";
+	treeApi as Tree,
+	type TreeApi,
+	type TransactionConstraint,
+	type NodeInDocumentConstraint,
+	type RunTransaction,
+	rollback,
+} from "./treeApi.js";
 
-export { FlexTreeView, CheckoutFlexTreeView, ITreeViewFork } from "./treeView.js";
+export { TreeAlpha } from "./treeApiAlpha.js";
 
-export { ISharedTreeEditor, ISchemaEditor } from "./sharedTreeEditBuilder.js";
-
-export { treeApi as Tree, TreeApi } from "./treeApi.js";
+export {
+	independentInitializedView,
+	type ViewContent,
+	independentView,
+} from "./independentView.js";

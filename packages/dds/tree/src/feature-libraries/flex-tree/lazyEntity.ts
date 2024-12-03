@@ -3,21 +3,30 @@
  * Licensed under the MIT License.
  */
 
-import { assert } from "@fluidframework/core-utils";
+import { assert } from "@fluidframework/core-utils/internal";
+
 import {
-	ITreeSubscriptionCursor,
+	type ITreeSubscriptionCursor,
 	ITreeSubscriptionCursorState,
 	TreeNavigationResult,
 } from "../../core/index.js";
-import { IDisposable, disposeSymbol } from "../../util/index.js";
-import { Context } from "./context.js";
-import { FlexTreeEntity, FlexTreeEntityKind, TreeStatus, flexTreeMarker } from "./flexTreeTypes.js";
+import { type IDisposable, disposeSymbol } from "../../util/index.js";
+
+import type { Context } from "./context.js";
+import {
+	type FlexTreeEntity,
+	type FlexTreeEntityKind,
+	flexTreeMarker,
+} from "./flexTreeTypes.js";
 
 export const prepareForEditSymbol = Symbol("prepareForEdit");
 export const isFreedSymbol = Symbol("isFreed");
 export const tryMoveCursorToAnchorSymbol = Symbol("tryMoveCursorToAnchor");
 export const forgetAnchorSymbol = Symbol("forgetAnchor");
 export const cursorSymbol = Symbol("cursor");
+/**
+ * Symbol used to access the (generic) anchor of a {@link LazyEntity}.
+ */
 export const anchorSymbol = Symbol("anchor");
 
 /**
@@ -34,20 +43,17 @@ export function assertFlexTreeEntityNotFreed(entity: FlexTreeEntity): void {
 /**
  * This is a base class for lazy (cursor based) UntypedEntity implementations, which uniformly handles cursors and anchors.
  */
-export abstract class LazyEntity<TSchema = unknown, TAnchor = unknown>
-	implements FlexTreeEntity<TSchema>, IDisposable
-{
+export abstract class LazyEntity<TAnchor = unknown> implements FlexTreeEntity, IDisposable {
 	readonly #lazyCursor: ITreeSubscriptionCursor;
 	public readonly [anchorSymbol]: TAnchor;
 
 	protected constructor(
 		public readonly context: Context,
-		public readonly schema: TSchema,
 		cursor: ITreeSubscriptionCursor,
 		anchor: TAnchor,
 	) {
 		this[anchorSymbol] = anchor;
-		this.#lazyCursor = cursor.fork();
+		this.#lazyCursor = cursor.fork("LazyEntity Fork");
 		context.withCursors.add(this);
 		this.context.withAnchors.add(this);
 	}
@@ -55,12 +61,10 @@ export abstract class LazyEntity<TSchema = unknown, TAnchor = unknown>
 	public abstract boxedIterator(): IterableIterator<FlexTreeEntity>;
 	public abstract get [flexTreeMarker](): FlexTreeEntityKind;
 
-	public abstract treeStatus(): TreeStatus;
-
 	public [disposeSymbol](): void {
 		this.#lazyCursor.free();
 		this.context.withCursors.delete(this);
-		this[forgetAnchorSymbol](this[anchorSymbol]);
+		this[forgetAnchorSymbol]();
 		this.context.withAnchors.delete(this);
 	}
 
@@ -81,12 +85,12 @@ export abstract class LazyEntity<TSchema = unknown, TAnchor = unknown>
 			);
 			assert(
 				this[anchorSymbol] !== undefined,
-				0x779 /* EditableTree should have an anchor if it does not have a cursor */,
+				0x779 /* FlexTree should have an anchor if it does not have a cursor */,
 			);
-			const result = this[tryMoveCursorToAnchorSymbol](this[anchorSymbol], this.#lazyCursor);
+			const result = this[tryMoveCursorToAnchorSymbol](this.#lazyCursor);
 			assert(
 				result === TreeNavigationResult.Ok,
-				0x77a /* It is invalid to access an EditableTree node which no longer exists */,
+				0x77a /* It is invalid to access a FlexTree node which no longer exists */,
 			);
 			this.context.withCursors.add(this);
 		}
@@ -94,21 +98,11 @@ export abstract class LazyEntity<TSchema = unknown, TAnchor = unknown>
 	}
 
 	protected abstract [tryMoveCursorToAnchorSymbol](
-		anchor: TAnchor,
 		cursor: ITreeSubscriptionCursor,
 	): TreeNavigationResult;
 
 	/**
 	 * Called when disposing of this target, iff it has an anchor.
 	 */
-	protected abstract [forgetAnchorSymbol](anchor: TAnchor): void;
+	protected abstract [forgetAnchorSymbol](): void;
 }
-
-/**
- * Prevent Entities from inheriting members from Object.prototype including:
- * '__defineGetter__', '__defineSetter__', '__lookupGetter__', '__lookupSetter__', '__proto__',
- * 'hasOwnProperty', 'isPrototypeOf', 'valueOf', 'propertyIsEnumerable', 'toLocaleString' and 'toString'.
- *
- * This opens up more options for field names on struct nodes.
- */
-Object.setPrototypeOf(LazyEntity.prototype, null);

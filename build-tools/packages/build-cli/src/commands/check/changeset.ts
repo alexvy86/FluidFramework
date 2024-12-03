@@ -4,11 +4,10 @@
  */
 
 import { Flags } from "@oclif/core";
-import chalk from "chalk";
+import chalk from "picocolors";
 import { sortPackageJson as sortJson } from "sort-package-json";
 
-import { BaseCommand } from "../../base";
-import { Repository } from "../../library";
+import { BaseCommand, Repository } from "../../library/index.js";
 
 export default class CheckChangesetCommand extends BaseCommand<typeof CheckChangesetCommand> {
 	static readonly summary =

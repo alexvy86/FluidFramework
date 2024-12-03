@@ -4,9 +4,10 @@
  */
 
 import { IRequest } from "@fluidframework/core-interfaces";
-import { assert } from "@fluidframework/core-utils";
-import { IResolvedUrl, IUrlResolver } from "@fluidframework/driver-definitions";
-import { IUser } from "@fluidframework/protocol-definitions";
+import { assert } from "@fluidframework/core-utils/internal";
+import { IUser } from "@fluidframework/driver-definitions";
+import { IResolvedUrl, IUrlResolver } from "@fluidframework/driver-definitions/internal";
+
 import { Provider } from "./nconf.cjs";
 
 const r11sServers = [
@@ -78,9 +79,7 @@ export class RouterliciousUrlResolver implements IUrlResolver {
 		let fluidUrl =
 			"https://" +
 			`${
-				this.config
-					? new URL(this.config.provider.get("worker:serverUrl")).host
-					: serverSuffix
+				this.config ? new URL(this.config.provider.get("worker:serverUrl")).host : serverSuffix
 			}/` +
 			`${encodeURIComponent(tenantId)}/` +
 			`${encodeURIComponent(documentId)}`;
@@ -140,7 +139,10 @@ export class RouterliciousUrlResolver implements IUrlResolver {
 		return resolved;
 	}
 
-	public async getAbsoluteUrl(resolvedUrl: IResolvedUrl, relativeUrl: string): Promise<string> {
+	public async getAbsoluteUrl(
+		resolvedUrl: IResolvedUrl,
+		relativeUrl: string,
+	): Promise<string> {
 		const parsedUrl = new URL(resolvedUrl.url);
 		assert(!!parsedUrl.pathname, 0x0b9 /* "PathName should exist" */);
 		const [, tenantId, documentId] = parsedUrl.pathname.split("/");

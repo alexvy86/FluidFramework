@@ -10,10 +10,11 @@ export {
 	ISummaryConfigurationDisableSummarizer,
 	ISummaryConfigurationDisableHeuristics,
 	IContainerRuntimeOptions,
-	isRuntimeMessage,
-	RuntimeMessage,
+	loadContainerRuntime,
+	LoadContainerRuntimeParams,
 	agentSchedulerId,
 	ContainerRuntime,
+	DeletedResponseHeaderKey,
 	TombstoneResponseHeaderKey,
 	InactiveResponseHeaderKey,
 	ISummaryConfiguration,
@@ -21,23 +22,19 @@ export {
 	ICompressionRuntimeOptions,
 	CompressionAlgorithms,
 	RuntimeHeaderData,
+	disabledCompressionConfig,
 } from "./containerRuntime.js";
 export {
 	ContainerMessageType,
-	ContainerRuntimeMessage,
-	IContainerRuntimeMessageCompatDetails,
-	CompatModeBehavior,
-	RecentlyAddedContainerRuntimeMessageDetails,
 	UnknownContainerRuntimeMessage,
 } from "./messageTypes.js";
-export { IBlobManagerLoadInfo } from "./blobManager.js";
+export { IBlobManagerLoadInfo } from "./blobManager/index.js";
 export { FluidDataStoreRegistry } from "./dataStoreRegistry.js";
 export {
 	detectOutboundReferences,
 	RuntimeHeaders,
 	ChannelCollectionFactory,
 	AllowTombstoneRequestHeaderKey,
-	AllowInactiveRequestHeaderKey,
 } from "./channelCollection.js";
 export {
 	GCNodeType,
@@ -47,6 +44,7 @@ export {
 	IGCRuntimeOptions,
 	IMarkPhaseStats,
 	ISweepPhaseStats,
+	IGCNodeUpdatedProps,
 	IGCStats,
 } from "./gc/index.js";
 export {
@@ -95,9 +93,21 @@ export {
 	ICancellableSummarizerController,
 	SubmitSummaryFailureData,
 	SummaryStage,
-	IRetriableFailureResult,
+	IRetriableFailureError,
 	ISummarizeEventProps,
 	IdCompressorMode,
+	IDocumentSchema,
+	DocumentSchemaValueType,
+	IDocumentSchemaCurrent,
+	currentDocumentVersionSchema,
+	DocumentsSchemaController,
+	IDocumentSchemaChangeMessage,
+	IDocumentSchemaFeatures,
+	ReadFluidDataStoreAttributes,
+	IFluidDataStoreAttributes0,
+	IFluidDataStoreAttributes1,
+	IFluidDataStoreAttributes2,
+	OmitAttributesVersions,
 } from "./summary/index.js";
 export { IChunkedOp, unpackRuntimeMessage } from "./opLifecycle/index.js";
 export { ChannelCollection } from "./channelCollection.js";

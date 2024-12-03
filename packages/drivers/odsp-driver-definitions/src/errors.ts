@@ -4,14 +4,15 @@
  */
 
 import {
-	DriverError,
 	DriverErrorTypes,
 	IDriverErrorBase,
-} from "@fluidframework/driver-definitions";
+	DriverError,
+} from "@fluidframework/driver-definitions/internal";
 
 /**
  * ODSP Error types.
  * Different error types that may be thrown by the ODSP driver.
+ * @legacy
  * @alpha
  */
 export const OdspErrorTypes = {
@@ -63,11 +64,13 @@ export const OdspErrorTypes = {
 	blockedIPAddress: "blockedIPAddress",
 } as const;
 /**
+ * @legacy
  * @alpha
  */
 export type OdspErrorTypes = (typeof OdspErrorTypes)[keyof typeof OdspErrorTypes];
 
 /**
+ * @legacy
  * @alpha
  */
 export interface IOdspErrorAugmentations {
@@ -92,13 +95,17 @@ export interface IOdspErrorAugmentations {
 /**
  * Base interface for all errors and warnings
  * Superset of IDriverErrorBase, but with Odsp-specific errorType and properties
+ * @legacy
  * @alpha
  */
-export interface IOdspError extends Omit<IDriverErrorBase, "errorType">, IOdspErrorAugmentations {
+export interface IOdspError
+	extends Omit<IDriverErrorBase, "errorType">,
+		IOdspErrorAugmentations {
 	readonly errorType: OdspErrorTypes;
 }
 
 /**
+ * @legacy
  * @alpha
  */
 export type OdspError = IOdspError | (DriverError & IOdspErrorAugmentations);

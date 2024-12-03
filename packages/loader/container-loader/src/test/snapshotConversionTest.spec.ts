@@ -3,8 +3,10 @@
  * Licensed under the MIT License.
  */
 
-import { strict as assert } from "assert";
-import { ISummaryTree, SummaryType } from "@fluidframework/protocol-definitions";
+import { strict as assert } from "node:assert";
+
+import { ISummaryTree, SummaryType } from "@fluidframework/driver-definitions";
+
 import {
 	combineAppAndProtocolSummary,
 	getSnapshotTreeAndBlobsFromSerializedContainer,

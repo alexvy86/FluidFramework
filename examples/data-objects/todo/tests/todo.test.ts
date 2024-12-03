@@ -3,7 +3,7 @@
  * Licensed under the MIT License.
  */
 
-import { retryWithEventualValue } from "@fluidframework/test-utils";
+import { retryWithEventualValue } from "@fluidframework/test-utils/internal";
 import { globals } from "../jest.config.cjs";
 
 describe("ToDo", () => {
@@ -11,9 +11,7 @@ describe("ToDo", () => {
 		retryWithEventualValue(
 			() =>
 				page.evaluate((i: number) => {
-					const openInNewTabButtons = document.querySelectorAll(
-						"button[name=OpenInNewTab]",
-					);
+					const openInNewTabButtons = document.querySelectorAll("button[name=OpenInNewTab]");
 					const button = openInNewTabButtons[i] as HTMLDivElement;
 					if (button) {
 						// TODO: Would be better to actually click the button and verify it opens in a

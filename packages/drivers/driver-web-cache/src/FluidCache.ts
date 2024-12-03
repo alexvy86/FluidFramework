@@ -4,19 +4,20 @@
  */
 
 import { ITelemetryBaseLogger } from "@fluidframework/core-interfaces";
-import { assert } from "@fluidframework/core-utils";
+import { assert } from "@fluidframework/core-utils/internal";
 import {
 	ICacheEntry,
 	IFileEntry,
 	IPersistedCache,
 	maximumCacheDurationMs,
-} from "@fluidframework/odsp-driver-definitions";
+} from "@fluidframework/odsp-driver-definitions/internal";
 import {
 	ITelemetryLoggerExt,
 	UsageError,
 	createChildLogger,
-} from "@fluidframework/telemetry-utils";
+} from "@fluidframework/telemetry-utils/internal";
 import { IDBPDatabase } from "idb";
+
 import {
 	FluidCacheDBSchema,
 	FluidDriverObjectStoreName,
@@ -38,6 +39,7 @@ interface StorageQuotaUsageDetails {
 }
 
 /**
+ * @legacy
  * @alpha
  */
 export interface FluidCacheConfig {
@@ -71,6 +73,7 @@ export interface FluidCacheConfig {
 
 /**
  * A cache that can be used by the Fluid ODSP driver to cache data for faster performance.
+ * @legacy
  * @alpha
  */
 export class FluidCache implements IPersistedCache {

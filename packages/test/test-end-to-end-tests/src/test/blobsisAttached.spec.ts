@@ -4,22 +4,33 @@
  */
 
 import assert from "assert";
-import { AttachState, IContainer, IHostLoader } from "@fluidframework/container-definitions";
-import type { ISharedDirectory, ISharedMap, SharedDirectory } from "@fluidframework/map";
+
+import { stringToBuffer } from "@fluid-internal/client-utils";
+import { describeCompat } from "@fluid-private/test-version-utils";
+import { AttachState } from "@fluidframework/container-definitions";
+import {
+	IContainer,
+	IHostLoader,
+	IRuntime,
+} from "@fluidframework/container-definitions/internal";
+// eslint-disable-next-line import/no-internal-modules
+import { type IPendingRuntimeState } from "@fluidframework/container-runtime/internal/test/containerRuntime";
+import { IContainerRuntime } from "@fluidframework/container-runtime-definitions/internal";
+import { IFluidHandle } from "@fluidframework/core-interfaces";
+import type {
+	ISharedMap,
+	ISharedDirectory,
+	SharedDirectory,
+} from "@fluidframework/map/internal";
 import {
 	ChannelFactoryRegistry,
-	ITestFluidObject,
-	ITestContainerConfig,
-	ITestObjectProvider,
 	DataObjectFactoryType,
+	ITestContainerConfig,
+	ITestFluidObject,
+	ITestObjectProvider,
 	createAndAttachContainer,
-} from "@fluidframework/test-utils";
-import { describeCompat } from "@fluid-private/test-version-utils";
-import { stringToBuffer } from "@fluid-internal/client-utils";
-import { IFluidHandle } from "@fluidframework/core-interfaces";
-import { ContainerRuntime } from "@fluidframework/container-runtime";
-// eslint-disable-next-line import/no-internal-modules
-import { type IPendingRuntimeState } from "@fluidframework/container-runtime/test/containerRuntime";
+} from "@fluidframework/test-utils/internal";
+
 import { MockDetachedBlobStorage, driverSupportsBlobs } from "./mockDetachedBlobStorage.js";
 
 const mapId = "map";
@@ -42,8 +53,8 @@ describeCompat("blob handle isAttached", "NoCompat", (getTestObjectProvider, api
 		let loader: IHostLoader;
 		let container: IContainer;
 
-		const runtimeOf = (dataObject: ITestFluidObject): ContainerRuntime =>
-			dataObject.context.containerRuntime as ContainerRuntime;
+		const runtimeOf = (dataObject: ITestFluidObject): IContainerRuntime & IRuntime =>
+			dataObject.context.containerRuntime as IContainerRuntime & IRuntime;
 
 		beforeEach("createContainer", async () => {
 			provider = getTestObjectProvider();
@@ -255,7 +266,7 @@ describeCompat("blob handle isAttached", "NoCompat", (getTestObjectProvider, api
 			detachedDataStore.root.set("map", map.handle);
 			map.set("my blob", blobHandle);
 			await container.attach(provider.driver.createCreateNewRequest(provider.documentId));
-			detachedBlobStorage.blobs.clear();
+			detachedBlobStorage.dispose();
 			checkForAttachedHandles(map);
 		});
 
@@ -263,7 +274,7 @@ describeCompat("blob handle isAttached", "NoCompat", (getTestObjectProvider, api
 			detachedDataStore.root.set(directoryId, directory.handle);
 			directory.set("my blob", blobHandle);
 			await container.attach(provider.driver.createCreateNewRequest(provider.documentId));
-			detachedBlobStorage.blobs.clear();
+			detachedBlobStorage.dispose();
 			checkForAttachedHandles(directory);
 		});
 
@@ -280,7 +291,7 @@ describeCompat("blob handle isAttached", "NoCompat", (getTestObjectProvider, api
 				false,
 				"blob should be detached in a detached dds and attached container",
 			);
-			detachedBlobStorage.blobs.clear();
+			detachedBlobStorage.dispose();
 			detachedDataStore.root.set(mapId, map.handle);
 			assert.strictEqual(
 				map.handle.isAttached,
@@ -307,7 +318,7 @@ describeCompat("blob handle isAttached", "NoCompat", (getTestObjectProvider, api
 				false,
 				"blob should be detached in a detached dds and attached container",
 			);
-			detachedBlobStorage.blobs.clear();
+			detachedBlobStorage.dispose();
 			detachedDataStore.root.set(directoryId, directory.handle);
 			assert.strictEqual(
 				directory.handle.isAttached,

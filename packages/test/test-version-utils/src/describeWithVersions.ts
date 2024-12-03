@@ -7,8 +7,9 @@ import {
 	getUnexpectedLogErrorException,
 	ITestObjectProvider,
 	TestObjectProvider,
-} from "@fluidframework/test-utils";
-import { driver, r11sEndpointName, tenantIndex } from "../compatOptions.cjs";
+} from "@fluidframework/test-utils/internal";
+
+import { driver, odspEndpointName, r11sEndpointName, tenantIndex } from "./compatOptions.js";
 import { getVersionedTestObjectProvider } from "./compatUtils.js";
 import { ITestObjectProviderOptions } from "./describeCompat.js";
 import { pkgVersion } from "./packageVersion.js";
@@ -64,7 +65,7 @@ const installRequiredVersions = async (config: IRequestedFluidVersions) => {
 	}
 };
 
-const defaultTimeoutMs = 20000;
+const defaultTimeoutMs = 180000; // 3 minutes
 const defaultRequestedVersions: IRequestedFluidVersions = { requestRelativeVersions: -2 };
 
 function createTestSuiteWithInstalledVersion(
@@ -87,7 +88,7 @@ function createTestSuiteWithInstalledVersion(
 					version: pkgVersion,
 					config: {
 						r11s: { r11sEndpointName },
-						odsp: { tenantIndex },
+						odsp: { tenantIndex, odspEndpointName },
 					},
 				}, // driverConfig
 				pkgVersion, // runtimeVersion
@@ -107,7 +108,7 @@ function createTestSuiteWithInstalledVersion(
 		});
 
 		afterEach(function (done: Mocha.Done) {
-			const logErrors = getUnexpectedLogErrorException(defaultProvider.logger);
+			const logErrors = getUnexpectedLogErrorException(defaultProvider.tracker);
 			// if the test failed for another reason
 			// then we don't need to check errors
 			// and fail the after each as well

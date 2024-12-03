@@ -2,6 +2,7 @@
  * Copyright (c) Microsoft Corporation and contributors. All rights reserved.
  * Licensed under the MIT License.
  */
+
 export { generateClientId } from "./clientIdGenerator";
 export {
 	createNackMessage,
@@ -16,3 +17,4 @@ export { isDocumentSessionValid, isDocumentValid } from "./validateDocument";
 export { CheckpointReason, ICheckpoint } from "./checkpointHelper";
 export { IServerMetadata } from "./serverMetadata";
 export { DocumentCheckpointManager } from "./documentLambdaCheckpointManager";
+export { circuitBreakerOptions, LambdaCircuitBreaker } from "./circuitBreaker";

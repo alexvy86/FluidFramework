@@ -4,9 +4,14 @@
  */
 
 import { AttachState } from "@fluidframework/container-definitions";
-import { IFluidHandleContext, IRequest, IResponse } from "@fluidframework/core-interfaces";
-import { generateHandleContextPath } from "@fluidframework/runtime-utils";
-import { ContainerRuntime } from "./containerRuntime.js";
+import { IRequest, IResponse } from "@fluidframework/core-interfaces";
+import { IFluidHandleContext } from "@fluidframework/core-interfaces/internal";
+import { generateHandleContextPath } from "@fluidframework/runtime-utils/internal";
+
+export interface IContainerHandleContextRuntime {
+	attachState: AttachState;
+	resolveHandle(request: IRequest): Promise<IResponse>;
+}
 
 export class ContainerFluidHandleContext implements IFluidHandleContext {
 	public get IFluidHandleContext() {
@@ -22,7 +27,7 @@ export class ContainerFluidHandleContext implements IFluidHandleContext {
 	 */
 	constructor(
 		public readonly path: string,
-		private readonly runtime: ContainerRuntime,
+		private readonly runtime: IContainerHandleContextRuntime,
 		public readonly routeContext?: IFluidHandleContext,
 	) {
 		this.absolutePath = generateHandleContextPath(path, this.routeContext);

@@ -4,14 +4,16 @@
  */
 
 import { strict as assert } from "assert";
-import { IDeltaManager } from "@fluidframework/container-definitions";
+
+import { IDeltaManager } from "@fluidframework/container-definitions/internal";
 import {
 	IDocumentMessage,
-	ISequencedDocumentMessage,
 	MessageType,
-} from "@fluidframework/protocol-definitions";
-import { MockLogger } from "@fluidframework/telemetry-utils";
-import { MockDeltaManager } from "@fluidframework/test-runtime-utils";
+	ISequencedDocumentMessage,
+} from "@fluidframework/driver-definitions/internal";
+import { MockLogger } from "@fluidframework/telemetry-utils/internal";
+import { MockDeltaManager } from "@fluidframework/test-runtime-utils/internal";
+
 import { ISummaryOpMessage, SummaryCollection } from "../../summary/index.js";
 
 const summaryOp: ISummaryOpMessage = {

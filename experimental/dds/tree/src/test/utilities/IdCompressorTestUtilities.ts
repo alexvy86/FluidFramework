@@ -18,6 +18,7 @@ import {
 } from '@fluid-private/stochastic-test-utils';
 import { ITelemetryBaseLogger } from '@fluidframework/core-interfaces';
 import { assert, expect } from 'chai';
+
 import { ClosedMap, assertNotUndefined, fail, getOrCreate } from '../../Common.js';
 import {
 	AttributionId,
@@ -42,6 +43,7 @@ import type {
 	SerializedIdCompressorWithNoSession,
 	SerializedIdCompressorWithOngoingSession,
 } from '../../id-compressor/index.js';
+
 import { expectDefined } from './TestCommon.js';
 
 /** Identifies a compressor in a network */
@@ -368,11 +370,7 @@ export class IdCompressorTestNetwork {
 						const overrides = ids.overrides;
 						for (const id of opSpaceIds) {
 							let override: string | undefined;
-							if (
-								overrides !== undefined &&
-								overrideIndex < overrides.length &&
-								id === overrides[overrideIndex][0]
-							) {
+							if (overrides !== undefined && overrideIndex < overrides.length && id === overrides[overrideIndex][0]) {
 								override = overrides[overrideIndex][1];
 								overrideIndex++;
 							}
@@ -434,10 +432,7 @@ export class IdCompressorTestNetwork {
 		function* getLogIndices(
 			columnIndex: number
 		): Iterable<
-			[
-				current: [compressor: IdCompressor, idData: TestIdData],
-				next?: [compressor: IdCompressor, idData: TestIdData],
-			]
+			[current: [compressor: IdCompressor, idData: TestIdData], next?: [compressor: IdCompressor, idData: TestIdData]]
 		> {
 			let current = getNextLogWithEntryAt(0, columnIndex);
 			while (current !== undefined) {
@@ -478,8 +473,7 @@ export class IdCompressorTestNetwork {
 				if (isLocalId(sessionSpaceIdA)) {
 					localCount++;
 					expect(idDataA.sessionId).to.equal(this.compressors.get(originatingClient).localSessionId);
-					expect(creator.length === 0 || creator[creator.length - 1][1] === idDataA.expectedOverride).to.be
-						.true;
+					expect(creator.length === 0 || creator[creator.length - 1][1] === idDataA.expectedOverride).to.be.true;
 					creator.push([originatingClient, idDataA.expectedOverride]);
 				}
 
@@ -496,9 +490,7 @@ export class IdCompressorTestNetwork {
 					expect.fail('IDs should have been finalized.');
 					fail();
 				}
-				expect(compressorA.normalizeToSessionSpace(opSpaceIdA, compressorA.localSessionId)).equals(
-					sessionSpaceIdA
-				);
+				expect(compressorA.normalizeToSessionSpace(opSpaceIdA, compressorA.localSessionId)).equals(sessionSpaceIdA);
 				finalIds.add(opSpaceIdA);
 				const uuidAOpSpace = compressorA.decompress(opSpaceIdA);
 
@@ -537,10 +529,7 @@ export class IdCompressorTestNetwork {
 
 			expect(uuids.size).to.equal(finalIds.size);
 			assert(originatingClient !== undefined);
-			idIndicesAggregator.set(
-				originatingClient,
-				assertNotUndefined(idIndicesAggregator.get(originatingClient)) + 1
-			);
+			idIndicesAggregator.set(originatingClient, assertNotUndefined(idIndicesAggregator.get(originatingClient)) + 1);
 		}
 
 		for (const [compressor] of sequencedLogs) {
@@ -716,7 +705,10 @@ const defaultOptions = {
 };
 
 export function makeOpGenerator(options: OperationGenerationConfig): Generator<Operation, FuzzTestState> {
-	const { includeOverrides, maxClusterSize, validateInterval } = { ...defaultOptions, ...options };
+	const { includeOverrides, maxClusterSize, validateInterval } = {
+		...defaultOptions,
+		...options,
+	};
 
 	function allocateIdsGenerator({ activeClients, clusterSize, random }: FuzzTestState): AllocateIds {
 		const client = random.pick(activeClients);

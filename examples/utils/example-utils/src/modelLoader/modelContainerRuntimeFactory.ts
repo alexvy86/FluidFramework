@@ -8,16 +8,19 @@ import {
 	IContainerContext,
 	IRuntime,
 	IRuntimeFactory,
-} from "@fluidframework/container-definitions";
-import { ContainerRuntime, IContainerRuntimeOptions } from "@fluidframework/container-runtime";
-import { IContainerRuntime } from "@fluidframework/container-runtime-definitions";
-import { NamedFluidDataStoreRegistryEntries } from "@fluidframework/runtime-definitions";
+} from "@fluidframework/container-definitions/internal";
+import {
+	loadContainerRuntime,
+	IContainerRuntimeOptions,
+} from "@fluidframework/container-runtime/internal";
+import { IContainerRuntime } from "@fluidframework/container-runtime-definitions/internal";
+import { NamedFluidDataStoreRegistryEntries } from "@fluidframework/runtime-definitions/internal";
 
 /**
  * @internal
  */
-export interface IModelContainerRuntimeEntryPoint<T> {
-	getModel(container: IContainer): Promise<T>;
+export interface IModelContainerRuntimeEntryPoint<ModelType> {
+	getModel(container: IContainer): Promise<ModelType>;
 }
 
 /**
@@ -32,7 +35,7 @@ export abstract class ModelContainerRuntimeFactory<ModelType> implements IRuntim
 
 	/**
 	 * @param registryEntries - The data store registry for containers produced
-	 * @param runtimeOptions - The runtime options passed to the ContainerRuntime when instantiating it
+	 * @param runtimeOptions - The runtime options passed to the IContainerRuntime when instantiating it
 	 */
 	constructor(
 		private readonly registryEntries: NamedFluidDataStoreRegistryEntries,
@@ -43,7 +46,7 @@ export abstract class ModelContainerRuntimeFactory<ModelType> implements IRuntim
 		context: IContainerContext,
 		existing: boolean,
 	): Promise<IRuntime> {
-		const runtime = await ContainerRuntime.loadRuntime({
+		const runtime = await loadContainerRuntime({
 			context,
 			registryEntries: this.registryEntries,
 			provideEntryPoint: async (
@@ -54,7 +57,6 @@ export abstract class ModelContainerRuntimeFactory<ModelType> implements IRuntim
 			}),
 			runtimeOptions: this.runtimeOptions,
 			existing,
-			containerScope: context.scope,
 		});
 
 		if (!existing) {

@@ -3,8 +3,12 @@
  * Licensed under the MIT License.
  */
 
-import { FieldKindIdentifier, FieldKindSpecifier } from "../../core/index.js";
-import { Multiplicity } from "../multiplicity.js";
+import type {
+	FieldKindIdentifier,
+	FieldKindData,
+	Multiplicity,
+	SchemaPolicy,
+} from "../../core/index.js";
 
 /**
  * Functionality for FieldKinds that is stable,
@@ -18,8 +22,7 @@ import { Multiplicity } from "../multiplicity.js";
  *
  * These policies include the data encoding, change encoding, change rebase and change application.
  *
- * @sealed @internal
- * @privateRemarks
+ * @sealed * @privateRemarks
  * This being @sealed is for users of this package.
  * This package itself may provide implementations.
  * This pattern was picked instead of an interface since we do not have a convention for how to mark interfaces as only allowed to be implemented by the package declaring them,
@@ -28,7 +31,7 @@ import { Multiplicity } from "../multiplicity.js";
 export abstract class FlexFieldKind<
 	TName extends string = string,
 	TMultiplicity extends Multiplicity = Multiplicity,
-> implements FieldKindSpecifier
+> implements FieldKindData
 {
 	/**
 	 * @param identifier - Globally scoped identifier.
@@ -44,9 +47,8 @@ export abstract class FlexFieldKind<
 /**
  * Policy from the app for interpreting the stored schema.
  * The app must ensure consistency for all users of the document.
- * @internal
  */
-export interface FullSchemaPolicy {
+export interface FullSchemaPolicy extends SchemaPolicy {
 	/**
 	 * Policy information about FieldKinds:
 	 * This is typically stored as code, not in documents, and defines how to handles fields based on their kind.

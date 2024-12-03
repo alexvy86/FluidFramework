@@ -4,10 +4,12 @@
  */
 
 import { strict as assert } from "node:assert";
-import { ISocketStorageDiscovery } from "@fluidframework/odsp-driver-definitions";
-import { IClient } from "@fluidframework/protocol-definitions";
-import { MockLogger } from "@fluidframework/telemetry-utils";
+
+import { IClient } from "@fluidframework/driver-definitions";
+import { ISocketStorageDiscovery } from "@fluidframework/odsp-driver-definitions/internal";
+import { MockLogger } from "@fluidframework/telemetry-utils/internal";
 import { SinonFakeTimers, SinonStub, stub, useFakeTimers } from "sinon";
+
 import { OdspFluidDataStoreLocator } from "../contractsPublic.js";
 import { createOdspUrl } from "../createOdspUrl.js";
 import { LocalPersistentCache } from "../odspCache.js";
@@ -80,7 +82,12 @@ describe("joinSessions Tests", () => {
 			new LocalPersistentCache(2000),
 			{ snapshotOptions: { timeout: 2000 } },
 		);
-		const locator: OdspFluidDataStoreLocator = { driveId, itemId, siteUrl, dataStorePath: "/" };
+		const locator: OdspFluidDataStoreLocator = {
+			driveId,
+			itemId,
+			siteUrl,
+			dataStorePath: "/",
+		};
 		const request = createOdspUrl(locator);
 		const resolvedUrl = await resolver.resolve({ url: request });
 		logger = new MockLogger();

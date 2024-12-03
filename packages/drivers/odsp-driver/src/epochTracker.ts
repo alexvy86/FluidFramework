@@ -3,15 +3,14 @@
  * Licensed under the MIT License.
  */
 
-import { assert, Deferred } from "@fluidframework/core-utils";
+import { assert, Deferred } from "@fluidframework/core-utils/internal";
 import {
 	LocationRedirectionError,
 	NonRetryableError,
 	RateLimiter,
 	ThrottlingError,
-} from "@fluidframework/driver-utils";
+} from "@fluidframework/driver-utils/internal";
 import {
-	type HostStoragePolicy,
 	ICacheEntry,
 	IEntry,
 	IFileEntry,
@@ -22,7 +21,8 @@ import {
 	OdspErrorTypes,
 	maximumCacheDurationMs,
 	snapshotKey,
-} from "@fluidframework/odsp-driver-definitions";
+	snapshotWithLoadingGroupIdKey,
+} from "@fluidframework/odsp-driver-definitions/internal";
 import {
 	ITelemetryLoggerExt,
 	PerformanceEvent,
@@ -30,8 +30,9 @@ import {
 	loggerToMonitoringContext,
 	normalizeError,
 	wrapError,
-} from "@fluidframework/telemetry-utils";
+} from "@fluidframework/telemetry-utils/internal";
 import { v4 as uuid } from "uuid";
+
 import { IVersionedValueWithEpoch, persistedCacheValueVersion } from "./contracts.js";
 import { ClpCompliantAppHeader } from "./contractsPublic.js";
 import { INonPersistentCache, IOdspCache, IPersistedFileCache } from "./odspCache.js";
@@ -46,6 +47,7 @@ import {
 import { pkgVersion as driverVersion } from "./packageVersion.js";
 
 /**
+ * @legacy
  * @alpha
  */
 export type FetchType =
@@ -59,9 +61,11 @@ export type FetchType =
 	| "treesLatest"
 	| "uploadSummary"
 	| "push"
-	| "versions";
+	| "versions"
+	| "renameFile";
 
 /**
+ * @legacy
  * @alpha
  */
 export type FetchTypeInternal = FetchType | "cache";
@@ -82,6 +86,7 @@ export const Odsp409Error = "Odsp409Error";
  * server can match it with its epoch value in order to match the version.
  * It also validates the epoch value received in response of fetch calls. If the epoch does not match,
  * then it also clears all the cached entries for the given container.
+ * @legacy
  * @alpha
  */
 export class EpochTracker implements IPersistedFileCache {
@@ -97,7 +102,6 @@ export class EpochTracker implements IPersistedFileCache {
 		protected readonly fileEntry: IFileEntry,
 		protected readonly logger: ITelemetryLoggerExt,
 		protected readonly clientIsSummarizer?: boolean,
-		protected readonly hostPolicy?: HostStoragePolicy,
 	) {
 		// Limits the max number of concurrent requests to 24.
 		this.rateLimiter = new RateLimiter(24);
@@ -147,7 +151,7 @@ export class EpochTracker implements IPersistedFileCache {
 			}
 			// Expire the cached snapshot if it's older than snapshotCacheExpiryTimeoutMs and immediately
 			// expire all old caches that do not have cacheEntryTime
-			if (entry.type === snapshotKey) {
+			if (entry.type === snapshotKey || entry.type === snapshotWithLoadingGroupIdKey) {
 				// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
 				const cacheTime = value.value?.cacheEntryTime;
 				const currentTime = Date.now();
@@ -178,7 +182,7 @@ export class EpochTracker implements IPersistedFileCache {
 		assert(this._fluidEpoch !== undefined, 0x1dd /* "no epoch" */);
 		// For snapshots, the value should have the cacheEntryTime.
 		// This will be used to expire snapshots older than snapshotCacheExpiryTimeoutMs.
-		if (entry.type === snapshotKey) {
+		if (entry.type === snapshotKey || entry.type === snapshotWithLoadingGroupIdKey) {
 			// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
 			value.cacheEntryTime = value.cacheEntryTime ?? Date.now();
 		}
@@ -296,48 +300,27 @@ export class EpochTracker implements IPersistedFileCache {
 				throw error;
 			})
 			.catch((error) => {
-				if (isFluidError(error)) {
-					// If the error is about location redirection, then we need to generate new resolved url with correct
-					// location info.
-					if (error.errorType === OdspErrorTypes.fileNotFoundOrAccessDeniedError) {
-						const redirectLocation = (error as IOdspErrorAugmentations)
-							.redirectLocation;
-						if (redirectLocation !== undefined) {
-							const redirectUrl: IOdspResolvedUrl = patchOdspResolvedUrl(
-								this.fileEntry.resolvedUrl,
-								redirectLocation,
-							);
-							const locationRedirectionError = new LocationRedirectionError(
-								error.message,
-								redirectUrl,
-								{ driverVersion, redirectLocation },
-							);
-							locationRedirectionError.addTelemetryProperties(
-								error.getTelemetryProperties(),
-							);
-							throw locationRedirectionError;
-						}
-					}
-					// If the hostPolicy disallows retries for throttling errors, then we throw a NonRetryableError
-					else if (
-						error.errorType === OdspErrorTypes.throttlingError &&
-						this.hostPolicy?.disableRetriesOnStorageThrottlingError
-					) {
-						const nonRetriableThrottlingError = new NonRetryableError(
+				// If the error is about location redirection, then we need to generate new resolved url with correct
+				// location info.
+				if (
+					isFluidError(error) &&
+					error.errorType === OdspErrorTypes.fileNotFoundOrAccessDeniedError
+				) {
+					const redirectLocation = (error as IOdspErrorAugmentations).redirectLocation;
+					if (redirectLocation !== undefined) {
+						const redirectUrl: IOdspResolvedUrl = patchOdspResolvedUrl(
+							this.fileEntry.resolvedUrl,
+							redirectLocation,
+						);
+						const locationRedirectionError = new LocationRedirectionError(
 							error.message,
-							OdspErrorTypes.throttlingError,
-							{
-								driverVersion,
-							},
+							redirectUrl,
+							{ driverVersion, redirectLocation },
 						);
-						// This step ensures all the telemetry props are preserved including the retryAfterSeconds from the original error
-						nonRetriableThrottlingError.addTelemetryProperties(
-							error.getTelemetryProperties(),
-						);
-						throw nonRetriableThrottlingError;
+						locationRedirectionError.addTelemetryProperties(error.getTelemetryProperties());
+						throw locationRedirectionError;
 					}
 				}
-
 				throw error;
 			})
 			.catch((error) => {
@@ -495,11 +478,11 @@ export class EpochTracker implements IPersistedFileCache {
 		if (this.fluidEpoch && epochFromResponse && this.fluidEpoch !== epochFromResponse) {
 			// This is similar in nature to how fluidEpochMismatchError (409) is handled.
 			// Difference - client detected mismatch, instead of server detecting it.
-			return new NonRetryableError(
-				"Epoch mismatch",
-				OdspErrorTypes.fileOverwrittenInStorage,
-				{ driverVersion, serverEpoch: epochFromResponse, clientEpoch: this.fluidEpoch },
-			);
+			return new NonRetryableError("Epoch mismatch", OdspErrorTypes.fileOverwrittenInStorage, {
+				driverVersion,
+				serverEpoch: epochFromResponse,
+				clientEpoch: this.fluidEpoch,
+			});
 		}
 	}
 
@@ -516,9 +499,8 @@ export class EpochTrackerWithRedemption extends EpochTracker {
 		protected readonly fileEntry: IFileEntry,
 		protected readonly logger: ITelemetryLoggerExt,
 		protected readonly clientIsSummarizer?: boolean,
-		protected readonly hostPolicy?: HostStoragePolicy,
 	) {
-		super(cache, fileEntry, logger, clientIsSummarizer, hostPolicy);
+		super(cache, fileEntry, logger, clientIsSummarizer);
 		// Handles the rejected promise within treesLatestDeferral.
 		this.treesLatestDeferral.promise.catch(() => {});
 	}
@@ -542,7 +524,7 @@ export class EpochTrackerWithRedemption extends EpochTracker {
 		let result = super.get(entry);
 
 		// equivalence of what happens in fetchAndParseAsJSON()
-		if (entry.type === snapshotKey) {
+		if (entry.type === snapshotKey || entry.type === snapshotWithLoadingGroupIdKey) {
 			result = result
 				.then((value) => {
 					// If there is nothing in cache, we need to wait for network call to complete (and do redemption)
@@ -636,6 +618,7 @@ export class EpochTrackerWithRedemption extends EpochTracker {
 }
 
 /**
+ * @legacy
  * @alpha
  */
 export interface ICacheAndTracker {
@@ -649,14 +632,12 @@ export function createOdspCacheAndTracker(
 	fileEntry: IFileEntry,
 	logger: ITelemetryLoggerExt,
 	clientIsSummarizer?: boolean,
-	hostPolicy?: HostStoragePolicy,
 ): ICacheAndTracker {
 	const epochTracker = new EpochTrackerWithRedemption(
 		persistedCacheArg,
 		fileEntry,
 		logger,
 		clientIsSummarizer,
-		hostPolicy,
 	);
 	return {
 		cache: {

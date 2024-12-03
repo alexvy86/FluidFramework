@@ -2,9 +2,11 @@
  * Copyright (c) Microsoft Corporation and contributors. All rights reserved.
  * Licensed under the MIT License.
  */
+
 import { expect } from "chai";
 
 import { HorizontalRuleNode } from "../../../documentation-domain/index.js";
+
 import { testRender } from "./Utilities.js";
 
 describe("HorizontalRule Markdown rendering tests", () => {

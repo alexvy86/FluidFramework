@@ -9,6 +9,7 @@ import * as core from "@fluidframework/server-services-core";
 import {
 	AggregationCursor,
 	Collection,
+	Document,
 	FindOneAndUpdateOptions,
 	FindOptions,
 	MongoClient,
@@ -60,7 +61,7 @@ const errorResponseKeysAllowList = new Set([
 /**
  * @internal
  */
-export class MongoCollection<T> implements core.ICollection<T>, core.IRetryable {
+export class MongoCollection<T extends Document> implements core.ICollection<T>, core.IRetryable {
 	private readonly apiCounter = new InMemoryApiCounters();
 	private readonly failedApiCounterSuffix = ".Failed";
 	private consecutiveFailedCount = 0;
@@ -74,6 +75,7 @@ export class MongoCollection<T> implements core.ICollection<T>, core.IRetryable 
 		private readonly apiFailureRateTerminationThreshold: number,
 		private readonly apiMinimumCountToEnableTermination: number,
 		private readonly consecutiveFailedThresholdForLowerTotalRequests: number,
+		private readonly isGlobalDb = false,
 	) {
 		setInterval(() => {
 			if (!this.apiCounter.countersAreActive) {
@@ -109,8 +111,9 @@ export class MongoCollection<T> implements core.ICollection<T>, core.IRetryable 
 		return this.requestWithRetry(req, "MongoCollection.find", query);
 	}
 
-	public async findOne(query: object, options?: FindOptions): Promise<T> {
-		const req: () => Promise<T> = async () => this.collection.findOne<T>(query, options);
+	// eslint-disable-next-line @rushstack/no-new-null
+	public async findOne(query: object, options?: FindOptions): Promise<T | null> {
+		const req: () => Promise<T | null> = async () => this.collection.findOne<T>(query, options);
 		return this.requestWithRetry(
 			req, // request
 			"MongoCollection.findOne", // callerName
@@ -400,6 +403,7 @@ export class MongoCollection<T> implements core.ICollection<T>, core.IRetryable 
 				(error: any, numRetries: number, retryAfterInterval: number) =>
 					numRetries * retryAfterInterval, // calculateIntervalMs
 				(error) => {
+					error.isGlobalDb = this.isGlobalDb;
 					const facadeError = this.cloneError(error);
 					this.sanitizeError(facadeError);
 				} /* onErrorFn */,
@@ -550,6 +554,7 @@ export class MongoDb implements core.IDb {
 		private readonly apiFailureRateTerminationThreshold: number,
 		private readonly apiMinimumCountToEnableTermination: number,
 		private readonly consecutiveFailedThresholdForLowerTotalRequests: number,
+		private readonly isGlobalDb = false,
 	) {}
 
 	// eslint-disable-next-line @typescript-eslint/promise-function-async
@@ -561,7 +566,7 @@ export class MongoDb implements core.IDb {
 		this.client.on(event, listener);
 	}
 
-	public collection<T>(name: string, dbName = "admin"): core.ICollection<T> {
+	public collection<T extends Document>(name: string, dbName = "admin"): core.ICollection<T> {
 		const collection = this.client.db(dbName).collection<T>(name);
 		return new MongoCollection<T>(
 			collection,
@@ -573,7 +578,18 @@ export class MongoDb implements core.IDb {
 			this.apiFailureRateTerminationThreshold,
 			this.apiMinimumCountToEnableTermination,
 			this.consecutiveFailedThresholdForLowerTotalRequests,
+			this.isGlobalDb,
 		);
+	}
+
+	public async healthCheck(dbName = "admin"): Promise<void> {
+		await this.client
+			.db(dbName)
+			.command({ ping: 1 })
+			.catch((error) => {
+				error.healthCheckFailed = true;
+				throw error;
+			});
 	}
 
 	public async dropCollection(name: string, dbName = "admin"): Promise<boolean> {
@@ -749,7 +765,7 @@ export class MongoDbFactory implements core.IDbFactory {
 		}
 
 		const connection = await MongoClient.connect(
-			global ? this.globalDbEndpoint : this.operationsDbEndpoint,
+			global && this.globalDbEndpoint ? this.globalDbEndpoint : this.operationsDbEndpoint,
 			options,
 		);
 		for (const monitoringEvent of this.dbMonitoringEventsList) {
@@ -779,6 +795,7 @@ export class MongoDbFactory implements core.IDbFactory {
 			this.apiFailureRateTerminationThreshold,
 			this.apiMinimumCountToEnableTermination,
 			this.consecutiveFailedThresholdForLowerTotalRequests,
+			global,
 		);
 	}
 }

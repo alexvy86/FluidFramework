@@ -7,6 +7,7 @@
  * @fileoverview In this file, we will test the functions exported by deep_copy.js
  */
 import { expect } from "chai";
+
 import { BoolDataArray, Int8DataArray, Int32DataArray, UniversalDataArray } from "../../index";
 let error;
 
@@ -22,9 +23,7 @@ describe("BaseDataArray", function () {
 		} finally {
 			expect(error).to.equal(undefined);
 			expect(myDataArray.length).to.equal(4);
-			expect(Array.prototype.slice.call(myDataArray.getBuffer())).to.deep.equal([
-				1, 2, 31, 5,
-			]);
+			expect(Array.prototype.slice.call(myDataArray.getBuffer())).to.deep.equal([1, 2, 31, 5]);
 		}
 	});
 

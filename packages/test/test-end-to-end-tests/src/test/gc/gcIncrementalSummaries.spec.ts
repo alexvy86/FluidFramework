@@ -4,23 +4,25 @@
  */
 
 import { strict as assert } from "assert";
-import { IContainer } from "@fluidframework/container-definitions";
-import { ContainerRuntime, ISummarizer } from "@fluidframework/container-runtime";
-import { ISummaryTree, SummaryType } from "@fluidframework/protocol-definitions";
-import { MockLogger } from "@fluidframework/telemetry-utils";
+
+import {
+	ITestDataObject,
+	TestDataObjectType,
+	describeCompat,
+	itExpects,
+} from "@fluid-private/test-version-utils";
+import { IContainer } from "@fluidframework/container-definitions/internal";
+import { ContainerRuntime, ISummarizer } from "@fluidframework/container-runtime/internal";
+import { ISummaryTree, SummaryType } from "@fluidframework/driver-definitions";
+import { channelsTreeName } from "@fluidframework/runtime-definitions/internal";
+import { MockLogger } from "@fluidframework/telemetry-utils/internal";
 import {
 	ITestObjectProvider,
 	createSummarizer,
 	summarizeNow,
 	waitForContainerConnection,
-} from "@fluidframework/test-utils";
-import {
-	describeCompat,
-	ITestDataObject,
-	itExpects,
-	TestDataObjectType,
-} from "@fluid-private/test-version-utils";
-import { channelsTreeName } from "@fluidframework/runtime-definitions";
+} from "@fluidframework/test-utils/internal";
+
 import { defaultGCConfig } from "./gcTestConfigs.js";
 
 /**
@@ -64,6 +66,14 @@ describeCompat("GC incremental summaries", "NoCompat", (getTestObjectProvider) =
 		mainContainer = await provider.makeTestContainer(defaultGCConfig);
 		dataStoreA = (await mainContainer.getEntryPoint()) as ITestDataObject;
 		await waitForContainerConnection(mainContainer);
+	});
+
+	beforeEach("skip-r11s", async function () {
+		// Skip these tests for standalone r11s.  Summaries can take upwards of 20 seconds which times out the test.
+		// These tests are covering client logic and the coverage from other drivers/endpoints is sufficient.
+		if (provider.driver.type === "r11s" && provider.driver.endpointName !== "frs") {
+			this.skip();
+		}
 	});
 
 	async function createNewDataStore() {
@@ -258,12 +268,12 @@ describeCompat("GC incremental summaries", "NoCompat", (getTestObjectProvider) =
 			await provider.ensureSynchronized();
 
 			// The next summary should fail - Override the "uploadSummaryWithContext" function so that that step fails.
-			const containerRuntime = (summarizer1 as any).runtime as ContainerRuntime;
-			const uploadSummaryWithContextFunc = containerRuntime.storage.uploadSummaryWithContext;
+			const containerRuntime1 = (summarizer1 as any).runtime as ContainerRuntime;
+			const uploadSummaryWithContextFunc = containerRuntime1.storage.uploadSummaryWithContext;
 			const uploadSummaryWithContextOverride = async () => {
 				throw new Error("Upload summary failed in test");
 			};
-			containerRuntime.storage.uploadSummaryWithContext = uploadSummaryWithContextOverride;
+			containerRuntime1.storage.uploadSummaryWithContext = uploadSummaryWithContextOverride;
 
 			// Summarize and validate that it fails.
 			const errorFn = (error: Error): boolean => {
@@ -274,16 +284,12 @@ describeCompat("GC incremental summaries", "NoCompat", (getTestObjectProvider) =
 				);
 				return true;
 			};
-			await assert.rejects(
-				summarizeNow(summarizer1),
-				errorFn,
-				"Summarize should have failed",
-			);
+			await assert.rejects(summarizeNow(summarizer1), errorFn, "Summarize should have failed");
 			// There should not be any IncrementalSummaryViolation errors.
 			mockLogger.assertMatchNone([{ eventName: "IncrementalSummaryViolation" }]);
 
 			// Revert the "uploadSummaryWithContext" function so that summary will now succeed.
-			containerRuntime.storage.uploadSummaryWithContext = uploadSummaryWithContextFunc;
+			containerRuntime1.storage.uploadSummaryWithContext = uploadSummaryWithContextFunc;
 
 			// Summarize and validate that it succeeds.
 			await assert.doesNotReject(summarizeNow(summarizer1), "Summarize should have passed");

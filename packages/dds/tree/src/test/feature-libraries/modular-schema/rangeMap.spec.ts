@@ -3,10 +3,11 @@
  * Licensed under the MIT License.
  */
 
-import { strict as assert } from "assert";
+import { strict as assert } from "node:assert";
+
 import {
-	RangeEntry,
-	RangeMap,
+	type RangeEntry,
+	type RangeMap,
 	deleteFromRangeMap,
 	getFirstEntryFromRangeMap,
 	setInRangeMap,

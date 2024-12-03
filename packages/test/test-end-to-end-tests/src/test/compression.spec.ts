@@ -3,19 +3,11 @@
  * Licensed under the MIT License.
  */
 
+import { strict as assert } from "assert";
 // eslint-disable-next-line import/no-nodejs-modules
 import * as crypto from "crypto";
-import { strict as assert } from "assert";
-// TODO:AB#6558: This should be provided based on the compatibility configuration.
-// eslint-disable-next-line @typescript-eslint/no-restricted-imports
-import { ISharedMap, SharedMap } from "@fluidframework/map";
-import {
-	DataObjectFactoryType,
-	ITestContainerConfig,
-	ITestFluidObject,
-	ITestObjectProvider,
-	getContainerEntryPointBackCompat,
-} from "@fluidframework/test-utils";
+
+import { generatePairwiseOptions } from "@fluid-private/test-pairwise-generator";
 import {
 	describeCompat,
 	describeInstallVersions,
@@ -24,8 +16,18 @@ import {
 import {
 	CompressionAlgorithms,
 	type IContainerRuntimeOptions,
-} from "@fluidframework/container-runtime";
-import { generatePairwiseOptions } from "@fluid-private/test-pairwise-generator";
+} from "@fluidframework/container-runtime/internal";
+// TODO:AB#6558: This should be provided based on the compatibility configuration.
+// eslint-disable-next-line @typescript-eslint/no-restricted-imports
+import { ISharedMap, SharedMap } from "@fluidframework/map/internal";
+import {
+	DataObjectFactoryType,
+	ITestContainerConfig,
+	ITestFluidObject,
+	ITestObjectProvider,
+	getContainerEntryPointBackCompat,
+} from "@fluidframework/test-utils/internal";
+
 import { pkgVersion } from "../packageVersion.js";
 
 const compressionSuite = (getProvider) => {
@@ -132,14 +134,24 @@ const compressionSuite = (getProvider) => {
 				if (provider.type === "TestObjectProviderWithVersionedLoad") {
 					this.skip();
 				}
+				// This test has unreproducible flakiness against r11s (non-FRS).
+				// This test simply verifies all combinations of compression, chunking, and op grouping work end-to-end.
+				if (
+					provider.driver.type === "routerlicious" &&
+					provider.driver.endpointName !== "frs"
+				) {
+					this.skip();
+				}
 				await setupContainers({
-					compressionOptions: option.compressionAndChunking.compression
-						? {
-								minimumBatchSizeInBytes: 10,
-								compressionAlgorithm: CompressionAlgorithms.lz4,
-						  }
-						: undefined,
-					chunkSizeInBytes: option.compressionAndChunking.chunking ? 100 : undefined,
+					compressionOptions: {
+						minimumBatchSizeInBytes: option.compressionAndChunking.compression
+							? 10
+							: Number.POSITIVE_INFINITY,
+						compressionAlgorithm: CompressionAlgorithms.lz4,
+					},
+					chunkSizeInBytes: option.compressionAndChunking.chunking
+						? 100
+						: Number.POSITIVE_INFINITY,
 					enableGroupedBatching: option.grouping,
 				});
 				const values = [
@@ -182,7 +194,7 @@ describeInstallVersions(
 			provider.driver.endpointName !== undefined
 				? {
 						r11s: { r11sEndpointName: provider.driver.endpointName },
-				  }
+					}
 				: undefined;
 		return getVersionedTestObjectProvider(
 			pkgVersion, // base version

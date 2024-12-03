@@ -4,25 +4,23 @@
  */
 
 import { Uint8ArrayToString, stringToBuffer } from "@fluid-internal/client-utils";
+import { ISummaryHandle, ISummaryTree } from "@fluidframework/driver-definitions";
 import {
 	IDocumentStorageService,
 	IDocumentStorageServicePolicies,
 	ISummaryContext,
-} from "@fluidframework/driver-definitions";
-import { buildGitTreeHierarchy } from "@fluidframework/protocol-base";
-import {
 	ICreateBlobResponse,
 	ISnapshotTreeEx,
-	ISummaryHandle,
-	ISummaryTree,
 	IVersion,
-} from "@fluidframework/protocol-definitions";
+} from "@fluidframework/driver-definitions/internal";
+import { buildGitTreeHierarchy } from "@fluidframework/driver-utils/internal";
 import {
 	ITelemetryLoggerExt,
 	MonitoringContext,
 	PerformanceEvent,
 	createChildMonitoringContext,
-} from "@fluidframework/telemetry-utils";
+} from "@fluidframework/telemetry-utils/internal";
+
 import { ICache, InMemoryCache } from "./cache.js";
 import { ISnapshotTreeVersion } from "./definitions.js";
 import { GitManager } from "./gitManager.js";
@@ -124,7 +122,7 @@ export class ShreddedSummaryDocumentStorageService implements IDocumentStorageSe
 			},
 			async (event) => {
 				const manager = await this.getStorageManager();
-				const response = (await manager.getTree(requestVersion!.treeId)).content;
+				const response = (await manager.getTree(requestVersion.treeId)).content;
 				event.end({
 					size: response.tree.length,
 				});
@@ -160,7 +158,6 @@ export class ShreddedSummaryDocumentStorageService implements IDocumentStorageSe
 				return response;
 			},
 			undefined, // workers
-			undefined, // recordHeapSize
 			this.mc.config.getNumber("Fluid.Driver.ReadBlobTelemetrySampling"),
 		);
 		this.blobsShaCache.set(value.sha, "");
@@ -226,7 +223,7 @@ export class ShreddedSummaryDocumentStorageService implements IDocumentStorageSe
 					// Clear the cache as the getSnapshotTree call will fill the cache.
 					this.blobsShaCache.clear();
 					return this.getSnapshotTree(versions[0]);
-			  })
+				})
 			: undefined;
 	}
 

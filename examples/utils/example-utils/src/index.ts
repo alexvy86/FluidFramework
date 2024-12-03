@@ -5,7 +5,13 @@
 
 // Provide EventEmitter from example-utils to avoid examples all directly depending on
 // a @fluid-internal package while EventEmitter support is finalized.
-export { EventEmitter } from "@fluid-internal/client-utils";
+import { EventEmitter } from "@fluid-internal/client-utils";
+export {
+	/**
+	 * @public
+	 */
+	EventEmitter,
+};
 
 export {
 	ContainerViewRuntimeFactory,
@@ -16,12 +22,6 @@ export {
 export type {
 	DataTransformationCallback,
 	IImportExportModel,
-	IMigratableModel,
-	IMigratableModelEvents,
-	IMigrationTool,
-	IMigrationToolEvents,
-	IMigrator,
-	IMigratorEvents,
 	ISameContainerMigratableModel,
 	ISameContainerMigratableModelEvents,
 	ISameContainerMigrationTool,
@@ -29,25 +29,22 @@ export type {
 	ISameContainerMigrator,
 	ISameContainerMigratorEvents,
 	IVersionedModel,
-	MigrationState,
 	SameContainerMigrationState,
 } from "./migrationInterfaces/index.js";
 export {
-	MigrationTool,
-	MigrationToolInstantiationFactory,
 	SameContainerMigrationTool,
 	SameContainerMigrationToolInstantiationFactory,
 } from "./migrationTool/index.js";
-export { Migrator, SameContainerMigrator } from "./migrator/index.js";
+export { SameContainerMigrator } from "./migrator/index.js";
 export {
 	IDetachedModel,
+	IModelContainerRuntimeEntryPoint,
 	IModelLoader,
 	ModelContainerRuntimeFactory,
 	ModelLoader,
 	SessionStorageModelLoader,
 	StaticCodeLoader,
 	TinyliciousModelLoader,
-	IModelContainerRuntimeEntryPoint,
 } from "./modelLoader/index.js";
 export {
 	type IFluidMountableView,

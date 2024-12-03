@@ -11,8 +11,11 @@ import {
 	IRevokedTokenChecker,
 	IWebSocketTracker,
 	IServiceMessageResourceManager,
+	IFluidAccessTokenGenerator,
 } from "@fluidframework/server-services-core";
+import { IRedisClientConnectionManager } from "@fluidframework/server-services-utils";
 import { IDocumentDeleteService } from "./services";
+import { IReadinessCheck } from "@fluidframework/server-services-core";
 
 /**
  * @internal
@@ -26,4 +29,8 @@ export interface IAlfredResourcesCustomizations {
 	webSocketTracker?: IWebSocketTracker;
 	serviceMessageResourceManager?: IServiceMessageResourceManager;
 	clusterDrainingChecker?: IClusterDrainingChecker;
+	redisClientConnectionManagerForJwtCache?: IRedisClientConnectionManager;
+	redisClientConnectionManagerForThrottling?: IRedisClientConnectionManager;
+	readinessCheck?: IReadinessCheck;
+	fluidAccessTokenGenerator?: IFluidAccessTokenGenerator;
 }

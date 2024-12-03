@@ -3,6 +3,7 @@
  * Licensed under the MIT License.
  */
 
+import { isIPv4, isIPv6 } from "net";
 import {
 	IDeltaService,
 	IDocumentStorage,
@@ -14,6 +15,7 @@ import {
 	ITokenRevocationManager,
 	IRevokedTokenChecker,
 	IClusterDrainingChecker,
+	IFluidAccessTokenGenerator,
 } from "@fluidframework/server-services-core";
 import { TypedEventEmitter } from "@fluidframework/common-utils";
 import { ICollaborationSessionEvents } from "@fluidframework/server-lambdas";
@@ -26,7 +28,6 @@ import { Provider } from "nconf";
 import { DriverVersionHeaderName, IAlfredTenant } from "@fluidframework/server-services-client";
 import {
 	alternativeMorganLoggerMiddleware,
-	bindCorrelationId,
 	bindTelemetryContext,
 	bindTimeoutContext,
 	jsonMorganLoggerMiddleware,
@@ -36,6 +37,7 @@ import { BaseTelemetryProperties, HttpProperties } from "@fluidframework/server-
 import { catch404, getIdFromRequest, getTenantIdFromRequest, handleError } from "../utils";
 import { IDocumentDeleteService } from "./services";
 import * as alfredRoutes from "./routes";
+import { IReadinessCheck } from "@fluidframework/server-services-core";
 
 export function create(
 	config: Provider,
@@ -49,11 +51,14 @@ export function create(
 	producer: IProducer,
 	documentRepository: IDocumentRepository,
 	documentDeleteService: IDocumentDeleteService,
+	startupCheck: IReadinessCheck,
 	tokenRevocationManager?: ITokenRevocationManager,
 	revokedTokenChecker?: IRevokedTokenChecker,
 	collaborationSessionEventEmitter?: TypedEventEmitter<ICollaborationSessionEvents>,
 	clusterDrainingChecker?: IClusterDrainingChecker,
 	enableClientIPLogging?: boolean,
+	readinessCheck?: IReadinessCheck,
+	fluidAccessTokenGenerator?: IFluidAccessTokenGenerator,
 ) {
 	// Maximum REST request size
 	const requestSize = config.get("alfred:restJsonSize");
@@ -105,6 +110,15 @@ export function create(
 							: "";
 						additionalProperties.hashedClientIPAddress = hashedClientIP;
 
+						const clientIPAddress = req.ip ? req.ip : "";
+						if (isIPv4(clientIPAddress)) {
+							additionalProperties.clientIPType = "IPv4";
+						} else if (isIPv6(clientIPAddress)) {
+							additionalProperties.clientIPType = "IPv6";
+						} else {
+							additionalProperties.clientIPType = "";
+						}
+
 						const XAzureClientIP = "x-azure-clientip";
 						const hashedAzureClientIP = req.headers[XAzureClientIP]
 							? shajs("sha256").update(`${req.headers[XAzureClientIP]}`).digest("hex")
@@ -120,6 +134,16 @@ export function create(
 					if (req.body?.isEphemeralContainer !== undefined) {
 						additionalProperties.isEphemeralContainer = req.body.isEphemeralContainer;
 					}
+					const customHeadersToLog = (config.get("customHeadersToLog") as string[]) ?? [];
+					if (customHeadersToLog) {
+						customHeadersToLog.forEach((header) => {
+							const lowerCaseHeader = header.toLowerCase();
+							if (req.headers[lowerCaseHeader]) {
+								additionalProperties[lowerCaseHeader] =
+									req.headers[lowerCaseHeader];
+							}
+						});
+					}
 					return additionalProperties;
 				},
 				enableLatencyMetric,
@@ -132,8 +156,6 @@ export function create(
 	app.use(cookieParser());
 	app.use(json({ limit: requestSize }));
 	app.use(urlencoded({ limit: requestSize, extended: false }));
-
-	app.use(bindCorrelationId());
 
 	// Bind routes
 	const routes = alfredRoutes.create(
@@ -148,10 +170,13 @@ export function create(
 		appTenants,
 		documentRepository,
 		documentDeleteService,
+		startupCheck,
 		tokenRevocationManager,
 		revokedTokenChecker,
 		collaborationSessionEventEmitter,
 		clusterDrainingChecker,
+		readinessCheck,
+		fluidAccessTokenGenerator,
 	);
 
 	app.use(routes.api);

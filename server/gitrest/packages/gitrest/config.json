@@ -38,11 +38,14 @@
 			"name": "isomorphic-git"
 		},
 		"filesystem": {
-			"name": "nodeFs"
+			"name": "nodeFs",
+			"maxFileSizeBytes": 0
 		},
 		"ephemeralfilesystem": {
-			"name": "redisFs"
+			"name": "redisFs",
+			"maxFileSizeBytes": 0
 		},
+		"ephemeralDocumentTTLSec": 86400,
 		"persistLatestFullSummary": false,
 		"persistLatestFullEphemeralSummary": false,
 		"repoPerDocEnabled": false,
@@ -65,7 +68,13 @@
 		"maxRetriesPerRequest": 20,
 		"enableAutoPipelining": false,
 		"enableOfflineQueue": true,
-		"enableClustering": false
+		"enableClustering": false,
+		"retryDelayOnMoved": 100,
+		"maxRedirections": 16,
+		"retryStrategyParams": {
+			"delayPerAttemptMs": 50,
+			"maxDelayMs": 2000
+		}
 	},
 	"system": {
 		"httpServer": {

@@ -4,20 +4,23 @@
  */
 
 import { strict as assert } from "assert";
+
 import { AttachState } from "@fluidframework/container-definitions";
 import {
 	LocalReferenceCollection,
 	MergeTreeDeltaType,
 	ReferenceType,
-} from "@fluidframework/merge-tree";
-import { MockLogger } from "@fluidframework/telemetry-utils";
+	type ISegmentInternal,
+} from "@fluidframework/merge-tree/internal";
+import { MockLogger } from "@fluidframework/telemetry-utils/internal";
 import {
 	MockContainerRuntimeFactory,
 	MockFluidDataStoreRuntime,
 	MockStorage,
-} from "@fluidframework/test-runtime-utils";
+} from "@fluidframework/test-runtime-utils/internal";
+
 import { resetReentrancyLogCounter } from "../sequence.js";
-import { SharedString } from "../sharedString.js";
+import { SharedString } from "../sequenceFactory.js";
 
 describe("SharedString op-reentrancy", () => {
 	/**
@@ -80,8 +83,7 @@ describe("SharedString op-reentrancy", () => {
 			dataStoreRuntime1.options = { sharedStringPreventReentrancy: false };
 			sharedString = factory.create(dataStoreRuntime1, "A");
 
-			const containerRuntime1 =
-				containerRuntimeFactory.createContainerRuntime(dataStoreRuntime1);
+			containerRuntimeFactory.createContainerRuntime(dataStoreRuntime1);
 			const services1 = {
 				deltaConnection: dataStoreRuntime1.createDeltaConnection(),
 				objectStorage: new MockStorage(),
@@ -91,8 +93,7 @@ describe("SharedString op-reentrancy", () => {
 			const dataStoreRuntime2 = new MockFluidDataStoreRuntime();
 			dataStoreRuntime2.options = { sharedStringPreventReentrancy: false };
 			dataStoreRuntime2.setAttachState(AttachState.Attached);
-			const containerRuntime2 =
-				containerRuntimeFactory.createContainerRuntime(dataStoreRuntime2);
+			containerRuntimeFactory.createContainerRuntime(dataStoreRuntime2);
 			const services2 = {
 				deltaConnection: dataStoreRuntime2.createDeltaConnection(),
 				objectStorage: new MockStorage(),
@@ -133,7 +134,8 @@ describe("SharedString op-reentrancy", () => {
 
 			sharedString.on("sequenceDelta", ({ deltaOperation, isLocal }, target) => {
 				if (deltaOperation === MergeTreeDeltaType.INSERT && isLocal) {
-					const { segment: segment2 } = target.getContainingSegment(0);
+					const { segment: segment2 }: { segment: ISegmentInternal | undefined } =
+						target.getContainingSegment(0);
 					assert(segment2);
 					assert.equal(segment, segment2);
 					assert(segment2.localRefs);
@@ -144,7 +146,7 @@ describe("SharedString op-reentrancy", () => {
 			sharedString.insertText(4, "e");
 			containerRuntimeFactory.processAllMessages();
 
-			sharedString.walkSegments((seg) => {
+			sharedString.walkSegments((seg: ISegmentInternal) => {
 				if (!seg.localRefs) {
 					return false;
 				}
@@ -177,7 +179,7 @@ describe("SharedString op-reentrancy", () => {
 			sharedString.insertText(4, "e");
 			containerRuntimeFactory.processAllMessages();
 
-			sharedString.walkSegments((seg) => {
+			sharedString.walkSegments((seg: ISegmentInternal) => {
 				if (!seg.localRefs) {
 					return false;
 				}

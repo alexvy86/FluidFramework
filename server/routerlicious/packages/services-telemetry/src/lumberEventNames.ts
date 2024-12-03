@@ -15,6 +15,7 @@ export enum LumberEventName {
 
 	// Fluid server infrastructure
 	RunService = "RunService",
+	GracefulShutdown = "GracefulShutdown",
 
 	// Unit Testing
 	UnitTestEvent = "UnitTestEvent",
@@ -40,6 +41,14 @@ export enum LumberEventName {
 	StartSessionResult = "StartSessionResult",
 	ScribeSessionResult = "ScribeSessionResult",
 
+	// Collaboration Sessions
+	NexusSessionStart = "NexusSessionStart",
+	NexusSessionResult = "NexusSessionResult",
+
+	// Session Discovery
+	GetSession = "GetSession",
+	VerifyStorageToken = "VerifyStorageToken",
+
 	// Miscellaneous
 	ConnectDocument = "ConnectDocument",
 	ConnectDocumentAddClient = "ConnectDocumentAddClient",
@@ -51,6 +60,7 @@ export enum LumberEventName {
 	DisconnectDocumentRetry = "DisconnectDocumentRetry",
 	RiddlerFetchTenantKey = "RiddlerFetchTenantKey",
 	HttpRequest = "HttpRequest",
+	SocketConnection = "SocketConnection",
 	SocketConnectionCount = "SocketConnectionCount",
 	TotalConnectionCount = "TotalConnectionCount",
 	ConnectionCountPerNode = "ConnectionCountPerNode",
@@ -58,4 +68,8 @@ export enum LumberEventName {
 	GlobalCheckpointError = "GlobalCheckpointError",
 	ReprocessOps = "ReprocessOps",
 	MongoMonitoring = "MongoMonitoring",
+	StartupProbe = "StartupProbe",
+	LivenessProbe = "LivenessProbe",
+	ReadinessProbe = "ReadinessProbe",
+	CircuitBreaker = "CircuitBreaker",
 }

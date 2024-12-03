@@ -4,11 +4,14 @@
  */
 
 import { strict as assert } from "node:assert";
-import { ISocketStorageDiscovery } from "@fluidframework/odsp-driver-definitions";
-import { IClient, ISignalMessage } from "@fluidframework/protocol-definitions";
-import { ITelemetryLoggerExt, MockLogger } from "@fluidframework/telemetry-utils";
+
+import { IClient } from "@fluidframework/driver-definitions";
+import { ISignalMessage } from "@fluidframework/driver-definitions/internal";
+import { ISocketStorageDiscovery } from "@fluidframework/odsp-driver-definitions/internal";
+import { ITelemetryLoggerExt, MockLogger } from "@fluidframework/telemetry-utils/internal";
 import { SinonFakeTimers, type SinonStub, stub, useFakeTimers } from "sinon";
 import { Socket } from "socket.io-client";
+
 import { OdspFluidDataStoreLocator } from "../../contractsPublic.js";
 import { createOdspUrl } from "../../createOdspUrl.js";
 import { EpochTracker } from "../../epochTracker.js";
@@ -20,6 +23,7 @@ import { OdspDriverUrlResolver } from "../../odspDriverUrlResolver.js";
 import { getHashedDocumentId } from "../../odspPublicUtils.js";
 import * as socketModule from "../../socketModule.js";
 import * as joinSession from "../../vroom.js";
+
 import { ClientSocketMock } from "./socketMock.js";
 
 describe("DeltaConnectionMetadata update tests", () => {
@@ -92,7 +96,12 @@ describe("DeltaConnectionMetadata update tests", () => {
 			new LocalPersistentCache(2000),
 			{ snapshotOptions: { timeout: 2000 } },
 		);
-		const locator: OdspFluidDataStoreLocator = { driveId, itemId, siteUrl, dataStorePath: "/" };
+		const locator: OdspFluidDataStoreLocator = {
+			driveId,
+			itemId,
+			siteUrl,
+			dataStorePath: "/",
+		};
 		const request = createOdspUrl(locator);
 		const resolvedUrl = await resolver.resolve({ url: request });
 		logger = new MockLogger().toTelemetryLogger();
@@ -171,7 +180,7 @@ describe("DeltaConnectionMetadata update tests", () => {
 
 		service.on("metadataUpdate", handler);
 
-		socket.emit("signal", signalMessage1);
+		socket.emit("signal", signalMessage1, joinSessionResponse.id);
 		assert(eventRaised, "event2 should have been raised");
 		service.off("metadataUpdate", handler);
 
