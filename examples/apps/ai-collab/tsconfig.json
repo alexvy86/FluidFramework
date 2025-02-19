@@ -20,11 +20,11 @@
 		"paths": {
 			"@/*": ["./src/*"],
 		},
-    // We don't really need JS files for the Typescript build, but if we don't specify allowJs:true, NextJS will
-    // rewrite the tsconfig file and add it (and leave the file formatted that doesn't match our settings, to boot).
-    // See https://github.com/vercel/next.js/discussions/39942.
-    // Go upvote it so they eventually provide some alternative to a forced change to tsconfig.
-    "allowJs": true,
+		// We don't really need JS files for the Typescript build, but if we don't specify allowJs:true, NextJS will
+		// rewrite the tsconfig file and add it (and leave the file formatted that doesn't match our settings, to boot).
+		// See https://github.com/vercel/next.js/discussions/39942.
+		// Go upvote it so they eventually provide some alternative to a forced change to tsconfig.
+		"allowJs": true,
 	},
 	"include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
 	"exclude": ["node_modules", ".next"],
