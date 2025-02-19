@@ -34,7 +34,8 @@ import {
 	Tooltip,
 	Typography,
 } from "@mui/material";
-import { Tree, type TreeView } from "fluid-framework";
+import { Tree, type IFluidContainer, type TreeView } from "fluid-framework";
+import { SharedString } from "fluid-framework/legacy";
 import { useSnackbar } from "notistack";
 import React, { useState, type ReactNode, type SetStateAction } from "react";
 
@@ -55,6 +56,7 @@ export function TaskCard(props: {
 	branchDifferences?: Difference[];
 	sharedTreeTaskGroup: SharedTreeTaskGroup;
 	sharedTreeTask: SharedTreeTask;
+	container: IFluidContainer;
 }): JSX.Element {
 	const { enqueueSnackbar } = useSnackbar();
 
@@ -562,6 +564,41 @@ export function TaskCard(props: {
 									},
 								}}
 							/>
+						</FormControl>
+					</Stack>
+
+					<Stack direction="row" spacing={1} alignItems="center">
+						<FormControl>
+							{props.sharedTreeTask.notes === undefined ? (
+								<a
+									// eslint-disable-next-line @typescript-eslint/no-misused-promises
+									onClick={async () => {
+										// eslint-disable-next-line unicorn/no-await-expression-member, require-atomic-updates
+										props.sharedTreeTask.notes = (
+											await props.container.create(SharedString)
+										).handle;
+									}}
+								>
+									Add notes
+								</a>
+							) : (
+								<TextField
+									id="input-notes-label-id"
+									label="Notes"
+									value={props.sharedTreeTask.notes}
+									size="small"
+									slotProps={{
+										htmlInput: {
+											sx: {
+												backgroundColor:
+													fieldDifferences.changes.complexity === undefined
+														? "white"
+														: "#a4dbfc",
+											},
+										},
+									}}
+								/>
+							)}
 						</FormControl>
 					</Stack>
 				</Stack>

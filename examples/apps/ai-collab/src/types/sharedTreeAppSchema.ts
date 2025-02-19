@@ -6,7 +6,8 @@
 import { ExperimentalPresenceManager } from "@fluidframework/presence/alpha";
 import { Tree, type TreeNode, TreeViewConfiguration } from "@fluidframework/tree";
 import { SchemaFactoryAlpha } from "@fluidframework/tree/alpha";
-import { SharedTree } from "fluid-framework";
+import { SharedTree, type ContainerSchema } from "fluid-framework";
+import { SharedString } from "fluid-framework/legacy";
 
 // The string passed to the SchemaFactory should be unique
 const sf = new SchemaFactoryAlpha("ai-collab-sample-application");
@@ -45,6 +46,11 @@ export class SharedTreeTask extends sf.object(
 		assignee: sf.required(sf.string, {
 			metadata: {
 				description: `The name of the tasks assignee e.g. "Bob" or "Alice".`,
+			},
+		}),
+		notes: sf.optional(sf.handle, {
+			metadata: {
+				description: `Extra notes about the task`,
 			},
 		}),
 	},
@@ -199,7 +205,7 @@ export const INITIAL_APP_STATE = {
 	],
 } as const;
 
-export const CONTAINER_SCHEMA = {
+export const CONTAINER_SCHEMA: ContainerSchema = {
 	initialObjects: {
 		appState: SharedTree,
 		/**
@@ -208,6 +214,7 @@ export const CONTAINER_SCHEMA = {
 		 * */
 		presence: ExperimentalPresenceManager,
 	},
+	dynamicObjectTypes: [SharedString],
 };
 
 export const TREE_CONFIGURATION = new TreeViewConfiguration({
