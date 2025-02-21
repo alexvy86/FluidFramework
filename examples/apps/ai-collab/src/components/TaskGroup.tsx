@@ -37,7 +37,9 @@ import {
 	Tooltip,
 	Typography,
 } from "@mui/material";
-import { type TreeView } from "fluid-framework";
+import { type IFluidContainer, type TreeView } from "fluid-framework";
+// eslint-disable-next-line import/no-internal-modules -- This is the correct place to get SharedString
+import { SharedString } from "fluid-framework/legacy";
 import { useSnackbar } from "notistack";
 import React, { useEffect, useState } from "react";
 
@@ -48,6 +50,7 @@ import {
 	aiCollabLlmTreeNodeValidator,
 	SharedTreeAppState,
 	SharedTreeTaskGroup,
+	type CONTAINER_SCHEMA,
 } from "@/types/sharedTreeAppSchema";
 import { useSharedTreeRerender } from "@/useSharedTreeRerender";
 
@@ -55,6 +58,8 @@ export function TaskGroup(props: {
 	treeView: TreeView<typeof SharedTreeAppState>;
 	branchDifferences?: Difference[];
 	sharedTreeTaskGroup: SharedTreeTaskGroup;
+	// Need to pass the container object down so we can dynamically create new instances of dynamicObjectTypes
+	container: IFluidContainer<typeof CONTAINER_SCHEMA>;
 }): JSX.Element {
 	const { enqueueSnackbar } = useSnackbar();
 
@@ -363,6 +368,7 @@ export function TaskGroup(props: {
 						treeView={llmBranchData.aiCollabBranch}
 						differences={llmBranchData.differences}
 						newBranchTargetNode={llmBranchData.newBranchTargetNode}
+						container={props.container}
 					/>
 				)}
 
@@ -402,13 +408,18 @@ export function TaskGroup(props: {
 					variant="contained"
 					color="success"
 					onClick={() => {
-						props.sharedTreeTaskGroup.tasks.insertAtEnd({
-							title: `New Task #${props.sharedTreeTaskGroup.tasks.length + 1}`,
-							description: "This is the new task. ",
-							priority: "low",
-							complexity: 1,
-							status: "todo",
-							assignee: "UNASSIGNED",
+						// eslint-disable-next-line no-void - Alternative could be to make the handler async, which requires another lint rule disable
+						void props.container.create(SharedString).then((sharedString: SharedString) => {
+							sharedString.insertText(0, "Enter notes here.");
+							props.sharedTreeTaskGroup.tasks.insertAtEnd({
+								title: `New Task #${props.sharedTreeTaskGroup.tasks.length + 1}`,
+								description: "This is the new task. ",
+								priority: "low",
+								complexity: 1,
+								status: "todo",
+								assignee: "UNASSIGNED",
+								notes: sharedString.handle,
+							});
 						});
 					}}
 				>
@@ -595,9 +606,19 @@ function TaskGroupDiffModal(props: {
 	treeView: TreeView<typeof SharedTreeAppState>;
 	differences: Difference[];
 	newBranchTargetNode: SharedTreeTaskGroup;
+	// Need to pass the container object down so we can dynamically create new instances of dynamicObjectTypes
+	container: IFluidContainer<typeof CONTAINER_SCHEMA>;
 }): JSX.Element {
-	const { isOpen, onClose, onAccept, onDecline, treeView, differences, newBranchTargetNode } =
-		props;
+	const {
+		isOpen,
+		onClose,
+		onAccept,
+		onDecline,
+		treeView,
+		differences,
+		newBranchTargetNode,
+		container,
+	} = props;
 
 	return (
 		<Dialog
@@ -664,6 +685,7 @@ function TaskGroupDiffModal(props: {
 					treeView={treeView}
 					sharedTreeTaskGroup={newBranchTargetNode}
 					branchDifferences={differences}
+					container={container}
 				/>
 			</Box>
 		</Dialog>

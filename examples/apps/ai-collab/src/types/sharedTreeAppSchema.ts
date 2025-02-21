@@ -7,6 +7,7 @@ import { ExperimentalPresenceManager } from "@fluidframework/presence/alpha";
 import { Tree, type TreeNode, TreeViewConfiguration } from "@fluidframework/tree";
 import { SchemaFactoryAlpha } from "@fluidframework/tree/alpha";
 import { SharedTree, type ContainerSchema } from "fluid-framework";
+// eslint-disable-next-line import/no-internal-modules -- This is the correct place to get SharedString
 import { SharedString } from "fluid-framework/legacy";
 
 // The string passed to the SchemaFactory should be unique
@@ -205,7 +206,7 @@ export const INITIAL_APP_STATE = {
 	],
 } as const;
 
-export const CONTAINER_SCHEMA: ContainerSchema = {
+export const CONTAINER_SCHEMA = {
 	initialObjects: {
 		appState: SharedTree,
 		/**
@@ -215,7 +216,7 @@ export const CONTAINER_SCHEMA: ContainerSchema = {
 		presence: ExperimentalPresenceManager,
 	},
 	dynamicObjectTypes: [SharedString],
-};
+} satisfies ContainerSchema;
 
 export const TREE_CONFIGURATION = new TreeViewConfiguration({
 	schema: SharedTreeAppState,
