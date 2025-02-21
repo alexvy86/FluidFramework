@@ -17,6 +17,8 @@ import {
 	Typography,
 } from "@mui/material";
 import type { IFluidContainer, TreeView } from "fluid-framework";
+// eslint-disable-next-line import/no-internal-modules -- This is the correct place to get SharedString
+import { SharedString } from "fluid-framework/legacy";
 import React, { useEffect, useState } from "react";
 
 import { PresenceManager } from "./presence";
@@ -43,6 +45,11 @@ export async function createAndInitializeContainer(): Promise<
 	const container = await createContainer(CONTAINER_SCHEMA);
 	const treeView = container.initialObjects.appState.viewWith(TREE_CONFIGURATION);
 	treeView.initialize(new SharedTreeAppState(INITIAL_APP_STATE));
+	for (const task of treeView.root.taskGroups[0]?.tasks ?? []) {
+		const sharedString = await container.create(SharedString);
+		sharedString.insertText(0, "Enter notes here.");
+		task.notes = sharedString.handle;
+	}
 	treeView.dispose(); // After initializing, dispose the tree view so later loading of the data can work correctly
 	return container;
 }
@@ -59,7 +66,7 @@ export default function TasksListPage(): JSX.Element {
 		postAttach,
 		async (id) => loadContainer(CONTAINER_SCHEMA, id),
 		// Get data from existing container
-		(fluidContainer) => {
+		(fluidContainer: IFluidContainer<typeof CONTAINER_SCHEMA>) => {
 			const _treeView = fluidContainer.initialObjects.appState.viewWith(TREE_CONFIGURATION);
 			setTreeView(_treeView);
 
@@ -97,6 +104,7 @@ export default function TasksListPage(): JSX.Element {
 			{isFluidInitialized === false && <CircularProgress />}
 
 			{isFluidInitialized === true &&
+				container !== undefined &&
 				treeView !== undefined &&
 				taskGroups !== undefined &&
 				selectedTaskGroup !== undefined && (
@@ -130,7 +138,11 @@ export default function TasksListPage(): JSX.Element {
 							</Button>
 						</Stack>
 
-						<TaskGroup treeView={treeView} sharedTreeTaskGroup={selectedTaskGroup} />
+						<TaskGroup
+							treeView={treeView}
+							sharedTreeTaskGroup={selectedTaskGroup}
+							container={container}
+						/>
 					</React.Fragment>
 				)}
 		</Container>

@@ -5,6 +5,7 @@
 
 "use client";
 
+import { CollaborativeTextArea, SharedStringHelper } from "@fluid-example/example-utils";
 import {
 	aiCollab,
 	type AiCollabErrorResponse,
@@ -33,10 +34,11 @@ import {
 	Tooltip,
 	Typography,
 } from "@mui/material";
-import { Tree, type IFluidContainer, type TreeView } from "fluid-framework";
+import { Tree, type TreeView } from "fluid-framework";
+// eslint-disable-next-line import/no-internal-modules -- This is the correct place to get SharedString
 import { SharedString } from "fluid-framework/legacy";
 import { useSnackbar } from "notistack";
-import React, { useState, type ReactNode, type SetStateAction } from "react";
+import React, { useState, type ReactNode, type SetStateAction, useEffect } from "react";
 
 import { getOpenAiClient } from "@/infra/openAiClient";
 import {
@@ -55,7 +57,6 @@ export function TaskCard(props: {
 	branchDifferences?: Difference[];
 	sharedTreeTaskGroup: SharedTreeTaskGroup;
 	sharedTreeTask: SharedTreeTask;
-	container: IFluidContainer;
 }): JSX.Element {
 	const { enqueueSnackbar } = useSnackbar();
 
@@ -221,6 +222,22 @@ export function TaskCard(props: {
 		}
 	};
 
+	const [notes, setNotes] = useState<SharedString>();
+
+	useEffect(() => {
+		if (props.sharedTreeTask.notes !== undefined) {
+			props.sharedTreeTask.notes.get().then(
+				(ss: unknown) => {
+					setNotes(ss as SharedString);
+				},
+				(error) => {
+					console.error(`Error encountered loading SharedString for task notes: "${error}".`);
+					throw error;
+				},
+			);
+		}
+	}, [props.sharedTreeTask.notes, setNotes]);
+
 	return (
 		<Card
 			sx={{
@@ -228,7 +245,7 @@ export function TaskCard(props: {
 				position: "relative",
 				backgroundColor: cardColor,
 				width: "400px",
-				height: "245px",
+				height: "570px",
 			}}
 			key={`${props.sharedTreeTask.title}`}
 		>
@@ -393,7 +410,7 @@ export function TaskCard(props: {
 				)}
 			</Stack>
 
-			<Stack direction="row" spacing={2} width="100%">
+			<Stack direction="row" sx={{ mb: 2 }} spacing={2} width="100%">
 				<Stack spacing={2} width="50%">
 					<Stack direction="row" spacing={1} alignItems="center">
 						<FormControl fullWidth>
@@ -547,41 +564,18 @@ export function TaskCard(props: {
 							/>
 						</FormControl>
 					</Stack>
+				</Stack>
+			</Stack>
 
-					<Stack direction="row" spacing={1} alignItems="center">
-						<FormControl>
-							{props.sharedTreeTask.notes === undefined ? (
-								<a
-									// eslint-disable-next-line @typescript-eslint/no-misused-promises
-									onClick={async () => {
-										// eslint-disable-next-line unicorn/no-await-expression-member, require-atomic-updates
-										props.sharedTreeTask.notes = (
-											await props.container.create(SharedString)
-										).handle;
-									}}
-								>
-									Add notes
-								</a>
-							) : (
-								<TextField
-									id="input-notes-label-id"
-									label="Notes"
-									value={props.sharedTreeTask.notes}
-									size="small"
-									slotProps={{
-										htmlInput: {
-											sx: {
-												backgroundColor:
-													fieldDifferences.changes.complexity === undefined
-														? "white"
-														: "#a4dbfc",
-											},
-										},
-									}}
-								/>
-							)}
+			<Stack direction="row" sx={{ mb: 2 }}>
+				<Stack direction="row" spacing={1} alignItems="center">
+					{notes === undefined ? (
+						"Loading notes..."
+					) : (
+						<FormControl fullWidth>
+							<CollaborativeTextArea sharedStringHelper={new SharedStringHelper(notes)} />
 						</FormControl>
-					</Stack>
+					)}
 				</Stack>
 			</Stack>
 		</Card>
