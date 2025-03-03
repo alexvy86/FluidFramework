@@ -253,6 +253,9 @@ importers:
       '@fluidframework/build-tools':
         specifier: ^0.54.0
         version: 0.54.0(@types/node@22.10.1)
+      '@fluidframework/datastore-definitions':
+        specifier: workspace:~
+        version: link:../../../packages/runtime/datastore-definitions
       '@fluidframework/devtools':
         specifier: workspace:~
         version: link:../../../packages/tools/devtools/devtools

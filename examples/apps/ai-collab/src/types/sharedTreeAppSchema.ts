@@ -54,6 +54,11 @@ export class SharedTreeTask extends sf.object(
 				description: `Extra notes about the task`,
 			},
 		}),
+		image: sf.optional(sf.handle, {
+			metadata: {
+				description: `Some image associate with the task`,
+			},
+		}),
 	},
 	{
 		metadata: {
