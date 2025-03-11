@@ -5,7 +5,6 @@
 
 "use client";
 
-import type { IFluidDataStoreRuntime } from "@fluidframework/datastore-definitions/internal";
 import { acquirePresenceViaDataObject } from "@fluidframework/presence/alpha";
 import {
 	Box,

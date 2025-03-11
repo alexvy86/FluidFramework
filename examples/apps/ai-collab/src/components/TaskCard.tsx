@@ -35,11 +35,11 @@ import {
 	Tooltip,
 	Typography,
 } from "@mui/material";
-import { Tree, type TreeView } from "fluid-framework";
+import { Tree, type IFluidHandle, type TreeView } from "fluid-framework";
 // eslint-disable-next-line import/no-internal-modules -- This is the correct place to get SharedString
 import { SharedString } from "fluid-framework/legacy";
 import { useSnackbar } from "notistack";
-import React, { useState, type ReactNode, type SetStateAction, useEffect } from "react";
+import React, { useState, type ReactNode, type SetStateAction, useEffect, useRef } from "react";
 
 import { getOpenAiClient } from "@/infra/openAiClient";
 import {
@@ -58,6 +58,7 @@ export function TaskCard(props: {
 	branchDifferences?: Difference[];
 	sharedTreeTaskGroup: SharedTreeTaskGroup;
 	sharedTreeTask: SharedTreeTask;
+	uploadBlob: (blob: ArrayBuffer | ArrayBufferLike) => Promise<IFluidHandle<ArrayBufferLike>>;
 }): JSX.Element {
 	const { enqueueSnackbar } = useSnackbar();
 
@@ -69,14 +70,56 @@ export function TaskCard(props: {
 	>(undefined);
 	const [diffOldValue, setDiffOldValue] = useState<React.ReactNode>();
 	const [isAiTaskRunning, setIsAiTaskRunning] = useState<boolean>(false);
+	const [isImageUploading, setIsImageUploading] = useState<boolean>(false);
+	const [hasImage, setHasImage] = useState<boolean>(false);
+	const fileInputRef = useRef<HTMLInputElement>(null);
 
 	useSharedTreeRerender({ sharedTreeNode: props.sharedTreeTask, logId: "TaskCard" });
 
 	const [branchDifferences, setBranchDifferences] = useState(props.branchDifferences);
 
+	// Check if task has an image attached
+	useEffect(() => {
+		setHasImage(props.sharedTreeTask.image !== undefined);
+	}, [props.sharedTreeTask.image]);
+
 	const deleteTask = (): void => {
 		const taskIndex = props.sharedTreeTaskGroup.tasks.indexOf(props.sharedTreeTask);
 		props.sharedTreeTaskGroup.tasks.removeAt(taskIndex);
+	};
+
+	const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>): Promise<void> => {
+		const file = event.target.files?.item(0);
+		if (file === undefined || file === null) {
+			console.log("No file selected");
+			return;
+		}
+		setIsImageUploading(true);
+		try {
+			const buffer = await file?.arrayBuffer();
+			if (buffer === undefined) {
+				throw new Error("Failed to read file contents");
+			}
+			const handle = await props.uploadBlob(buffer);
+			// eslint-disable-next-line require-atomic-updates
+			props.sharedTreeTask.image = handle;
+			setHasImage(true);
+			enqueueSnackbar(`File "${file.name}" uploaded successfully`, {
+				variant: "success",
+				autoHideDuration: 3000,
+			});
+		} catch (error) {
+			enqueueSnackbar(`Error uploading file: ${error instanceof Error ? error.message : "unknown error"}`, {
+				variant: "error",
+				autoHideDuration: 5000,
+			});
+		} finally {
+			setIsImageUploading(false);
+			// Reset the file input so the same file can be selected again
+			if (fileInputRef.current) {
+				fileInputRef.current.value = "";
+			}
+		}
 	};
 
 	const fieldDifferences: {
@@ -584,6 +627,38 @@ export function TaskCard(props: {
 						</FormControl>
 					</Stack>
 				</Stack>
+			</Stack>
+
+			{/* Add file upload section */}
+			<Stack direction="row" sx={{ mb: 2 }} spacing={1}>
+				<input
+					ref={fileInputRef}
+					type="file"
+					accept="image/*"
+					style={{ display: 'none' }}
+					onChange={handleFileUpload}
+				/>
+				<Button
+					variant="outlined"
+					startIcon={<Icon icon={hasImage ? "mdi:image" : "mdi:upload"} />}
+					onClick={() => fileInputRef.current?.click()}
+					disabled={isImageUploading}
+					sx={{ flexGrow: 1 }}
+				>
+					{isImageUploading ? "Uploading..." : hasImage ? "Replace Image" : "Upload Image"}
+				</Button>
+				{hasImage && (
+					<Button
+						color="error"
+						variant="outlined"
+						onClick={() => {
+							props.sharedTreeTask.image = undefined;
+							setHasImage(false);
+						}}
+					>
+						Remove
+					</Button>
+				)}
 			</Stack>
 
 			<Stack direction="row" sx={{ mb: 2 }}>

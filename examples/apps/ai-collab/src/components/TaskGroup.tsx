@@ -52,6 +52,7 @@ import {
 	SharedTreeTaskGroup,
 	type CONTAINER_SCHEMA,
 } from "@/types/sharedTreeAppSchema";
+import { createBlobUploader } from "@/utils/blobUtils";
 import { useSharedTreeRerender } from "@/useSharedTreeRerender";
 
 export function TaskGroup(props: {
@@ -80,6 +81,9 @@ export function TaskGroup(props: {
 	const [redoStack, setRedoStack] = useState<Revertible[]>([]);
 
 	useSharedTreeRerender({ sharedTreeNode: props.sharedTreeTaskGroup, logId: "TaskGroup" });
+
+	// Create blob uploader function to pass to TaskCard, to avoid having to passing the container to it
+	const blobUploader = createBlobUploader(props.container);
 
 	/**
 	 * Create undo and redo stacks of {@link Revertible}.
@@ -542,6 +546,7 @@ export function TaskGroup(props: {
 							sharedTreeTask={task}
 							sharedTreeBranch={props.treeView}
 							branchDifferences={taskDiffs}
+							uploadBlob={blobUploader}
 						/>
 					);
 				})}
