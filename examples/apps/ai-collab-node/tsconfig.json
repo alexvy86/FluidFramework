@@ -1,0 +1,17 @@
+{
+	"extends": "../../../common/build/build-common/tsconfig.node16.json",
+	"compilerOptions": {
+		"skipLibCheck": true,
+		"strict": true,
+		"noEmit": true,
+		"esModuleInterop": true,
+		"module": "ESNext",
+		"moduleResolution": "bundler",
+		"resolveJsonModule": true,
+		"isolatedModules": true,
+		"jsx": "preserve",
+		"incremental": true,
+	},
+	"include": ["**/*.ts"],
+	"exclude": ["node_modules"],
+}

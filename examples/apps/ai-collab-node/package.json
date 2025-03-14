@@ -1,0 +1,61 @@
+{
+	"name": "@fluid-example/ai-collab-node",
+	"version": "2.30.0",
+	"private": true,
+	"description": "Simple Fluid app to create snapshots for testing the MeTA processor.",
+	"homepage": "https://fluidframework.com",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/microsoft/FluidFramework.git",
+		"directory": "examples/apps/ai-collab-node"
+	},
+	"license": "MIT",
+	"author": "Microsoft and contributors",
+	"sideEffects": false,
+	"type": "module",
+	"scripts": {
+		"build": "fluid-build . --task build",
+		"build:compile": "fluid-build . --task compile",
+		"build:esnext": "tsc --project ./tsconfig.json",
+		"check:biome": "biome check .",
+		"check:format": "npm run check:biome",
+		"clean": "rimraf --glob dist lib \"**/*.tsbuildinfo\" \"**/*.build.log\" _api-extractor-temp nyc",
+		"eslint": "eslint --format stylish src",
+		"eslint:fix": "eslint --format stylish src --fix --fix-type problem,suggestion,layout",
+		"format": "npm run format:biome",
+		"format:biome": "biome check . --write",
+		"lint": "fluid-build . --task lint",
+		"lint:fix": "fluid-build . --task eslint:fix --task format",
+		"start": "node ./lib/index.js",
+		"start:server": "tinylicious"
+	},
+	"devDependencies": {
+		"@azure/identity": "^4.4.1",
+		"@azure/msal-node": "^3.3.0",
+		"@biomejs/biome": "~1.9.3",
+		"@fluid-internal/mocha-test-setup": "workspace:~",
+		"@fluid-tools/build-cli": "^0.54.0",
+		"@fluidframework/build-common": "^2.0.3",
+		"@fluidframework/build-tools": "^0.54.0",
+		"@fluidframework/datastore-definitions": "workspace:~",
+		"@fluidframework/devtools": "workspace:~",
+		"@fluidframework/eslint-config-fluid": "^5.7.3",
+		"@fluidframework/odsp-client": "workspace:~",
+		"@fluidframework/tinylicious-client": "workspace:~",
+		"@fluidframework/tree": "workspace:~",
+		"@microsoft/microsoft-graph-client": "^3.0.7",
+		"@microsoft/microsoft-graph-types": "^2.40.0",
+		"dotenv": "^16.4.7",
+		"eslint": "~8.55.0",
+		"fluid-framework": "workspace:~",
+		"next": "^14.2.8",
+		"rimraf": "^4.4.0",
+		"tinylicious": "^5.0.0",
+		"typescript": "~5.4.5"
+	},
+	"typeValidation": {
+		"disabled": true,
+		"broken": {},
+		"entrypoint": "legacy"
+	}
+}
