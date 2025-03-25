@@ -3,11 +3,11 @@
  * Licensed under the MIT License.
  */
 
-import {
-	AuthenticationResult,
-	InteractionRequiredAuthError,
-	PublicClientApplication,
-} from "@azure/msal-browser";
+// import {
+// 	AuthenticationResult,
+// 	InteractionRequiredAuthError,
+// 	PublicClientApplication,
+// } from "@azure/msal-browser";
 import { IOdspTokenProvider, TokenResponse } from "@fluidframework/odsp-client/beta";
 
 // Sample implementation of the IOdspTokenProvider interface.

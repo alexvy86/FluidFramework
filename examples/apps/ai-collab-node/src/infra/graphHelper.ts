@@ -3,6 +3,15 @@
  * Licensed under the MIT License.
  */
 
+import { ConfidentialClientApplication, AccountInfo } from "@azure/msal-node";
+import { Client } from "@microsoft/microsoft-graph-client";
+import {
+	AuthCodeMSALBrowserAuthenticationProvider,
+	AuthCodeMSALBrowserAuthenticationProviderOptions,
+	// eslint-disable-next-line import/no-internal-modules -- Not exported in the public API; docs use this pattern.
+} from "@microsoft/microsoft-graph-client/authProviders/authCodeMsalBrowser";
+import type { Site } from "@microsoft/microsoft-graph-types";
+
 export interface FileStorageContainer {
 	containerTypeId: string;
 	createdDateTime: string;
@@ -14,10 +23,13 @@ export interface FileStorageContainer {
 // This allows us to interact with the Graph API to get the file storage container ID,
 // the Fluid container ID, and the site URL. As well as create a sharing link and get the shared item.
 export class GraphHelper {
-	private readonly intializedPublicClientApplication: PublicClientApplication;
+	private readonly intializedPublicClientApplication: ConfidentialClientApplication;
 	private readonly accountInfo: AccountInfo;
 	private readonly graphClient: Client;
-	constructor(publicClientApplication: PublicClientApplication, accountInfo: AccountInfo) {
+	constructor(
+		publicClientApplication: ConfidentialClientApplication,
+		accountInfo: AccountInfo,
+	) {
 		this.intializedPublicClientApplication = publicClientApplication;
 		this.accountInfo = accountInfo;
 

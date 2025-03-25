@@ -3,12 +3,13 @@
  * Licensed under the MIT License.
  */
 
+import process from "node:process";
+
 // import { PublicClientApplication, InteractionType, AccountInfo } from "@azure/msal-node";
 import {
 	Configuration,
 	ConfidentialClientApplication,
 	type ClientCredentialRequest,
-	type AuthenticationResult,
 } from "@azure/msal-node";
 import "dotenv/config"; // process.env now has the values defined in a .env file
 
@@ -53,7 +54,7 @@ export async function TokenResponse(): Promise<string | null> {
 
 	const authResult = await cca.acquireTokenByClientCredential(clientCredentialRequest);
 
-	return authResult?.accessToken;
+	return authResult?.accessToken ?? null;
 }
 
 export let graphHelper: GraphHelper;

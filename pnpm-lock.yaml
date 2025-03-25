@@ -339,13 +339,13 @@ importers:
         version: link:../../../packages/test/mocha-test-setup
       '@fluid-tools/build-cli':
         specifier: ^0.54.0
-        version: 0.54.0(@types/node@22.10.1)(encoding@0.1.13)(typescript@5.4.5)(webpack-cli@5.1.4)
+        version: 0.54.0(@types/node@18.19.67)(encoding@0.1.13)(typescript@5.4.5)(webpack-cli@5.1.4)
       '@fluidframework/build-common':
         specifier: ^2.0.3
         version: 2.0.3
       '@fluidframework/build-tools':
         specifier: ^0.54.0
-        version: 0.54.0(@types/node@22.10.1)
+        version: 0.54.0(@types/node@18.19.67)
       '@fluidframework/datastore-definitions':
         specifier: workspace:~
         version: link:../../../packages/runtime/datastore-definitions
@@ -370,6 +370,9 @@ importers:
       '@microsoft/microsoft-graph-types':
         specifier: ^2.40.0
         version: 2.40.0
+      '@types/node':
+        specifier: ^18.19.59
+        version: 18.19.67
       dotenv:
         specifier: ^16.4.7
         version: 16.4.7
