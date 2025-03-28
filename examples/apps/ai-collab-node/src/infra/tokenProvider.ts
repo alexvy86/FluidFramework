@@ -36,8 +36,8 @@ export class SampleOdspTokenProvider implements IOdspTokenProvider {
 	public async fetchStorageToken(siteUrl: string): Promise<TokenResponse> {
 		// Note: for user-based authentication, the scope is normally 'Container.Selected', but for application-based
 		// authentication, it needs to be '.default'.
-		// const storageScope = [`${siteUrl}/Container.Selected`];
-		const storageScope = [`${siteUrl}/.default`];
+		// const storageScope = [`${siteUrl}Container.Selected`];
+		const storageScope = [`${siteUrl}.default`];
 
 		const token = await this.fetchTokens(storageScope);
 
@@ -54,6 +54,7 @@ export class SampleOdspTokenProvider implements IOdspTokenProvider {
 		if (response === null) {
 			throw new Error("Failed to get token");
 		}
+		// console.log("fetchTokens response", JSON.stringify(response));
 		return response.accessToken;
 	}
 }
