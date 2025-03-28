@@ -10,6 +10,7 @@ import {
 	ConfidentialClientApplication,
 	type ClientCredentialRequest,
 	type AuthenticationResult,
+	LogLevel,
 } from "@azure/msal-node";
 
 // eslint-disable-next-line import/no-unassigned-import, import/no-internal-modules
@@ -40,6 +41,14 @@ const clientConfig: Configuration = {
 		clientId,
 		authority: `https://login.microsoftonline.com/${tenantId}`,
 		clientSecret,
+	},
+	system: {
+		loggerOptions: {
+			loggerCallback: (logLevel, message, containsPii) => {
+				console.log(`[${logLevel}] ${message}`);
+			},
+			logLevel: LogLevel.Verbose,
+		},
 	},
 };
 
