@@ -3,7 +3,7 @@
  * Licensed under the MIT License.
  */
 
-import type { AuthenticationResult, ClientCredentialRequest } from "@azure/msal-node";
+// import type { AuthenticationResult, ClientCredentialRequest } from "@azure/msal-node";
 import { Client, type AuthenticationProviderOptions } from "@microsoft/microsoft-graph-client";
 // import {
 // 	AuthCodeMSALBrowserAuthenticationProvider,
@@ -67,6 +67,7 @@ export class GraphHelper {
 
 	// Function to get the site URL
 	public async getSiteUrl(): Promise<string> {
+		// API docs: https://learn.microsoft.com/en-us/graph/api/site-list?view=graph-rest-1.0&tabs=http
 		const response = (await this.graphClient
 			.api("/sites")
 			.version("beta")
@@ -102,8 +103,9 @@ export class GraphHelper {
 		return response.shareId;
 	}
 
-	// Function to get the shared item using the sharing link
+	// Function to get the shared item from a sharing link
 	public async getSharedItem(shareId: string): Promise<{ itemId: string; driveId: string }> {
+		// API docs: https://learn.microsoft.com/en-us/graph/api/shares-get?view=graph-rest-1.0&tabs=http
 		const response = (await this.graphClient
 			.api(`/shares/${shareId}/driveItem`)
 			.header("Prefer", "redeemSharingLink")
@@ -113,13 +115,5 @@ export class GraphHelper {
 			itemId: response.id,
 			driveId: response.parentReference.driveId,
 		};
-	}
-
-	// Function to get the user's profile photo
-	public async getProfilePhoto(): Promise<string> {
-		// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-		const photoBlob = await this.graphClient.api("/me/photo/$value").get();
-		// eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-		return URL.createObjectURL(photoBlob);
 	}
 }

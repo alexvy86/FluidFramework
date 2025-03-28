@@ -48,7 +48,7 @@ const clientConfig: Configuration = {
  * The scope is always in the format '<resource-appId-uri>/.default'. For more, visit:
  * https://docs.microsoft.com/azure/active-directory/develop/v2-oauth2-client-creds-grant-flow
  */
-const defaultTokenRequest = {
+export const defaultTokenRequest = {
 	scopes: ["https://graph.microsoft.com/.default"],
 };
 

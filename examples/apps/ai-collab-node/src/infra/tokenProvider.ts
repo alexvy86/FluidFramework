@@ -11,6 +11,8 @@
 import type { AuthenticationResult, ClientCredentialRequest } from "@azure/msal-node";
 import { IOdspTokenProvider, type TokenResponse } from "@fluidframework/odsp-client/beta";
 
+// import { defaultTokenRequest } from "./authHelper.js";
+
 // Sample implementation of the IOdspTokenProvider interface.
 // Provides the token that the Fluid service expects when asked for the Fluid container and for the WebSocket connection.
 export class SampleOdspTokenProvider implements IOdspTokenProvider {
@@ -32,7 +34,10 @@ export class SampleOdspTokenProvider implements IOdspTokenProvider {
 
 	// Fetch the token for the storage service
 	public async fetchStorageToken(siteUrl: string): Promise<TokenResponse> {
-		const storageScope = [`${siteUrl}/Container.Selected`];
+		// Note: for user-based authentication, the scope is normally 'Container.Selected', but for application-based
+		// authentication, it needs to be '.default'.
+		// const storageScope = [`${siteUrl}/Container.Selected`];
+		const storageScope = [`${siteUrl}/.default`];
 
 		const token = await this.fetchTokens(storageScope);
 

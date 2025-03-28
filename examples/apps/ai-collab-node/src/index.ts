@@ -54,68 +54,25 @@ if (authToken === null) {
 	throw new Error("Failed to get token");
 }
 
-// Create the GraphHelper instance
-// This is used to interact with the Graph API
-// Which allows the app to get the file storage container id, the Fluid container id,
-// and the site URL.
+// Create the GraphHelper instance to interact with the Graph API
+console.log("Constructing GraphHelper");
 const graphHelper = new GraphHelper(authToken.accessToken);
 
-// Define a function to get the container info based on the URL hash
-// The URL hash is the shared item id and will be used to get the file storage container id
-// and the Fluid container id. If there is no hash, then the app will create a new Fluid container
-// in a later step.
-const getContainerInfo = async (): Promise<
-	{ driveId: string; itemId: string } | undefined
-> => {
-	const shareId = process.env.SHARE_ID ?? "";
-	if (shareId.length > 0) {
-		try {
-			return await graphHelper.getSharedItem(shareId);
-		} catch (error) {
-			console.error("Error while fetching shared item:", error as string);
-			return undefined;
-		}
-	} else {
-		return undefined;
-	}
-};
-
-// Get the file storage container id (driveId) and the Fluid container id (itemId).
+// Get the file storage container id (driveId) and the Fluid container id (itemId) if they are provided
+console.log("Getting container info");
 const containerInfo = await getContainerInfo();
 
-// Define a function to get the file storage container id using the Graph API
-// If the user doesn't have access to the file storage container, then the app will fail here.
-const getFileStorageContainerId = async (): Promise<string> => {
-	try {
-		return await graphHelper.getFileStorageContainerId();
-	} catch (error) {
-		console.error("Error while fetching file storage container ID:", error as string);
-		return "";
-	}
-};
-
-let fileStorageContainerId = "";
-
-// If containerInfo is undefined, then get the file storage container id using the function
-// defined above.
-// If the containerInfo is not undefined, then use the file storage container id and Fluid container id
-// from containerInfo.
-// eslint-disable-next-line unicorn/prefer-ternary
-if (containerInfo === undefined) {
-	fileStorageContainerId = await getFileStorageContainerId();
-} else {
-	fileStorageContainerId = containerInfo.driveId;
-	// const containerId = containerInfo.itemId;
-}
-
-// If the file storage container id is empty, then the app will fail here.
+const fileStorageContainerId = containerInfo?.driveId ?? (await getFileStorageContainerId());
 if (fileStorageContainerId.length === 0) {
 	throw new Error("No file storage container id found.");
 }
+console.log("File storage container id:", fileStorageContainerId);
 
-// Create the client properties required to initialize
-// the Fluid client instance. The Fluid client instance is used to
-// interact with the Fluid service.
+// Note: for the getSiteUrl() call to work, the application in Entra ID needs to have the following permissions
+// for the Microsoft Graph API:
+// - Sites.ReadAll
+// - Sites.ReadWrite.All
+console.log("Creating props to construct OdspClient");
 const clientProps = {
 	connection: {
 		siteUrl: await graphHelper.getSiteUrl(),
@@ -126,9 +83,13 @@ const clientProps = {
 };
 
 // Create the Fluid client instance
+console.log("Creating OdspClient");
 const client = new OdspClient(clientProps);
 
+console.log("Creating Fluid container");
 const { container } = await client.createContainer(CONTAINER_SCHEMA);
+
+console.log("Adding data to the Fluid container");
 const treeView = container.initialObjects.appState.viewWith(TREE_CONFIGURATION);
 treeView.initialize(new SharedTreeAppState(INITIAL_APP_STATE));
 
@@ -168,4 +129,36 @@ export async function uploadBlob(
 		throw new Error("Runtime not found on SharedTree instance");
 	}
 	return runtime.uploadBlob(blob);
+}
+
+/**
+ * Gets the container info based on shared item id (SHARE_ID).
+ * It will be used to get the file storage container id and the Fluid container id.
+ * If the SHARE_ID is not defined, it will return undefined.
+ */
+async function getContainerInfo(): Promise<{ driveId: string; itemId: string } | undefined> {
+	const shareId = process.env.SHARE_ID ?? "";
+
+	if (shareId.length === 0) {
+		return undefined;
+	}
+
+	try {
+		return await graphHelper.getSharedItem(shareId);
+	} catch (error) {
+		console.error("Error while fetching shared item:", error as string);
+		return undefined;
+	}
+}
+
+/**
+ * Gets the file storage container id using the Graph API.
+ */
+async function getFileStorageContainerId(): Promise<string> {
+	try {
+		return await graphHelper.getFileStorageContainerId();
+	} catch (error) {
+		console.error("Error while fetching file storage container ID:", error as string);
+		return "";
+	}
 }
