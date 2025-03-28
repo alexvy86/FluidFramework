@@ -8,15 +8,17 @@
 // 	InteractionRequiredAuthError,
 // 	PublicClientApplication,
 // } from "@azure/msal-browser";
-import { IOdspTokenProvider, TokenResponse } from "@fluidframework/odsp-client/beta";
+import type { AuthenticationResult, ClientCredentialRequest } from "@azure/msal-node";
+import { IOdspTokenProvider, type TokenResponse } from "@fluidframework/odsp-client/beta";
 
 // Sample implementation of the IOdspTokenProvider interface.
 // Provides the token that the Fluid service expects when asked for the Fluid container and for the WebSocket connection.
 export class SampleOdspTokenProvider implements IOdspTokenProvider {
-	private readonly intializedPublicClientApplication: PublicClientApplication;
-	constructor(publicClientApplication: PublicClientApplication) {
-		this.intializedPublicClientApplication = publicClientApplication;
-	}
+	constructor(
+		private readonly getToken: (
+			tokenRequest: ClientCredentialRequest,
+		) => Promise<AuthenticationResult | null>,
+	) {}
 
 	// Fetch the token for the orderer service
 	public async fetchWebsocketToken(): Promise<TokenResponse> {
@@ -41,19 +43,11 @@ export class SampleOdspTokenProvider implements IOdspTokenProvider {
 	}
 
 	private async fetchTokens(scope: string[]): Promise<string> {
-		let response: AuthenticationResult;
-		try {
-			response = await this.intializedPublicClientApplication.acquireTokenSilent({
-				scopes: scope,
-			});
-		} catch (error) {
-			if (error instanceof InteractionRequiredAuthError) {
-				response = await this.intializedPublicClientApplication.acquireTokenPopup({
-					scopes: scope,
-				});
-			} else {
-				throw error;
-			}
+		const response = await this.getToken({
+			scopes: scope,
+		});
+		if (response === null) {
+			throw new Error("Failed to get token");
 		}
 		return response.accessToken;
 	}

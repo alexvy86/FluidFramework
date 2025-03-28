@@ -15,6 +15,7 @@ module.exports = {
 		project: ["./tsconfig.json"],
 	},
 	rules: {
+		"import/no-nodejs-modules": "off",
 		"import/no-internal-modules": [
 			"error",
 			{
@@ -41,14 +42,4 @@ module.exports = {
 		// with prod dependencies that aren't actually shipped. So don't complain when importing from dev dependencies.
 		"import/no-extraneous-dependencies": ["error", { devDependencies: true }],
 	},
-	overrides: [
-		{
-			// Rules only for test files
-			files: ["src/actions/task.ts"],
-			rules: {
-				// This file runs on server side
-				"import/no-nodejs-modules": ["error", { allow: ["node:fs", "node:path", "node:url"] }],
-			},
-		},
-	],
 };

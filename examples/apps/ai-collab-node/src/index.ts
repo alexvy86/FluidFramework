@@ -7,18 +7,23 @@
 
 // eslint-disable-next-line import/no-internal-modules
 import type { IFluidDataStoreRuntime } from "@fluidframework/datastore-definitions/internal";
-import { IFluidContainer, type IFluidHandle } from "fluid-framework";
+// eslint-disable-next-line import/no-internal-modules
+import { OdspClient } from "@fluidframework/odsp-client/internal";
+import type { IFluidContainer, IFluidHandle } from "fluid-framework";
 // eslint-disable-next-line import/no-internal-modules -- This is the correct place to get SharedString
 import { SharedString } from "fluid-framework/legacy";
 
+/* eslint-disable import/no-internal-modules */
+import { getToken } from "./infra/authHelper.js";
+import { GraphHelper } from "./infra/graphHelper.js";
+import { SampleOdspTokenProvider } from "./infra/tokenProvider.js";
+/* eslint-enable import/no-internal-modules */
 import {
 	CONTAINER_SCHEMA,
 	INITIAL_APP_STATE,
 	SharedTreeAppState,
 	TREE_CONFIGURATION,
 } from "./sharedTreeAppSchema.js";
-import { createContainer } from "./spe.js";
-// import { createContainer } from "./tinylicious";
 
 const pngBytes = new Uint8Array([
 	0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44,
@@ -44,7 +49,86 @@ const pngBytes = new Uint8Array([
 	0x44, 0xae, 0x42, 0x60, 0x82,
 ]);
 
-const container = await createContainer(CONTAINER_SCHEMA);
+const authToken = await getToken();
+if (authToken === null) {
+	throw new Error("Failed to get token");
+}
+
+// Create the GraphHelper instance
+// This is used to interact with the Graph API
+// Which allows the app to get the file storage container id, the Fluid container id,
+// and the site URL.
+const graphHelper = new GraphHelper(authToken.accessToken);
+
+// Define a function to get the container info based on the URL hash
+// The URL hash is the shared item id and will be used to get the file storage container id
+// and the Fluid container id. If there is no hash, then the app will create a new Fluid container
+// in a later step.
+const getContainerInfo = async (): Promise<
+	{ driveId: string; itemId: string } | undefined
+> => {
+	const shareId = process.env.SHARE_ID ?? "";
+	if (shareId.length > 0) {
+		try {
+			return await graphHelper.getSharedItem(shareId);
+		} catch (error) {
+			console.error("Error while fetching shared item:", error as string);
+			return undefined;
+		}
+	} else {
+		return undefined;
+	}
+};
+
+// Get the file storage container id (driveId) and the Fluid container id (itemId).
+const containerInfo = await getContainerInfo();
+
+// Define a function to get the file storage container id using the Graph API
+// If the user doesn't have access to the file storage container, then the app will fail here.
+const getFileStorageContainerId = async (): Promise<string> => {
+	try {
+		return await graphHelper.getFileStorageContainerId();
+	} catch (error) {
+		console.error("Error while fetching file storage container ID:", error as string);
+		return "";
+	}
+};
+
+let fileStorageContainerId = "";
+
+// If containerInfo is undefined, then get the file storage container id using the function
+// defined above.
+// If the containerInfo is not undefined, then use the file storage container id and Fluid container id
+// from containerInfo.
+// eslint-disable-next-line unicorn/prefer-ternary
+if (containerInfo === undefined) {
+	fileStorageContainerId = await getFileStorageContainerId();
+} else {
+	fileStorageContainerId = containerInfo.driveId;
+	// const containerId = containerInfo.itemId;
+}
+
+// If the file storage container id is empty, then the app will fail here.
+if (fileStorageContainerId.length === 0) {
+	throw new Error("No file storage container id found.");
+}
+
+// Create the client properties required to initialize
+// the Fluid client instance. The Fluid client instance is used to
+// interact with the Fluid service.
+const clientProps = {
+	connection: {
+		siteUrl: await graphHelper.getSiteUrl(),
+		tokenProvider: new SampleOdspTokenProvider(getToken),
+		driveId: fileStorageContainerId,
+		filePath: "",
+	},
+};
+
+// Create the Fluid client instance
+const client = new OdspClient(clientProps);
+
+const { container } = await client.createContainer(CONTAINER_SCHEMA);
 const treeView = container.initialObjects.appState.viewWith(TREE_CONFIGURATION);
 treeView.initialize(new SharedTreeAppState(INITIAL_APP_STATE));
 
@@ -55,7 +139,8 @@ for (const task of treeView.root.taskGroups[0]?.tasks ?? []) {
 	task.notes = sharedString.handle;
 }
 
-await container.attach();
+const containerId = await container.attach();
+console.log("Container ID:", containerId);
 
 // Now add attachment blobs, since it's unsupported before attach
 for (const task of treeView.root.taskGroups[0]?.tasks ?? []) {

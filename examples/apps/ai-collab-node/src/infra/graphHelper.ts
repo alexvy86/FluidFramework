@@ -3,13 +3,13 @@
  * Licensed under the MIT License.
  */
 
-import { ConfidentialClientApplication, AccountInfo } from "@azure/msal-node";
-import { Client } from "@microsoft/microsoft-graph-client";
-import {
-	AuthCodeMSALBrowserAuthenticationProvider,
-	AuthCodeMSALBrowserAuthenticationProviderOptions,
-	// eslint-disable-next-line import/no-internal-modules -- Not exported in the public API; docs use this pattern.
-} from "@microsoft/microsoft-graph-client/authProviders/authCodeMsalBrowser";
+import type { AuthenticationResult, ClientCredentialRequest } from "@azure/msal-node";
+import { Client, type AuthenticationProviderOptions } from "@microsoft/microsoft-graph-client";
+// import {
+// 	AuthCodeMSALBrowserAuthenticationProvider,
+// 	AuthCodeMSALBrowserAuthenticationProviderOptions,
+// 	// eslint-disable-next-line import/no-internal-modules -- Not exported in the public API; docs use this pattern.
+// } from "@microsoft/microsoft-graph-client/authProviders/authCodeMsalBrowser";
 import type { Site } from "@microsoft/microsoft-graph-types";
 
 export interface FileStorageContainer {
@@ -23,41 +23,25 @@ export interface FileStorageContainer {
 // This allows us to interact with the Graph API to get the file storage container ID,
 // the Fluid container ID, and the site URL. As well as create a sharing link and get the shared item.
 export class GraphHelper {
-	private readonly intializedPublicClientApplication: ConfidentialClientApplication;
-	private readonly accountInfo: AccountInfo;
 	private readonly graphClient: Client;
-	constructor(
-		publicClientApplication: ConfidentialClientApplication,
-		accountInfo: AccountInfo,
-	) {
-		this.intializedPublicClientApplication = publicClientApplication;
-		this.accountInfo = accountInfo;
-
-		// Create the auth provider including the required scopes for the app
-		const options: AuthCodeMSALBrowserAuthenticationProviderOptions = {
-			account: this.accountInfo, // the AccountInfo instance to acquire the token for.
-			interactionType: InteractionType.Redirect, // msal-browser InteractionType
-			scopes: ["FileStorageContainer.Selected", "Files.ReadWrite"], // scopes to be passed
-		};
-
-		const authProvider = new AuthCodeMSALBrowserAuthenticationProvider(
-			this.intializedPublicClientApplication,
-			options,
-		);
-
+	constructor(accessToken: string) {
 		// Initialize the Graph client
 		this.graphClient = Client.initWithMiddleware({
-			authProvider,
+			authProvider: {
+				getAccessToken: async (
+					authenticationProviderOptions?: AuthenticationProviderOptions,
+				) => accessToken,
+			},
 		});
 	}
 
 	// Function to get the file storage container ID
 	public async getFileStorageContainerId(): Promise<string> {
 		// Get the container type id from the environment variables
-		const containerTypeId = process.env.NEXT_PUBLIC_SPE_CONTAINER_TYPE_ID;
+		const containerTypeId = process.env.SPE_CONTAINER_TYPE_ID;
 
 		if (containerTypeId === undefined) {
-			throw new Error("NEXT_PUBLIC_SPE_CONTAINER_TYPE_ID is not defined");
+			throw new Error("SPE_CONTAINER_TYPE_ID is not defined");
 		}
 
 		// Fetch the file storage container ID using the Graph API
