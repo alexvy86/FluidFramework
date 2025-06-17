@@ -4,8 +4,12 @@
  */
 
 import { Tree, type TreeNode, TreeViewConfiguration } from "@fluidframework/tree";
-import { SchemaFactoryAlpha } from "@fluidframework/tree/alpha";
-import { SharedTree } from "fluid-framework";
+import {
+	SchemaFactoryAlpha,
+	SharedTreeFormatVersion,
+	configuredSharedTree,
+	// eslint-disable-next-line import/no-internal-modules
+} from "@fluidframework/tree/internal";
 
 // The string passed to the SchemaFactory should be unique
 const sf = new SchemaFactoryAlpha("ai-collab-sample-application");
@@ -210,7 +214,7 @@ export const INITIAL_APP_STATE = {
 
 export const CONTAINER_SCHEMA = {
 	initialObjects: {
-		appState: SharedTree,
+		appState: configuredSharedTree({ formatVersion: SharedTreeFormatVersion.v5 }),
 	},
 };
 
